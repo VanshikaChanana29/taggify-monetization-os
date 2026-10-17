@@ -68,6 +68,7 @@ def import_revenue(
     file_name: str,
     content: bytes,
     today: date,
+    closed: set[date] | None = None,
 ) -> ImportOutcome:
     text = content.decode("utf-8-sig", errors="replace")
     reader = csv.DictReader(io.StringIO(text))
@@ -116,6 +117,8 @@ def import_revenue(
             day = _date(get("date"))
             if day > today:
                 raise ValueError("date is in the future")
+            if closed and day.replace(day=1) in closed:
+                raise ValueError(f"{day:%B %Y} is closed; record an adjustment instead")
             external_id = get("channel_id")
             if not external_id:
                 raise ValueError("channel_id is empty")

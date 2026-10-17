@@ -30,6 +30,7 @@ from app.schemas.channels import (
 from app.services.assignments import AssignmentError, open_managers, set_manager
 from app.services.audit import record_audit
 from app.services.deals import company_today
+from app.services.month_close import MonthClosedError, ensure_open
 from app.services.teams import team_leads_for
 
 router = APIRouter(prefix="/channels", tags=["channels"])
@@ -364,6 +365,10 @@ def change_manager(
         if employee is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Employee not found")
     today = company_today(ctx.organization)
+    try:
+        ensure_open(db, ctx.organization, body.effective_date or today, "This handover")
+    except MonthClosedError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
     try:
         closed, _ = set_manager(
             db, channel, employee, effective=body.effective_date or today, today=today

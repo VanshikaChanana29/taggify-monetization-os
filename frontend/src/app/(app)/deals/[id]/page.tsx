@@ -7,6 +7,7 @@ import { Fragment, useCallback, useEffect, useState } from "react";
 
 import { EmptyRow, SortableHead, TablePagination } from "@/components/data-table";
 import { Notice } from "@/components/notice";
+import { DealEconomicsPanel } from "@/components/deal-economics";
 import { Pill } from "@/components/pill";
 import { type SlotAction, SlotAssignPanel } from "@/components/slot-assign-panel";
 import { Button } from "@/components/ui/button";
@@ -497,6 +498,8 @@ export default function DealDetailPage() {
           noun="slots"
         />
       </section>
+
+      <DealEconomicsPanel dealId={deal.id} dealType={deal.deal_type} refreshKey={activityKey} />
 
       <div className="grid gap-6 xl:grid-cols-3">
         <div className="space-y-6 xl:col-span-2">

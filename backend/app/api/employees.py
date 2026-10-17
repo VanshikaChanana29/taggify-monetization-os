@@ -34,6 +34,7 @@ from app.schemas.people import (
 from app.services.assignments import AssignmentError
 from app.services.audit import record_audit
 from app.services.deals import company_today
+from app.services.month_close import MonthClosedError, ensure_open
 from app.services.teams import open_memberships, set_team, team_leads_for
 
 # A company's roster is a few dozen people: returned whole and filtered in the browser.
@@ -263,6 +264,12 @@ def update_employee(
 
     today = company_today(ctx.organization)
     target = team if body.is_active else None  # a deactivated person leaves their team
+    current_team = old_team.team_id if old_team else None
+    if current_team != (target.id if target else None):
+        try:
+            ensure_open(db, ctx.organization, body.team_effective_date or today, "This team change")
+        except MonthClosedError as exc:
+            raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
     try:
         moved = set_team(
             db, employee, target, effective=body.team_effective_date or today, today=today

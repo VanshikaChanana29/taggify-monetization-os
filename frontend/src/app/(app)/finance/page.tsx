@@ -44,6 +44,12 @@ function FinancePage() {
             <Button variant="outline" asChild>
               <Link href="/finance/fx">FX rates</Link>
             </Button>
+            <Button variant="outline" asChild>
+              <Link href={`/finance/incentives?month=${month}`}>Incentives</Link>
+            </Button>
+            <Button variant="outline" asChild>
+              <Link href={`/finance/close?month=${month}`}>Month close</Link>
+            </Button>
             <Button asChild>
               <Link href="/finance/revenue">
                 <Upload />

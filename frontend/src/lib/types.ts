@@ -385,3 +385,88 @@ export type CmsMonthDetail = {
   receipts: { id: string; received_on: string; amount: string; reference: string | null; notes: string | null }[];
   adjustments: { id: string; amount: string; reason: string; created_at: string }[];
 };
+
+// ---- Part 4B: incentives, deal economics, month close --------------------------------------
+
+export type IncentiveKind = "manager" | "team_lead";
+
+export type IncentiveRate = { id: string; kind: IncentiveKind; rate_pct: string; effective_from: string };
+
+export type IncentiveRun = {
+  month: string;
+  base_currency: string;
+  status: "preview" | "draft" | "approved" | "locked";
+  computed_at: string | null;
+  approved_by: string | null;
+  approved_at: string | null;
+  total_base: string;
+  warnings: string[];
+  people: { employee: PersonRef; manager_base: string; team_lead_base: string; total_base: string }[];
+  lines: {
+    employee: PersonRef;
+    channel_id: string;
+    channel_name: string;
+    kind: IncentiveKind;
+    days: number;
+    gross: string;
+    currency: string;
+    rates: string;
+    amount: string;
+    amount_base: string;
+  }[];
+};
+
+export type Installment = {
+  id: string;
+  due_date: string;
+  amount: string;
+  paid_on: string | null;
+  paid_amount: string | null;
+  reference: string | null;
+  notes: string | null;
+  overdue: boolean;
+};
+
+export type DealExpense = { id: string; spent_on: string; amount: string; description: string };
+
+export type DealEconomics = {
+  base_currency: string;
+  deal_type: DealType;
+  rights_cost: string | null;
+  gross: string;
+  cms_fee: string;
+  incentives: string;
+  expenses: string;
+  owner_share: string;
+  net_contribution: string;
+  recovery_pct: string | null;
+  remaining: string | null;
+  installments_total: string;
+  paid: string;
+  payable: string;
+  next_due_date: string | null;
+  next_due_amount: string | null;
+  by_month: { month: string; gross: string; cms_fee: string; incentives: string }[];
+  warnings: string[];
+  installments: Installment[];
+  expense_items: DealExpense[];
+};
+
+export type CloseStatus = {
+  month: string;
+  closed: boolean;
+  closed_by: string | null;
+  closed_at: string | null;
+  notes: string | null;
+  checks: { key: string; ok: boolean; blocking: boolean; message: string }[];
+  can_close: boolean;
+};
+
+export type ClosedMonth = {
+  month: string;
+  closed_by: string | null;
+  closed_at: string;
+  gross: string | null;
+  outstanding: string | null;
+  incentives: string | null;
+};

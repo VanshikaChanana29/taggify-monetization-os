@@ -6,6 +6,7 @@ import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
 import { EmployeeForm } from "@/components/employee-form";
+import { IncentiveRates } from "@/components/incentive-rates";
 import { Notice } from "@/components/notice";
 import { Pill } from "@/components/pill";
 import { StatusPill, Tag } from "@/components/status-pill";
@@ -169,6 +170,7 @@ export default function PersonPage() {
         </div>
 
         <div className="space-y-6">
+          <IncentiveRates employeeId={person.id} canLead={person.role.can_lead_team} />
           {person.leads_teams.length > 0 && (
             <section className="rounded-2xl border bg-card p-6 shadow-sm">
               <h3 className="text-lg font-semibold">Leads</h3>

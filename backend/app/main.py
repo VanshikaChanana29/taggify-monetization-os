@@ -11,6 +11,7 @@ from app.api import (
     employees,
     finance,
     health,
+    payouts,
     roles,
     teams,
     users,
@@ -34,4 +35,5 @@ api.include_router(employees.router)
 api.include_router(roles.router)
 api.include_router(teams.router)
 api.include_router(finance.router)
+api.include_router(payouts.router)
 app.include_router(api)

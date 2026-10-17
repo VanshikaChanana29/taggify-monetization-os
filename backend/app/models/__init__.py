@@ -13,6 +13,14 @@ from app.models.finance import (
     RevenueImport,
 )
 from app.models.organization import Organization
+from app.models.payouts import (
+    DealExpense,
+    DealInstallment,
+    IncentiveLine,
+    IncentiveRate,
+    IncentiveRun,
+    MonthClose,
+)
 from app.models.people import (
     ChannelManagerAssignment,
     Employee,
@@ -25,6 +33,12 @@ from app.models.session import UserSession
 from app.models.user import Membership, User
 
 __all__ = [
+    "MonthClose",
+    "IncentiveRun",
+    "IncentiveRate",
+    "IncentiveLine",
+    "DealInstallment",
+    "DealExpense",
     "RevenueImport",
     "RevenueFact",
     "FxRate",

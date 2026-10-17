@@ -12,6 +12,7 @@ from app.schemas.people import TeamDetail, TeamHistoryItem, TeamIn, TeamLeadIn, 
 from app.services.assignments import AssignmentError
 from app.services.audit import record_audit
 from app.services.deals import company_today
+from app.services.month_close import MonthClosedError, ensure_open
 from app.services.teams import open_leads, set_team_lead
 
 # Founder-defined teams. Few per company: returned whole.
@@ -182,6 +183,10 @@ def change_lead(
     employee = _employee(db, ctx, body.employee_id) if body.employee_id else None
     today = company_today(ctx.organization)
     effective = body.effective_date or today
+    try:
+        ensure_open(db, ctx.organization, effective, "This lead change")
+    except MonthClosedError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
     try:
         closed = set_team_lead(db, team, employee, effective=effective, today=today)
     except AssignmentError as exc:

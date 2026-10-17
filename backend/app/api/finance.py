@@ -46,6 +46,7 @@ from app.schemas.finance import (
 from app.services.audit import record_audit
 from app.services.cms_fees import money
 from app.services.deals import company_today
+from app.services.month_close import closed_months, latest_closed
 from app.services.revenue_import import TEMPLATE, import_revenue
 from app.services.settlement import channel_lines, cms_month, month_end, month_settlements
 
@@ -129,6 +130,7 @@ async def upload_revenue(
         (file.filename or "upload.csv")[:255],
         content,
         company_today(ctx.organization),
+        closed_months(db, ctx.organization),
     )
     r = outcome.record
     _audit(
@@ -241,6 +243,10 @@ def set_fx(body: FxRateIn, ctx: Auth, request: Request, db: DbSession) -> FxRate
             f"{body.currency} is the company's base currency; no rate needed",
         )
     month = _month(body.month)
+    if month in closed_months(db, ctx.organization):
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, f"{month:%B %Y} is closed; its FX rate is locked"
+        )
     rate = db.scalar(
         select(FxRate).where(
             FxRate.organization_id == ctx.organization.id,
@@ -273,6 +279,16 @@ def set_fx(body: FxRateIn, ctx: Auth, request: Request, db: DbSession) -> FxRate
 # ---- CMS fee schedules -----------------------------------------------------------------------
 
 
+def _schedule_unlocked(db: Session, ctx: AuthContext, effective_from) -> None:
+    """A schedule from month M re-prices M onward, so M must be after every closed month."""
+    latest = latest_closed(db, ctx.organization)
+    if latest is not None and effective_from <= latest:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"Months up to {latest:%B %Y} are closed; fee tiers can only change from a later month",
+        )
+
+
 def _schedule_out(s: CmsFeeSchedule) -> FeeScheduleOut:
     return FeeScheduleOut(
         id=s.id,
@@ -300,6 +316,7 @@ def add_schedule(
     cms_id: uuid.UUID, body: FeeScheduleIn, ctx: Auth, request: Request, db: DbSession
 ) -> FeeScheduleOut:
     cms = _cms(db, ctx, cms_id)
+    _schedule_unlocked(db, ctx, body.effective_from)
     if db.scalar(
         select(CmsFeeSchedule.id).where(
             CmsFeeSchedule.cms_partner_id == cms.id,
@@ -351,6 +368,7 @@ def delete_schedule(schedule_id: uuid.UUID, ctx: Auth, request: Request, db: DbS
     )
     if schedule is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Fee schedule not found")
+    _schedule_unlocked(db, ctx, schedule.effective_from)
     _audit(
         db,
         ctx,

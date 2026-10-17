@@ -51,8 +51,17 @@ from app.services.deals import (
     effective_status,
     sync_slots,
 )
+from app.services.month_close import MonthClosedError, ensure_open
 
 router = APIRouter(prefix="/deals", tags=["deals"])
+
+
+def _open(db, ctx, day, what):
+    try:
+        ensure_open(db, ctx.organization, day, what)
+    except MonthClosedError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
+
 
 # Fields whose before/after values go into the audit log on edit.
 TRACKED = (
@@ -468,6 +477,7 @@ def assign_slot(
     channel = _channel(db, ctx, body.channel_id)
     today = company_today(ctx.organization)
     effective = body.effective_date or today
+    _open(db, ctx, effective, "This assignment")
     try:
         assign_channel(
             db,
@@ -503,6 +513,7 @@ def replace_slot(
     channel = _channel(db, ctx, body.channel_id)
     today = company_today(ctx.organization)
     effective = body.effective_date or today
+    _open(db, ctx, effective, "This replacement")
     try:
         old, _ = replace_channel(
             db,
@@ -546,6 +557,7 @@ def unassign_slot(
     slot = _slot(deal, slot_id)
     today = company_today(ctx.organization)
     effective = body.effective_date or today
+    _open(db, ctx, effective, "This removal")
     try:
         old = unassign_channel(db, slot, effective=effective, today=today, notes=body.notes)
     except AssignmentError as exc:
