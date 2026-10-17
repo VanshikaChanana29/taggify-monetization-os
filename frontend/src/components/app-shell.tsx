@@ -39,8 +39,8 @@ const COMPANY_NAV: NavItem[] = [
   { label: "Channels", icon: MonitorPlay, href: "/channels" },
   { label: "CMS partners", icon: Server, href: "/cms-partners" },
   { label: "People", icon: Users, href: "/people" },
+  { label: "CMS & Finance", icon: Landmark, href: "/finance" },
   // Built in later parts
-  { label: "CMS & Finance", icon: Landmark },
   { label: "Approvals", icon: ClipboardCheck },
   { label: "Users", icon: UserCog, href: "/settings/users" },
   { label: "Roles", icon: BadgeCheck, href: "/settings/roles" },
@@ -61,6 +61,7 @@ const TITLES: Record<string, string> = {
   "/channels": "Channels",
   "/cms-partners": "CMS partners",
   "/people": "People",
+  "/finance": "CMS & Finance",
   "/settings/users": "Users",
   "/settings/roles": "Roles",
   "/settings/activity": "Activity",

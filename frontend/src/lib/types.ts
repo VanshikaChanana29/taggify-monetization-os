@@ -284,3 +284,104 @@ export type EmployeeDetail = Employee & {
   history: ManagerHistoryItem[];
   team_history: { id: string; team: TeamRef; start_date: string; end_date: string | null }[];
 };
+
+// ---- Part 4A: revenue, FX, CMS settlement --------------------------------------------------
+
+export type RevenueImport = {
+  id: string;
+  file_name: string;
+  uploaded_by: string | null;
+  rows_total: number;
+  rows_created: number;
+  rows_updated: number;
+  rows_failed: number;
+  errors: { line: number; message: string }[];
+  created_at: string;
+};
+
+export type RevenueFact = {
+  id: string;
+  day: string;
+  channel_id: string;
+  channel_name: string;
+  platform: Platform;
+  cms_name: string | null;
+  gross_amount: string;
+  currency: string;
+  views: number | null;
+  state: "provisional" | "final";
+  source: string;
+};
+
+export type FxRate = { id: string; month: string; currency: string; rate: string };
+
+export type Tier = { from_amount: string; rate_pct: string };
+
+export type FeeSchedule = {
+  id: string;
+  effective_from: string;
+  tier_type: "whole" | "marginal";
+  currency: string;
+  tiers: Tier[];
+  notes: string | null;
+};
+
+export type CmsMonth = {
+  cms_id: string | null;
+  cms_name: string;
+  currency: string | null;
+  gross: string;
+  fee: string | null;
+  net: string | null;
+  fee_rule: string | null;
+  fx_rate: string | null;
+  gross_base: string | null;
+  fee_base: string | null;
+  net_base: string | null;
+  statement_net: string | null;
+  variance: string | null;
+  adjustments: string;
+  received: string;
+  outstanding: string | null;
+  channel_count: number;
+  warnings: string[];
+};
+
+export type FinanceMonth = {
+  month: string;
+  base_currency: string;
+  gross: string;
+  fee: string;
+  net_receivable: string;
+  received: string;
+  outstanding: string;
+  incomplete: boolean;
+  rows: CmsMonth[];
+};
+
+export type CmsMonthDetail = {
+  month: string;
+  base_currency: string;
+  summary: CmsMonth;
+  channels: {
+    channel_id: string;
+    channel_name: string;
+    platform: Platform;
+    deals: string[];
+    gross: string;
+    fee_share: string | null;
+    net_share: string | null;
+    views: number | null;
+  }[];
+  statement: {
+    id: string;
+    currency: string;
+    gross_amount: string;
+    fee_amount: string;
+    net_amount: string;
+    reference: string | null;
+    notes: string | null;
+  } | null;
+  receipts: { id: string; received_on: string; amount: string; reference: string | null; notes: string | null }[];
+  adjustments: { id: string; amount: string; reason: string; created_at: string }[];
+};

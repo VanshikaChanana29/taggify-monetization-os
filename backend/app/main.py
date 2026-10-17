@@ -9,6 +9,7 @@ from app.api import (
     content_owners,
     deals,
     employees,
+    finance,
     health,
     roles,
     teams,
@@ -32,4 +33,5 @@ api.include_router(channels.router)
 api.include_router(employees.router)
 api.include_router(roles.router)
 api.include_router(teams.router)
+api.include_router(finance.router)
 app.include_router(api)

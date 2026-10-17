@@ -7,7 +7,7 @@ export class ApiError extends Error {
   }
 }
 
-type ApiOptions = Omit<RequestInit, "body"> & { json?: unknown };
+type ApiOptions = Omit<RequestInit, "body"> & { json?: unknown; form?: FormData };
 
 function errorMessage(data: unknown, status: number): string {
   const detail = (data as { detail?: unknown } | null)?.detail;
@@ -19,11 +19,11 @@ function errorMessage(data: unknown, status: number): string {
 }
 
 /** Call the backend through the same-origin /api proxy. */
-export async function api<T>(path: string, { json, headers, ...init }: ApiOptions = {}): Promise<T> {
+export async function api<T>(path: string, { json, form, headers, ...init }: ApiOptions = {}): Promise<T> {
   const response = await fetch(`/api${path}`, {
     ...init,
     headers: json === undefined ? headers : { "Content-Type": "application/json", ...headers },
-    body: json === undefined ? undefined : JSON.stringify(json),
+    body: form ?? (json === undefined ? undefined : JSON.stringify(json)),
   });
 
   if (response.status === 401 && window.location.pathname !== "/login") {

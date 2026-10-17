@@ -156,7 +156,9 @@ export default function CmsPartnersPage() {
             {table.pageRows.map((r) => (
               <TableRow key={r.id}>
                 <TableCell>
-                  <p className="font-semibold">{r.name}</p>
+                  <a href={`/cms-partners/${r.id}`} className="font-semibold hover:text-primary">
+                    {r.name}
+                  </a>
                   {r.notes && <p className="text-xs text-muted-foreground">{r.notes}</p>}
                 </TableCell>
                 <TableCell>

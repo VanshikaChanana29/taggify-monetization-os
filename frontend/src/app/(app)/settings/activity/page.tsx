@@ -58,6 +58,15 @@ const ACTION_LABELS: Record<string, string> = {
   "team.created": "Created a team",
   "team.updated": "Edited a team",
   "team.lead_changed": "Changed a team lead",
+  "revenue.imported": "Imported revenue",
+  "fx.set": "Set an FX rate",
+  "cms.fee_schedule_added": "Added CMS fee tiers",
+  "cms.fee_schedule_deleted": "Deleted CMS fee tiers",
+  "cms.statement_saved": "Saved a CMS statement",
+  "cms.receipt_added": "Recorded cash received",
+  "cms.receipt_deleted": "Deleted a cash receipt",
+  "cms.adjustment_added": "Added a CMS adjustment",
+  "cms.adjustment_deleted": "Deleted a CMS adjustment",
 };
 
 /** "What" filter: each option matches a group of actions. */
@@ -88,6 +97,20 @@ const ACTION_GROUPS: Record<string, { label: string; actions: string[] }> = {
       "channel.manager_changed",
       "cms.created",
       "cms.updated",
+    ],
+  },
+  finance: {
+    label: "Revenue & finance",
+    actions: [
+      "revenue.imported",
+      "fx.set",
+      "cms.fee_schedule_added",
+      "cms.fee_schedule_deleted",
+      "cms.statement_saved",
+      "cms.receipt_added",
+      "cms.receipt_deleted",
+      "cms.adjustment_added",
+      "cms.adjustment_deleted",
     ],
   },
   people: {
