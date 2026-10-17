@@ -2,8 +2,8 @@
 
 import { AlarmClock, Handshake, IndianRupee, Plus, Tv } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
 
 import { EmptyRow, FilterBar, SearchInput, SortableHead, TablePagination } from "@/components/data-table";
 import { Notice } from "@/components/notice";
@@ -49,11 +49,12 @@ function SlotUsage({ used, limit }: { used: number; limit: number }) {
   );
 }
 
-export default function DealsPage() {
+function DealsPage() {
+  const urlParams = useSearchParams();
   const router = useRouter();
   const [summary, setSummary] = useState<DealsSummary | null>(null);
   const [owners, setOwners] = useState<ContentOwner[]>([]);
-  const [filters, setFilters] = useState<Filters>(NO_FILTERS);
+  const [filters, setFilters] = useState<Filters>(() => ({ ...NO_FILTERS, status: urlParams.get("status") ?? "" }));
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<SortState<SortKey>>({ key: "term_end", dir: "asc" });
   const [page, setPage] = useState(1);
@@ -233,5 +234,13 @@ export default function DealsPage() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function DealsPageWrapper() {
+  return (
+    <Suspense fallback={<p className="text-muted-foreground">Loading…</p>}>
+      <DealsPage />
+    </Suspense>
   );
 }

@@ -7,6 +7,7 @@ from app.api import (
     channels,
     cms_partners,
     content_owners,
+    dashboard,
     deals,
     employees,
     finance,
@@ -36,4 +37,5 @@ api.include_router(roles.router)
 api.include_router(teams.router)
 api.include_router(finance.router)
 api.include_router(payouts.router)
+api.include_router(dashboard.router)
 app.include_router(api)

@@ -470,3 +470,55 @@ export type ClosedMonth = {
   outstanding: string | null;
   incentives: string | null;
 };
+
+// ---- Part 5: founder dashboard ----------------------------------------------------------------
+
+export type Totals = {
+  gross: string;
+  fee: string;
+  net: string;
+  received: string;
+  outstanding: string;
+  complete: boolean;
+};
+
+export type AttentionItem = {
+  key: string;
+  title: string;
+  detail: string;
+  href: string;
+  severity: "danger" | "warning" | "info";
+  amount: string | null;
+};
+
+export type Dashboard = {
+  month: string;
+  base_currency: string;
+  current: Totals;
+  previous: Totals;
+  incentives: string | null;
+  rights_cost: string;
+  net_contribution: string;
+  recovery_pct: string | null;
+  trend: (Totals & { month: string })[];
+  money: AttentionItem[];
+  operations: AttentionItem[];
+  deals: {
+    id: string;
+    title: string;
+    owner: string;
+    status: DealStatus;
+    rights_cost: string;
+    net_contribution: string;
+    recovery_pct: string | null;
+    payable: string;
+  }[];
+  channels: { id: string; name: string; platform: Platform; manager: string | null; gross: string }[];
+};
+
+export type GroupDashboard = {
+  month: string;
+  companies: (Totals & { organization_id: string; name: string; base_currency: string; closed: boolean; current: boolean })[];
+  total: Totals | null;
+  currency: string | null;
+};

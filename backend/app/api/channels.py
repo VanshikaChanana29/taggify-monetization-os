@@ -158,6 +158,7 @@ def list_channels(
     status_: Annotated[Literal["active", "inactive"] | None, Query(alias="status")] = None,
     deal_id: uuid.UUID | None = None,
     manager_id: uuid.UUID | None = None,
+    managed: Literal["yes", "no"] | None = None,
     slot: Literal["assigned", "unassigned"] | None = None,
     sort: Literal["name", "created", "platform"] = "name",
     direction: Literal["asc", "desc"] = "asc",
@@ -206,6 +207,16 @@ def list_channels(
                 .correlate(Channel)
             )
         )
+    if managed:
+        has_manager = exists(
+            select(ChannelManagerAssignment.id)
+            .where(
+                ChannelManagerAssignment.channel_id == Channel.id,
+                ChannelManagerAssignment.end_date.is_(None),
+            )
+            .correlate(Channel)
+        )
+        stmt = stmt.where(has_manager if managed == "yes" else ~has_manager)
     col = SORT[sort]
     stmt = stmt.order_by(col.asc() if direction == "asc" else col.desc(), Channel.id)
     channels, total = paginate(db, stmt, pagination)

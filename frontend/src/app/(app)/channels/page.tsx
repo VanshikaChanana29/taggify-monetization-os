@@ -2,8 +2,8 @@
 
 import { Plus, Tv, UserX, Unlink, Link2 } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useCallback, useEffect, useState } from "react";
 
 import { ChannelForm } from "@/components/channel-form";
 import { EmptyRow, FilterBar, SearchInput, SortableHead, TablePagination } from "@/components/data-table";
@@ -24,13 +24,19 @@ type SortKey = "name" | "platform" | "created";
 type Filters = { platform: string; cms: string; deal: string; manager: string; slot: string; status: string };
 const NO_FILTERS: Filters = { platform: "", cms: "", deal: "", manager: "", slot: "", status: "" };
 
-export default function ChannelsPage() {
+function ChannelsPage() {
+  const urlParams = useSearchParams();
   const router = useRouter();
   const [summary, setSummary] = useState<ChannelsSummary | null>(null);
   const [cmsList, setCmsList] = useState<CmsPartner[]>([]);
   const [deals, setDeals] = useState<DealListItem[]>([]);
   const [people, setPeople] = useState<Employee[]>([]);
-  const [filters, setFilters] = useState<Filters>(NO_FILTERS);
+  const [filters, setFilters] = useState<Filters>(() => ({
+    ...NO_FILTERS,
+    manager: urlParams.get("managed") === "no" ? "none" : "",
+    slot: urlParams.get("slot") ?? "",
+    status: urlParams.get("status") ?? "",
+  }));
   const [search, setSearch] = useState("");
   const [q, setQ] = useState("");
   const [sort, setSort] = useState<SortState<SortKey>>({ key: "name", dir: "asc" });
@@ -69,7 +75,8 @@ export default function ChannelsPage() {
     if (filters.platform) params.set("platform", filters.platform);
     if (filters.cms) params.set("cms_partner_id", filters.cms);
     if (filters.deal) params.set("deal_id", filters.deal);
-    if (filters.manager) params.set("manager_id", filters.manager);
+    if (filters.manager === "none") params.set("managed", "no");
+    else if (filters.manager) params.set("manager_id", filters.manager);
     if (filters.slot) params.set("slot", filters.slot);
     if (filters.status) params.set("status", filters.status);
     return api<Page<ChannelListItem>>(`/channels?${params}`);
@@ -156,6 +163,7 @@ export default function ChannelsPage() {
         </NativeSelect>
         <NativeSelect aria-label="Filter by manager" className="w-44" value={filters.manager} onChange={(e) => update({ manager: e.target.value })}>
           <option value="">All managers</option>
+          <option value="none">No manager</option>
           {people.map((p) => (
             <option key={p.id} value={p.id}>
               {p.full_name}
@@ -239,5 +247,13 @@ export default function ChannelsPage() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function ChannelsPageWrapper() {
+  return (
+    <Suspense fallback={<p className="text-muted-foreground">Loading…</p>}>
+      <ChannelsPage />
+    </Suspense>
   );
 }
