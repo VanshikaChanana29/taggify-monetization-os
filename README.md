@@ -125,11 +125,18 @@ New migration after changing models:
 cd backend; .venv\Scripts\alembic revision --autogenerate -m "describe change"
 ```
 
-Adding a shadcn component (answer the React 19 prompt with **Use --force**):
+Adding a shadcn component (answer the React 19 prompt with **Use --force**), then re-resolve the
+lockfile without `--force` and check it the way CI and Render install it:
 
 ```powershell
 cd frontend; npx shadcn@2.3.0 add table
+npm install
+npm ci
 ```
+
+`--force` installs can leave a lockfile that Windows npm accepts but Linux `npm ci` rejects
+("package.json and package-lock.json are not in sync"). `picomatch` is a direct dev dependency
+for that reason: it pins v4 at the top of the tree so every platform resolves the same layout.
 
 ## Deploy on Render (staging)
 
