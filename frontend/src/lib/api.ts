@@ -1,12 +1,38 @@
-export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
-
-export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_URL}${path}`, {
-    ...init,
-    headers: { "Content-Type": "application/json", ...init?.headers },
-  });
-  if (!response.ok) {
-    throw new Error(`API ${response.status} on ${path}`);
+export class ApiError extends Error {
+  constructor(
+    public status: number,
+    message: string,
+  ) {
+    super(message);
   }
+}
+
+type ApiOptions = Omit<RequestInit, "body"> & { json?: unknown };
+
+function errorMessage(data: unknown, status: number): string {
+  const detail = (data as { detail?: unknown } | null)?.detail;
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    return detail.map((d: { msg?: string }) => d.msg ?? "Invalid value").join(", ");
+  }
+  return `Request failed (${status})`;
+}
+
+/** Call the backend through the same-origin /api proxy. */
+export async function api<T>(path: string, { json, headers, ...init }: ApiOptions = {}): Promise<T> {
+  const response = await fetch(`/api${path}`, {
+    ...init,
+    headers: json === undefined ? headers : { "Content-Type": "application/json", ...headers },
+    body: json === undefined ? undefined : JSON.stringify(json),
+  });
+
+  if (response.status === 401 && window.location.pathname !== "/login") {
+    window.location.assign("/login");
+  }
+  if (!response.ok) {
+    const data = await response.json().catch(() => null);
+    throw new ApiError(response.status, errorMessage(data, response.status));
+  }
+  if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
 }

@@ -8,7 +8,13 @@ class Settings(BaseSettings):
 
     app_env: str = "local"
     database_url: str = "postgresql://taggify:taggify_dev@localhost:5432/taggify_dev"
-    cors_origins: str = "http://localhost:3000"
+
+    # Login sessions
+    session_cookie_name: str = "taggify_session"
+    session_days: int = 7
+    cookie_secure: bool = False  # True on Render (HTTPS)
+    max_failed_logins: int = 5
+    lockout_minutes: int = 15
 
     @property
     def sqlalchemy_url(self) -> str:
@@ -18,10 +24,6 @@ class Settings(BaseSettings):
             if url.startswith(prefix):
                 return "postgresql+psycopg://" + url[len(prefix) :]
         return url
-
-    @property
-    def cors_origin_list(self) -> list[str]:
-        return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
 
 
 @lru_cache

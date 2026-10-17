@@ -1,19 +1,15 @@
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi import APIRouter, FastAPI
 
-from app.api import health
-from app.core.config import get_settings
-
-settings = get_settings()
+from app.api import admin, audit_logs, auth, health, users
 
 app = FastAPI(title="Taggify Monetization OS", version="0.1.0")
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.cors_origin_list,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-app.include_router(health.router)
+# Everything lives under /api. The Next.js frontend proxies /api/* to this service,
+# so the browser only ever talks to one origin (no CORS, first-party session cookie).
+api = APIRouter(prefix="/api")
+api.include_router(health.router)
+api.include_router(auth.router)
+api.include_router(users.router)
+api.include_router(audit_logs.router)
+api.include_router(admin.router)
+app.include_router(api)
