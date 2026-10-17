@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Building,
   Building2,
   ClipboardCheck,
   Crown,
@@ -31,8 +32,9 @@ type NavItem = { label: string; icon: LucideIcon; href?: string };
 
 const COMPANY_NAV: NavItem[] = [
   { label: "Dashboard", icon: LayoutGrid, href: "/" },
+  { label: "Deals", icon: Handshake, href: "/deals" },
+  { label: "Content owners", icon: Building, href: "/content-owners" },
   // Built in later parts
-  { label: "Deals", icon: Handshake },
   { label: "Channels", icon: MonitorPlay },
   { label: "CMS & Finance", icon: Landmark },
   { label: "People", icon: Users },
@@ -50,6 +52,8 @@ const ADMIN_NAV: NavItem[] = [
 
 const TITLES: Record<string, string> = {
   "/": "Dashboard",
+  "/deals": "Deals",
+  "/content-owners": "Content owners",
   "/settings/users": "Users",
   "/settings/activity": "Activity",
   "/settings/account": "My account",
@@ -159,7 +163,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           {me.user.is_superadmin && me.organization && <ModeSwitch mode={mode} />}
           <nav className="space-y-1">
             {nav.map((item) => {
-              const active = item.href === pathname;
+              const active =
+                item.href === pathname || (item.href !== "/" && pathname.startsWith(`${item.href}/`));
               return item.href ? (
                 <Link
                   key={item.label}
@@ -212,7 +217,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="sticky top-0 z-10 flex h-20 items-center justify-between gap-4 border-b bg-card/90 px-6 backdrop-blur lg:px-10">
-          <h2 className="text-xl font-semibold">{TITLES[pathname] ?? ""}</h2>
+          <h2 className="text-xl font-semibold">
+            {TITLES[pathname] ?? TITLES[`/${pathname.split("/")[1]}`] ?? ""}
+          </h2>
           <div className="flex items-center gap-3">
             {me.organizations.length > 1 && (
               <CompanyTabs me={me} onSwitch={switchOrganization} />

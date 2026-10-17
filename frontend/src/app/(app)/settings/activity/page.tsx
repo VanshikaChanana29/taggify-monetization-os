@@ -37,6 +37,11 @@ const ACTION_LABELS: Record<string, string> = {
   "user.password_reset": "Reset a founder's password",
   "user.added_to_org": "Gave a founder access",
   "org.created": "Company created",
+  "owner.created": "Added a content owner",
+  "owner.updated": "Edited a content owner",
+  "deal.created": "Created a deal",
+  "deal.updated": "Edited a deal",
+  "slot.updated": "Updated a deal slot",
 };
 
 /** "What" filter: each option matches a group of actions. */
@@ -52,6 +57,10 @@ const ACTION_GROUPS: Record<string, { label: string; actions: string[] }> = {
   },
   passwords: { label: "Password changes", actions: ["auth.password_changed", "user.password_reset"] },
   switches: { label: "Company switches", actions: ["auth.switch_organization"] },
+  deals: {
+    label: "Deals & content owners",
+    actions: ["deal.created", "deal.updated", "slot.updated", "owner.created", "owner.updated"],
+  },
 };
 
 const WARNING_ACTIONS = new Set(ACTION_GROUPS.security.actions);
@@ -60,8 +69,9 @@ type Filters = { group: string; userId: string; from: string; to: string };
 const NO_FILTERS: Filters = { group: "", userId: "", from: "", to: "" };
 
 function describe(log: AuditLog): string {
-  const email = log.details.email;
-  return typeof email === "string" ? email : "";
+  const { email, title, name, slot } = log.details;
+  const subject = [title, name, email].find((v) => typeof v === "string") as string | undefined;
+  return [subject, typeof slot === "string" ? slot : undefined].filter(Boolean).join(" · ");
 }
 
 export default function ActivityPage() {

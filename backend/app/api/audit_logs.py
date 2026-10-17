@@ -26,6 +26,8 @@ def list_audit_logs(
     pagination: Pagination,
     action: Annotated[list[str] | None, Query(description="Repeat to match any of several")] = None,
     user_id: uuid.UUID | None = None,
+    entity_type: str | None = None,
+    entity_id: str | None = None,
     date_from: date | None = None,
     date_to: date | None = None,
     sort: Literal["newest", "oldest"] = "newest",
@@ -37,6 +39,10 @@ def list_audit_logs(
         stmt = stmt.where(AuditLog.action.in_(action))
     if user_id:
         stmt = stmt.where(AuditLog.user_id == user_id)
+    if entity_type:
+        stmt = stmt.where(AuditLog.entity_type == entity_type)
+    if entity_id:
+        stmt = stmt.where(AuditLog.entity_id == entity_id)
     if date_from:
         stmt = stmt.where(AuditLog.created_at >= _day_start(date_from, tz))
     if date_to:
