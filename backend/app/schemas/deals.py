@@ -158,6 +158,13 @@ class SlotOut(BaseModel):
     code: str
     status: SlotStatus
     notes: str | None
+    # The channel holding the slot now (Part 3), with its CMS and manager.
+    channel_id: uuid.UUID | None = None
+    channel_name: str | None = None
+    channel_external_id: str | None = None
+    cms_name: str | None = None
+    manager_name: str | None = None
+    since: date | None = None
 
 
 class SlotUpdate(BaseModel):

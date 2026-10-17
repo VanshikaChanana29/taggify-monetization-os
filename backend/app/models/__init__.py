@@ -1,20 +1,38 @@
 # Import every model module here so Alembic autogenerate can see all tables.
 from app.models.audit import AuditLog
 from app.models.base import Base
+from app.models.channels import Channel, CmsPartner, SlotAssignment
 from app.models.content import ContentDeal, ContentOwner, DealEpisodeRange, DealSlot
 from app.models.organization import Organization
+from app.models.people import (
+    ChannelManagerAssignment,
+    Employee,
+    EmployeeRole,
+    Team,
+    TeamLeadAssignment,
+    TeamMembership,
+)
 from app.models.session import UserSession
 from app.models.user import Membership, User
 
 __all__ = [
     "AuditLog",
     "Base",
+    "Channel",
+    "ChannelManagerAssignment",
+    "CmsPartner",
     "ContentDeal",
     "ContentOwner",
     "DealEpisodeRange",
     "DealSlot",
+    "Employee",
+    "EmployeeRole",
     "Membership",
     "Organization",
+    "SlotAssignment",
+    "Team",
+    "TeamLeadAssignment",
+    "TeamMembership",
     "User",
     "UserSession",
 ]

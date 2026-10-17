@@ -121,6 +121,12 @@ export type Slot = {
   code: string;
   status: SlotStatus;
   notes: string | null;
+  channel_id: string | null;
+  channel_name: string | null;
+  channel_external_id: string | null;
+  cms_name: string | null;
+  manager_name: string | null;
+  since: string | null;
 };
 
 export type Deal = DealListItem & {
@@ -145,3 +151,136 @@ export type DealsSummary = {
 };
 
 export type RightsResult = { allowed: boolean; reasons: string[]; checked_on: string };
+
+// ---- Part 3: CMS partners, channels and people -------------------------------------------
+
+export type PersonRef = { id: string; name: string };
+
+export type CmsPartner = {
+  id: string;
+  name: string;
+  platform: Platform;
+  notes: string | null;
+  is_active: boolean;
+  channel_count: number;
+  created_at: string;
+};
+
+export type ChannelSlotRef = {
+  deal_id: string;
+  deal_title: string;
+  owner_name: string;
+  slot_id: string;
+  slot_code: string;
+  slot_status: SlotStatus;
+  since: string;
+};
+
+export type ChannelListItem = {
+  id: string;
+  platform: Platform;
+  name: string;
+  external_id: string;
+  url: string | null;
+  status: "active" | "inactive";
+  cms_partner_id: string | null;
+  cms_name: string | null;
+  slots: ChannelSlotRef[];
+  manager: PersonRef | null;
+  team_lead: PersonRef | null;
+  created_at: string;
+};
+
+export type SlotHistoryItem = {
+  id: string;
+  deal_id: string;
+  deal_title: string;
+  slot_id: string;
+  slot_code: string;
+  channel_id: string;
+  channel_name: string;
+  start_date: string;
+  end_date: string | null;
+  start_reason: "assigned" | "replacement";
+  end_reason: "replaced" | "unassigned" | null;
+  notes: string | null;
+};
+
+export type ManagerHistoryItem = {
+  id: string;
+  channel_id: string;
+  channel_name: string;
+  employee: PersonRef;
+  start_date: string;
+  end_date: string | null;
+};
+
+export type ChannelDetail = ChannelListItem & {
+  notes: string | null;
+  slot_history: SlotHistoryItem[];
+  manager_history: ManagerHistoryItem[];
+};
+
+export type ChannelsSummary = {
+  active_channels: number;
+  in_slots: number;
+  without_slot: number;
+  without_manager: number;
+};
+
+export type Role = {
+  id: string;
+  name: string;
+  can_manage_youtube: boolean;
+  can_manage_facebook: boolean;
+  can_lead_team: boolean;
+};
+
+export type RoleWithCount = Role & { people_count: number };
+
+export type TeamRef = { id: string; name: string };
+
+export type Team = {
+  id: string;
+  name: string;
+  description: string | null;
+  is_active: boolean;
+  lead: PersonRef | null;
+  lead_since: string | null;
+  member_count: number;
+  channel_count: number;
+  created_at: string;
+};
+
+export type TeamHistoryItem = { id: string; person: PersonRef; start_date: string; end_date: string | null };
+
+export type TeamDetail = Team & {
+  members: PersonRef[];
+  lead_history: TeamHistoryItem[];
+  member_history: TeamHistoryItem[];
+};
+
+export type Employee = {
+  id: string;
+  full_name: string;
+  role: Role;
+  team: TeamRef | null;
+  team_lead: PersonRef | null;
+  leads_teams: TeamRef[];
+  email: string | null;
+  phone: string | null;
+  join_date: string | null;
+  monthly_salary: string | null;
+  salary_currency: string;
+  is_active: boolean;
+  notes: string | null;
+  channel_count: number;
+  created_at: string;
+};
+
+export type EmployeeDetail = Employee & {
+  channels: { channel_id: string; channel_name: string; platform: Platform; since: string; deals: string[] }[];
+  team_members: PersonRef[];
+  history: ManagerHistoryItem[];
+  team_history: { id: string; team: TeamRef; start_date: string; end_date: string | null }[];
+};

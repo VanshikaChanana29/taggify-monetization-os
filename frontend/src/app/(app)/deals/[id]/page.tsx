@@ -3,11 +3,12 @@
 import { ArrowLeft, CheckCircle2, ExternalLink, Pencil, ShieldCheck, XCircle } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 
 import { EmptyRow, SortableHead, TablePagination } from "@/components/data-table";
 import { Notice } from "@/components/notice";
 import { Pill } from "@/components/pill";
+import { type SlotAction, SlotAssignPanel } from "@/components/slot-assign-panel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -20,14 +21,13 @@ import {
   DEAL_STATUS_TONES,
   DEAL_TYPE_LABELS,
   SLOT_STATUS_LABELS,
-  SLOT_STATUS_TONES,
   dealValue,
   episodeSummary,
   formatDate,
   todayISO,
 } from "@/lib/deals";
 import { formatDateTime } from "@/lib/format";
-import type { AuditLog, Deal, Page, Platform, RightsResult, Slot, SlotStatus } from "@/lib/types";
+import type { AuditLog, Deal, Page, Platform, RightsResult, Slot, SlotHistoryItem, SlotStatus } from "@/lib/types";
 import { useClientTable } from "@/lib/use-client-table";
 
 const SLOT_SORT = {
@@ -53,6 +53,7 @@ const FIELD_LABELS: Record<string, string> = {
   fb_slot_limit: "Facebook slots",
   contract_url: "Contract link",
   notes: "Notes",
+  channel: "Channel",
 };
 
 const VALUE_LABELS: Record<string, string> = { ...SLOT_STATUS_LABELS, ...DEAL_TYPE_LABELS };
@@ -200,6 +201,9 @@ function DealActivity({ dealId, refreshKey }: { dealId: string; refreshKey: numb
     "deal.created": "created the deal",
     "deal.updated": "edited the deal",
     "slot.updated": "updated a slot",
+    "slot.assigned": "assigned a channel",
+    "slot.replaced": "replaced a channel",
+    "slot.unassigned": "removed a channel",
   };
 
   return (
@@ -231,6 +235,53 @@ function DealActivity({ dealId, refreshKey }: { dealId: string; refreshKey: numb
   );
 }
 
+function SlotHistory({ dealId, refreshKey }: { dealId: string; refreshKey: number }) {
+  const [rows, setRows] = useState<SlotHistoryItem[]>([]);
+  useEffect(() => {
+    api<SlotHistoryItem[]>(`/deals/${dealId}/assignments`).then(setRows).catch(() => {});
+  }, [dealId, refreshKey]);
+  const ended: Record<string, string> = { replaced: "Replaced", unassigned: "Removed" };
+  return (
+    <section className="overflow-hidden rounded-2xl border bg-card shadow-sm">
+      <div className="p-6 pb-4">
+        <h3 className="text-lg font-semibold">Slot history</h3>
+        <p className="text-sm text-muted-foreground">Every channel that has held a slot in this deal. Nothing is ever deleted.</p>
+      </div>
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Slot</TableHead>
+            <TableHead>Channel</TableHead>
+            <TableHead>From</TableHead>
+            <TableHead>To</TableHead>
+            <TableHead>How</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {rows.map((h) => (
+            <TableRow key={h.id}>
+              <TableCell className="font-mono font-semibold">{h.slot_code}</TableCell>
+              <TableCell>
+                <Link href={`/channels/${h.channel_id}`} className="font-medium hover:text-primary">
+                  {h.channel_name}
+                </Link>
+              </TableCell>
+              <TableCell className="whitespace-nowrap">{formatDate(h.start_date)}</TableCell>
+              <TableCell className="whitespace-nowrap">{h.end_date ? formatDate(h.end_date) : "Now"}</TableCell>
+              <TableCell className="text-muted-foreground">
+                {h.start_reason === "replacement" ? "Replacement" : "Assigned"}
+                {h.end_reason && ` · ${ended[h.end_reason]}`}
+                {h.notes && <span className="block text-xs">{h.notes}</span>}
+              </TableCell>
+            </TableRow>
+          ))}
+          {rows.length === 0 && <EmptyRow colSpan={5}>No channel has held a slot yet.</EmptyRow>}
+        </TableBody>
+      </Table>
+    </section>
+  );
+}
+
 export default function DealDetailPage() {
   const { id } = useParams<{ id: string }>();
   const [deal, setDeal] = useState<Deal | null>(null);
@@ -238,6 +289,8 @@ export default function DealDetailPage() {
   const [platformFilter, setPlatformFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [activityKey, setActivityKey] = useState(0);
+  const [acting, setActing] = useState<{ slotId: string; action: SlotAction } | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const load = useCallback(() => {
     api<Deal>(`/deals/${id}`)
@@ -265,6 +318,7 @@ export default function DealDetailPage() {
       setActivityKey((k) => k + 1);
       load();
     } catch (err) {
+      setNotice(null);
       setError(err instanceof Error ? err.message : "Could not update slot");
     }
   }
@@ -299,6 +353,7 @@ export default function DealDetailPage() {
       </div>
 
       {error && <Notice kind="error">{error}</Notice>}
+      {notice && <Notice kind="success">{notice}</Notice>}
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
         <InfoCard label="Licence value" value={dealValue(deal)} />
@@ -314,85 +369,138 @@ export default function DealDetailPage() {
         />
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-3">
-        <div className="space-y-6 xl:col-span-2">
-          <section className="overflow-hidden rounded-2xl border bg-card shadow-sm">
-            <div className="flex flex-wrap items-center justify-between gap-3 p-6 pb-4">
-              <div>
-                <h3 className="text-lg font-semibold">Slots</h3>
-                <p className="text-sm text-muted-foreground">Linking a slot to a real channel comes in Part 3.</p>
-              </div>
-              <div className="flex gap-2">
-                <NativeSelect aria-label="Filter slots by platform" className="w-36" value={platformFilter} onChange={(e) => setPlatformFilter(e.target.value)}>
-                  <option value="">All platforms</option>
-                  <option value="youtube">YouTube</option>
-                  <option value="facebook">Facebook</option>
-                </NativeSelect>
-                <NativeSelect aria-label="Filter slots by status" className="w-44" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
-                  <option value="">All statuses</option>
-                  {Object.entries(SLOT_STATUS_LABELS).map(([v, l]) => (
-                    <option key={v} value={v}>
-                      {l}
-                    </option>
-                  ))}
-                </NativeSelect>
-              </div>
-            </div>
-            <Table>
-              <TableHeader>
+      <section className="overflow-hidden rounded-2xl border bg-card shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3 p-6 pb-4">
+          <div>
+            <h3 className="text-lg font-semibold">Slots</h3>
+            <p className="text-sm text-muted-foreground">Which channel holds each authorised slot. Replacing keeps the old channel&apos;s history.</p>
+          </div>
+          <div className="flex gap-2">
+            <NativeSelect aria-label="Filter slots by platform" className="w-36" value={platformFilter} onChange={(e) => setPlatformFilter(e.target.value)}>
+              <option value="">All platforms</option>
+              <option value="youtube">YouTube</option>
+              <option value="facebook">Facebook</option>
+            </NativeSelect>
+            <NativeSelect aria-label="Filter slots by status" className="w-44" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+              <option value="">All statuses</option>
+              {Object.entries(SLOT_STATUS_LABELS).map(([v, l]) => (
+                <option key={v} value={v}>
+                  {l}
+                </option>
+              ))}
+            </NativeSelect>
+          </div>
+        </div>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <SortableHead label="Slot" sortKey="code" sort={table.sort} onSort={table.toggleSort} />
+              <TableHead>Destination</TableHead>
+              <TableHead>CMS</TableHead>
+              <TableHead>Manager</TableHead>
+              <SortableHead label="Status" sortKey="status" sort={table.sort} onSort={table.toggleSort} />
+              <TableHead>Notes</TableHead>
+              <TableHead className="text-right">Channel</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {table.pageRows.map((s) => (
+              <Fragment key={s.id}>
                 <TableRow>
-                  <SortableHead label="Slot" sortKey="code" sort={table.sort} onSort={table.toggleSort} />
-                  <TableHead>Platform</TableHead>
-                  <SortableHead label="Status" sortKey="status" sort={table.sort} onSort={table.toggleSort} />
-                  <TableHead>Change status</TableHead>
-                  <TableHead>Notes</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {table.pageRows.map((s) => (
-                  <TableRow key={s.id}>
-                    <TableCell className="font-mono font-semibold">{s.code}</TableCell>
-                    <TableCell>{s.platform === "youtube" ? "YouTube" : "Facebook"}</TableCell>
-                    <TableCell>
-                      <Pill tone={SLOT_STATUS_TONES[s.status]}>{SLOT_STATUS_LABELS[s.status]}</Pill>
-                    </TableCell>
-                    <TableCell>
-                      <NativeSelect
-                        aria-label={`Status of ${s.code}`}
-                        className="h-9 w-44"
-                        value={s.status}
-                        onChange={(e) => updateSlot(s, { status: e.target.value as SlotStatus })}
-                      >
-                        {Object.entries(SLOT_STATUS_LABELS).map(([v, l]) => (
-                          <option key={v} value={v}>
+                  <TableCell className="font-mono font-semibold">{s.code}</TableCell>
+                  <TableCell>
+                    {s.channel_id ? (
+                      <>
+                        <Link href={`/channels/${s.channel_id}`} className="font-medium hover:text-primary">
+                          {s.channel_name}
+                        </Link>
+                        <p className="text-xs text-muted-foreground">since {s.since ? formatDate(s.since) : "—"}</p>
+                      </>
+                    ) : (
+                      <span className="text-muted-foreground">{s.status === "reserved" ? "Empty — reserved" : "Empty"}</span>
+                    )}
+                  </TableCell>
+                  <TableCell>{s.cms_name ?? <span className="text-muted-foreground">—</span>}</TableCell>
+                  <TableCell>{s.manager_name ?? <span className="text-muted-foreground">—</span>}</TableCell>
+                  <TableCell>
+                    <NativeSelect
+                      aria-label={`Status of ${s.code}`}
+                      className="h-9 w-44"
+                      value={s.status}
+                      onChange={(e) => updateSlot(s, { status: e.target.value as SlotStatus })}
+                    >
+                      {Object.entries(SLOT_STATUS_LABELS)
+                        .filter(([v]) => v !== "replaced")
+                        .map(([v, l]) => (
+                          <option key={v} value={v} disabled={s.channel_id ? v === "unassigned" : v === "pending_whitelist" || v === "active"}>
                             {l}
                           </option>
                         ))}
-                      </NativeSelect>
-                    </TableCell>
-                    <TableCell>
-                      <Input
-                        aria-label={`Notes for ${s.code}`}
-                        className="h-9 min-w-48"
-                        defaultValue={s.notes ?? ""}
-                        placeholder="Add a note…"
-                        onBlur={(e) => updateSlot(s, { notes: e.target.value })}
+                    </NativeSelect>
+                  </TableCell>
+                  <TableCell>
+                    <Input
+                      aria-label={`Notes for ${s.code}`}
+                      className="h-9 min-w-40"
+                      defaultValue={s.notes ?? ""}
+                      placeholder="Add a note…"
+                      onBlur={(e) => updateSlot(s, { notes: e.target.value })}
+                    />
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap text-right">
+                    {s.channel_id ? (
+                      <>
+                        <Button variant="outline" size="sm" onClick={() => setActing({ slotId: s.id, action: "replace" })}>
+                          Replace
+                        </Button>{" "}
+                        <Button variant="ghost" size="sm" onClick={() => setActing({ slotId: s.id, action: "unassign" })}>
+                          Remove
+                        </Button>
+                      </>
+                    ) : (
+                      <Button size="sm" onClick={() => setActing({ slotId: s.id, action: "assign" })}>
+                        Assign
+                      </Button>
+                    )}
+                  </TableCell>
+                </TableRow>
+                {acting?.slotId === s.id && (
+                  <TableRow className="hover:bg-transparent">
+                    <TableCell colSpan={7}>
+                      <SlotAssignPanel
+                        dealId={deal.id}
+                        slot={s}
+                        action={acting.action}
+                        onCancel={() => setActing(null)}
+                        onDone={(message) => {
+                          setActing(null);
+                          setNotice(message);
+                          setError(null);
+                          setActivityKey((k) => k + 1);
+                          load();
+                        }}
                       />
                     </TableCell>
                   </TableRow>
-                ))}
-                {table.total === 0 && <EmptyRow colSpan={5}>No slots match these filters.</EmptyRow>}
-              </TableBody>
-            </Table>
-            <TablePagination
-              page={table.page}
-              pageSize={table.pageSize}
-              total={table.total}
-              onPageChange={table.setPage}
-              onPageSizeChange={table.setPageSize}
-              noun="slots"
-            />
-          </section>
+                )}
+              </Fragment>
+            ))}
+            {table.total === 0 && <EmptyRow colSpan={7}>No slots match these filters.</EmptyRow>}
+          </TableBody>
+        </Table>
+        <TablePagination
+          page={table.page}
+          pageSize={table.pageSize}
+          total={table.total}
+          onPageChange={table.setPage}
+          onPageSizeChange={table.setPageSize}
+          noun="slots"
+        />
+      </section>
+
+      <div className="grid gap-6 xl:grid-cols-3">
+        <div className="space-y-6 xl:col-span-2">
+          <SlotHistory dealId={deal.id} refreshKey={activityKey} />
           <DealActivity dealId={deal.id} refreshKey={activityKey} />
         </div>
 

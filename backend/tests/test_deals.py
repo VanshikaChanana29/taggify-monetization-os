@@ -167,7 +167,7 @@ def test_raising_and_lowering_slot_limits(founder):
     assert [s["code"] for s in up["slots"]] == ["YT-01", "YT-02", "YT-03", "YT-04", "FB-01"]
 
     yt4 = next(s for s in up["slots"] if s["code"] == "YT-04")
-    founder.patch(f"/api/deals/{d['id']}/slots/{yt4['id']}", json={"status": "active"})
+    founder.patch(f"/api/deals/{d['id']}/slots/{yt4['id']}", json={"status": "reserved"})
     blocked = founder.put(
         f"/api/deals/{d['id']}", json=deal_body(oid, yt_slot_limit=2, fb_slot_limit=1)
     )
@@ -187,12 +187,12 @@ def test_slot_status_update_is_audited(founder, db):
     slot = d["slots"][0]
     r = founder.patch(
         f"/api/deals/{d['id']}/slots/{slot['id']}",
-        json={"status": "pending_whitelist", "notes": "Email sent to Sony"},
+        json={"status": "reserved", "notes": "Held for Kapil Comedy 02"},
     )
-    assert r.json()["status"] == "pending_whitelist"
+    assert r.json()["status"] == "reserved"
     log = db.scalar(select(AuditLog).where(AuditLog.action == "slot.updated"))
     assert log.details["slot"] == "YT-01"
-    assert log.details["changes"]["status"] == ["unassigned", "pending_whitelist"]
+    assert log.details["changes"]["status"] == ["unassigned", "reserved"]
 
 
 # ---- Edits and audit --------------------------------------------------------------------
@@ -264,7 +264,7 @@ def test_summary_counts_live_deals_only(founder):
         "/api/deals", json=deal_body(oid, title="USD deal", currency="USD", fee_amount="1000")
     )
     founder.post("/api/deals", json=deal_body(oid, title="Draft", status="draft"))
-    founder.patch(f"/api/deals/{d['id']}/slots/{d['slots'][0]['id']}", json={"status": "active"})
+    founder.patch(f"/api/deals/{d['id']}/slots/{d['slots'][0]['id']}", json={"status": "reserved"})
 
     s = founder.get("/api/deals/summary").json()
 

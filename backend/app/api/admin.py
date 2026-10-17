@@ -21,6 +21,7 @@ from app.schemas.admin import (
 )
 from app.services.audit import record_audit
 from app.services.auth import normalize_email, revoke_sessions
+from app.services.teams import seed_default_roles
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -107,6 +108,7 @@ def create_organization(
     org = Organization(name=body.name.strip(), slug=body.slug, base_currency=body.base_currency)
     db.add(org)
     db.flush()
+    seed_default_roles(db, org)
     record_audit(
         db,
         "org.created",

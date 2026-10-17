@@ -25,6 +25,7 @@ from app.core.security import MIN_PASSWORD_LENGTH, hash_password
 from app.models import Membership, Organization, User
 from app.services.audit import record_audit
 from app.services.auth import normalize_email, validate_new_email
+from app.services.teams import seed_default_roles
 
 
 def _read_password() -> str:
@@ -89,6 +90,7 @@ def create_org(args: argparse.Namespace) -> None:
         org = Organization(name=args.name, slug=args.slug, base_currency=args.currency)
         db.add(org)
         db.flush()
+        seed_default_roles(db, org)
         record_audit(db, "org.created", organization_id=org.id, details={"source": "cli"})
         db.commit()
         print(f"Created company {org.name} ({org.slug})")

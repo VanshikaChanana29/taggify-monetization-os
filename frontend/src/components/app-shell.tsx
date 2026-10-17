@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  BadgeCheck,
   Building,
   Building2,
   ClipboardCheck,
@@ -11,6 +12,7 @@ import {
   LayoutGrid,
   LogOut,
   MonitorPlay,
+  Server,
   ShieldCheck,
   UserCog,
   UserRound,
@@ -34,12 +36,14 @@ const COMPANY_NAV: NavItem[] = [
   { label: "Dashboard", icon: LayoutGrid, href: "/" },
   { label: "Deals", icon: Handshake, href: "/deals" },
   { label: "Content owners", icon: Building, href: "/content-owners" },
+  { label: "Channels", icon: MonitorPlay, href: "/channels" },
+  { label: "CMS partners", icon: Server, href: "/cms-partners" },
+  { label: "People", icon: Users, href: "/people" },
   // Built in later parts
-  { label: "Channels", icon: MonitorPlay },
   { label: "CMS & Finance", icon: Landmark },
-  { label: "People", icon: Users },
   { label: "Approvals", icon: ClipboardCheck },
   { label: "Users", icon: UserCog, href: "/settings/users" },
+  { label: "Roles", icon: BadgeCheck, href: "/settings/roles" },
   { label: "Activity", icon: History, href: "/settings/activity" },
   { label: "My account", icon: UserRound, href: "/settings/account" },
 ];
@@ -54,7 +58,11 @@ const TITLES: Record<string, string> = {
   "/": "Dashboard",
   "/deals": "Deals",
   "/content-owners": "Content owners",
+  "/channels": "Channels",
+  "/cms-partners": "CMS partners",
+  "/people": "People",
   "/settings/users": "Users",
+  "/settings/roles": "Roles",
   "/settings/activity": "Activity",
   "/settings/account": "My account",
   "/admin/companies": "Companies",

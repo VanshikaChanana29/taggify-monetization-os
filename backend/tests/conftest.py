@@ -15,6 +15,7 @@ from app.core.database import SessionLocal, engine  # noqa: E402
 from app.core.security import hash_password  # noqa: E402
 from app.main import app  # noqa: E402
 from app.models import Base, Membership, Organization, User  # noqa: E402
+from app.services.teams import seed_default_roles  # noqa: E402
 
 PASSWORD = "correct-horse-battery"
 
@@ -54,6 +55,8 @@ def make_founder(db):
         if org is None:
             org = Organization(name=org_slug.title(), slug=org_slug)
             db.add(org)
+            db.flush()
+            seed_default_roles(db, org)
         user = User(email=email, full_name=name, password_hash=hash_password(PASSWORD))
         db.add(Membership(user=user, organization=org))
         db.commit()

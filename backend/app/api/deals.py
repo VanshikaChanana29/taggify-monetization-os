@@ -11,7 +11,15 @@ from sqlalchemy.orm import Session, selectinload
 from app.api.deps import Auth, AuthContext, client_ip
 from app.api.pagination import Page, Pagination, paginate
 from app.core.database import DbSession
-from app.models import ContentDeal, ContentOwner, DealEpisodeRange
+from app.models import (
+    Channel,
+    ContentDeal,
+    ContentOwner,
+    DealEpisodeRange,
+    DealSlot,
+    SlotAssignment,
+)
+from app.schemas.channels import AssignIn, SlotHistoryItem, UnassignIn
 from app.schemas.deals import (
     CurrencyAmount,
     DealIn,
@@ -24,6 +32,15 @@ from app.schemas.deals import (
     RightsCheckOut,
     SlotOut,
     SlotUpdate,
+)
+from app.services.assignments import (
+    AssignmentError,
+    assign_channel,
+    check_slot_status_change,
+    open_managers,
+    open_slot_assignments,
+    replace_channel,
+    unassign_channel,
 )
 from app.services.audit import record_audit
 from app.services.deals import (
@@ -102,7 +119,38 @@ def _list_item(deal: ContentDeal, today: date) -> dict[str, Any]:
     }
 
 
-def _out(deal: ContentDeal, today: date) -> DealOut:
+def _slot_out(
+    slot: DealSlot, assignment: SlotAssignment | None, manager_name: str | None
+) -> SlotOut:
+    channel = assignment.channel if assignment else None
+    return SlotOut(
+        id=slot.id,
+        platform=slot.platform,  # type: ignore[arg-type]
+        number=slot.number,
+        code=slot.code,
+        status=slot.status,  # type: ignore[arg-type]
+        notes=slot.notes,
+        channel_id=channel.id if channel else None,
+        channel_name=channel.name if channel else None,
+        channel_external_id=channel.external_id if channel else None,
+        cms_name=channel.cms_partner.name if channel and channel.cms_partner else None,
+        manager_name=manager_name,
+        since=assignment.start_date if assignment else None,
+    )
+
+
+def _slot_outs(db: Session, slots: list[DealSlot]) -> list[SlotOut]:
+    assignments = open_slot_assignments(db, [s.id for s in slots])
+    managers = open_managers(db, [a.channel_id for a in assignments.values()])
+    out = []
+    for s in slots:
+        a = assignments.get(s.id)
+        m = managers.get(a.channel_id) if a else None
+        out.append(_slot_out(s, a, m.employee.full_name if m else None))
+    return out
+
+
+def _out(db: Session, deal: ContentDeal, today: date) -> DealOut:
     return DealOut(
         **_list_item(deal, today),
         stored_status=deal.status,  # type: ignore[arg-type]
@@ -112,17 +160,7 @@ def _out(deal: ContentDeal, today: date) -> DealOut:
         notes=deal.notes,
         owner_contact_name=deal.owner.contact_name,
         owner_contact_email=deal.owner.contact_email,
-        slots=[
-            SlotOut(
-                id=s.id,
-                platform=s.platform,  # type: ignore[arg-type]
-                number=s.number,
-                code=s.code,
-                status=s.status,  # type: ignore[arg-type]
-                notes=s.notes,
-            )
-            for s in deal.slots
-        ],
+        slots=_slot_outs(db, list(deal.slots)),
         created_at=deal.created_at,
         updated_at=deal.updated_at,
     )
@@ -279,12 +317,12 @@ def create_deal(body: DealIn, ctx: Auth, request: Request, db: DbSession) -> Dea
     )
     db.commit()
     db.expire_all()  # reload as stored (e.g. 5000000 -> 5000000.00)
-    return _out(_get_deal(db, ctx, deal.id), company_today(ctx.organization))
+    return _out(db, _get_deal(db, ctx, deal.id), company_today(ctx.organization))
 
 
 @router.get("/{deal_id}")
 def get_deal(deal_id: uuid.UUID, ctx: Auth, db: DbSession) -> DealOut:
-    return _out(_get_deal(db, ctx, deal_id), company_today(ctx.organization))
+    return _out(db, _get_deal(db, ctx, deal_id), company_today(ctx.organization))
 
 
 @router.put("/{deal_id}")
@@ -316,7 +354,7 @@ def update_deal(
         )
     db.commit()
     db.expire_all()
-    return _out(_get_deal(db, ctx, deal.id), company_today(ctx.organization))
+    return _out(db, _get_deal(db, ctx, deal.id), company_today(ctx.organization))
 
 
 @router.patch("/{deal_id}/slots/{slot_id}")
@@ -333,6 +371,11 @@ def update_slot(
     if slot is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Slot not found")
     notes = (body.notes or "").strip() or None
+    if body.status != slot.status:
+        try:
+            check_slot_status_change(db, slot, body.status)
+        except AssignmentError as exc:
+            raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
     changes = {}
     if slot.status != body.status:
         changes["status"] = [slot.status, body.status]
@@ -351,14 +394,7 @@ def update_slot(
             ip=client_ip(request),
         )
     db.commit()
-    return SlotOut(
-        id=slot.id,
-        platform=slot.platform,  # type: ignore[arg-type]
-        number=slot.number,
-        code=slot.code,
-        status=slot.status,  # type: ignore[arg-type]
-        notes=slot.notes,
-    )
+    return _slot_outs(db, [slot])[0]
 
 
 @router.post("/{deal_id}/check-rights")
@@ -376,3 +412,186 @@ def check_deal_rights(
         territory=body.territory,
     )
     return RightsCheckOut(allowed=result.allowed, reasons=result.reasons, checked_on=on_date)
+
+
+# ---- Slot <-> channel (Part 3) ------------------------------------------------------------
+
+
+def _slot(deal: ContentDeal, slot_id: uuid.UUID) -> DealSlot:
+    slot = next((s for s in deal.slots if s.id == slot_id), None)
+    if slot is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Slot not found")
+    return slot
+
+
+def _channel(db: Session, ctx: AuthContext, channel_id: uuid.UUID) -> Channel:
+    channel = db.scalar(
+        select(Channel).where(
+            Channel.id == channel_id, Channel.organization_id == ctx.organization.id
+        )
+    )
+    if channel is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Channel not found")
+    return channel
+
+
+def _slot_audit(db, ctx, request, deal, slot, action, before, after, effective, notes=None):
+    record_audit(
+        db,
+        action,
+        organization_id=ctx.organization.id,
+        user_id=ctx.user.id,
+        entity_type="deal",
+        entity_id=deal.id,
+        details={
+            "title": deal.title,
+            "slot": slot.code,
+            "changes": {"channel": [before, after]},
+            "effective_date": str(effective),
+            **({"notes": notes} if notes else {}),
+        },
+        ip=client_ip(request),
+    )
+
+
+@router.post("/{deal_id}/slots/{slot_id}/assign")
+def assign_slot(
+    deal_id: uuid.UUID,
+    slot_id: uuid.UUID,
+    body: AssignIn,
+    ctx: Auth,
+    request: Request,
+    db: DbSession,
+) -> SlotOut:
+    deal = _get_deal(db, ctx, deal_id)
+    slot = _slot(deal, slot_id)
+    channel = _channel(db, ctx, body.channel_id)
+    today = company_today(ctx.organization)
+    effective = body.effective_date or today
+    try:
+        assign_channel(
+            db,
+            deal,
+            slot,
+            channel,
+            status=body.status,
+            effective=effective,
+            today=today,
+            notes=body.notes,
+        )
+    except AssignmentError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
+    _slot_audit(
+        db, ctx, request, deal, slot, "slot.assigned", None, channel.name, effective, body.notes
+    )
+    db.commit()
+    db.expire_all()
+    return _slot_outs(db, [_slot(_get_deal(db, ctx, deal_id), slot_id)])[0]
+
+
+@router.post("/{deal_id}/slots/{slot_id}/replace")
+def replace_slot(
+    deal_id: uuid.UUID,
+    slot_id: uuid.UUID,
+    body: AssignIn,
+    ctx: Auth,
+    request: Request,
+    db: DbSession,
+) -> SlotOut:
+    deal = _get_deal(db, ctx, deal_id)
+    slot = _slot(deal, slot_id)
+    channel = _channel(db, ctx, body.channel_id)
+    today = company_today(ctx.organization)
+    effective = body.effective_date or today
+    try:
+        old, _ = replace_channel(
+            db,
+            deal,
+            slot,
+            channel,
+            status=body.status,
+            effective=effective,
+            today=today,
+            notes=body.notes,
+        )
+    except AssignmentError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
+    _slot_audit(
+        db,
+        ctx,
+        request,
+        deal,
+        slot,
+        "slot.replaced",
+        old.channel.name,
+        channel.name,
+        effective,
+        body.notes,
+    )
+    db.commit()
+    db.expire_all()
+    return _slot_outs(db, [_slot(_get_deal(db, ctx, deal_id), slot_id)])[0]
+
+
+@router.post("/{deal_id}/slots/{slot_id}/unassign")
+def unassign_slot(
+    deal_id: uuid.UUID,
+    slot_id: uuid.UUID,
+    body: UnassignIn,
+    ctx: Auth,
+    request: Request,
+    db: DbSession,
+) -> SlotOut:
+    deal = _get_deal(db, ctx, deal_id)
+    slot = _slot(deal, slot_id)
+    today = company_today(ctx.organization)
+    effective = body.effective_date or today
+    try:
+        old = unassign_channel(db, slot, effective=effective, today=today, notes=body.notes)
+    except AssignmentError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
+    _slot_audit(
+        db,
+        ctx,
+        request,
+        deal,
+        slot,
+        "slot.unassigned",
+        old.channel.name,
+        None,
+        effective,
+        body.notes,
+    )
+    db.commit()
+    db.expire_all()
+    return _slot_outs(db, [_slot(_get_deal(db, ctx, deal_id), slot_id)])[0]
+
+
+@router.get("/{deal_id}/assignments")
+def deal_assignments(deal_id: uuid.UUID, ctx: Auth, db: DbSession) -> list[SlotHistoryItem]:
+    """Every channel that has ever held a slot of this deal, newest first."""
+    deal = _get_deal(db, ctx, deal_id)
+    slots = {s.id: s for s in deal.slots}
+    rows = db.scalars(
+        select(SlotAssignment)
+        .join(DealSlot, DealSlot.id == SlotAssignment.slot_id)
+        .where(DealSlot.deal_id == deal.id)
+        .order_by(SlotAssignment.start_date.desc(), SlotAssignment.created_at.desc())
+    ).all()
+    return [
+        SlotHistoryItem(
+            id=a.id,
+            deal_id=deal.id,
+            deal_title=deal.title,
+            slot_id=a.slot_id,
+            slot_code=slots[a.slot_id].code if a.slot_id in slots else "—",
+            channel_id=a.channel_id,
+            channel_name=a.channel.name,
+            start_date=a.start_date,
+            end_date=a.end_date,
+            start_reason=a.start_reason,
+            end_reason=a.end_reason,
+            notes=a.notes,
+        )
+        for a in rows
+    ]

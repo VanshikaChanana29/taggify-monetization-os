@@ -42,6 +42,22 @@ const ACTION_LABELS: Record<string, string> = {
   "deal.created": "Created a deal",
   "deal.updated": "Edited a deal",
   "slot.updated": "Updated a deal slot",
+  "slot.assigned": "Assigned a channel to a slot",
+  "slot.replaced": "Replaced a slot's channel",
+  "slot.unassigned": "Removed a channel from a slot",
+  "channel.created": "Added a channel",
+  "channel.updated": "Edited a channel",
+  "channel.manager_changed": "Changed a channel's manager",
+  "cms.created": "Added a CMS partner",
+  "cms.updated": "Edited a CMS partner",
+  "employee.created": "Added a person",
+  "employee.updated": "Edited a person",
+  "role.created": "Added a role",
+  "role.updated": "Edited a role",
+  "role.deleted": "Deleted a role",
+  "team.created": "Created a team",
+  "team.updated": "Edited a team",
+  "team.lead_changed": "Changed a team lead",
 };
 
 /** "What" filter: each option matches a group of actions. */
@@ -60,6 +76,33 @@ const ACTION_GROUPS: Record<string, { label: string; actions: string[] }> = {
   deals: {
     label: "Deals & content owners",
     actions: ["deal.created", "deal.updated", "slot.updated", "owner.created", "owner.updated"],
+  },
+  channels: {
+    label: "Channels, slots & CMS",
+    actions: [
+      "slot.assigned",
+      "slot.replaced",
+      "slot.unassigned",
+      "channel.created",
+      "channel.updated",
+      "channel.manager_changed",
+      "cms.created",
+      "cms.updated",
+    ],
+  },
+  people: {
+    label: "People, teams & roles",
+    actions: [
+      "employee.created",
+      "employee.updated",
+      "channel.manager_changed",
+      "team.created",
+      "team.updated",
+      "team.lead_changed",
+      "role.created",
+      "role.updated",
+      "role.deleted",
+    ],
   },
 };
 
