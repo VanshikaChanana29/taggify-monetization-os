@@ -131,6 +131,8 @@ class CmsMonthOut(BaseModel):
     variance: Decimal | None
     adjustments: Decimal
     received: Decimal
+    received_credited: Decimal
+    fx_difference: Decimal
     outstanding: Decimal | None
     channel_count: int
     warnings: list[str]
@@ -143,6 +145,7 @@ class FinanceMonthOut(BaseModel):
     fee: Decimal
     net_receivable: Decimal
     received: Decimal
+    fx_difference: Decimal
     outstanding: Decimal
     incomplete: bool
     rows: list[CmsMonthOut]
@@ -172,7 +175,11 @@ class StatementOut(BaseModel):
 class ReceiptOut(BaseModel):
     id: uuid.UUID
     received_on: date
+    currency: str
     amount: Decimal
+    amount_base: Decimal
+    # The amount valued at the month's FX rate (what it clears of the receivable).
+    valued_base: Decimal | None = None
     reference: str | None
     notes: str | None
 
@@ -214,9 +221,18 @@ class StatementIn(_MonthField):
 class ReceiptIn(_MonthField):
     cms_partner_id: uuid.UUID
     received_on: date
+    # What the CMS paid, in the currency it paid in (USD, AED, INR…).
+    currency: str | None = Field(default=None, min_length=3, max_length=3)
     amount: Decimal = Field(gt=0, max_digits=18, decimal_places=2)
+    # What the bank credited in the base currency; required when paid in another currency.
+    amount_base: Decimal | None = Field(default=None, gt=0, max_digits=18, decimal_places=2)
     reference: str | None = Field(default=None, max_length=200)
     notes: str | None = Field(default=None, max_length=2000)
+
+    @field_validator("currency")
+    @classmethod
+    def upper(cls, value: str | None) -> str | None:
+        return value.upper() if value else None
 
 
 class AdjustmentIn(_MonthField):

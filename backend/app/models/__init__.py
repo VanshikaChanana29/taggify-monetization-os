@@ -2,7 +2,14 @@
 from app.models.audit import AuditLog
 from app.models.base import Base
 from app.models.channels import Channel, CmsPartner, SlotAssignment
-from app.models.content import ContentDeal, ContentOwner, DealEpisodeRange, DealSlot
+from app.models.content import (
+    ContentDeal,
+    ContentOwner,
+    DealDocument,
+    DealEpisode,
+    DealEpisodeRange,
+    DealSlot,
+)
 from app.models.finance import (
     BankReceipt,
     CmsAdjustment,
@@ -53,6 +60,8 @@ __all__ = [
     "CmsPartner",
     "ContentDeal",
     "ContentOwner",
+    "DealDocument",
+    "DealEpisode",
     "DealEpisodeRange",
     "DealSlot",
     "Employee",

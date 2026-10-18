@@ -48,7 +48,13 @@ from app.services.cms_fees import money
 from app.services.deals import company_today
 from app.services.month_close import closed_months, latest_closed
 from app.services.revenue_import import TEMPLATE, import_revenue
-from app.services.settlement import channel_lines, cms_month, month_end, month_settlements
+from app.services.settlement import (
+    channel_lines,
+    cms_month,
+    month_end,
+    month_settlements,
+    receipt_value,
+)
 
 router = APIRouter(tags=["finance"])
 
@@ -243,10 +249,6 @@ def set_fx(body: FxRateIn, ctx: Auth, request: Request, db: DbSession) -> FxRate
             f"{body.currency} is the company's base currency; no rate needed",
         )
     month = _month(body.month)
-    if month in closed_months(db, ctx.organization):
-        raise HTTPException(
-            status.HTTP_409_CONFLICT, f"{month:%B %Y} is closed; its FX rate is locked"
-        )
     rate = db.scalar(
         select(FxRate).where(
             FxRate.organization_id == ctx.organization.id,
@@ -254,6 +256,23 @@ def set_fx(body: FxRateIn, ctx: Auth, request: Request, db: DbSession) -> FxRate
             FxRate.currency == body.currency,
         )
     )
+    if month in closed_months(db, ctx.organization):
+        # A closed month's revenue must not be re-priced. A first rate for a currency with
+        # no revenue that month (e.g. AED to value a late receipt) changes no closed number.
+        has_revenue = db.scalar(
+            select(RevenueFact.id)
+            .where(
+                RevenueFact.organization_id == ctx.organization.id,
+                RevenueFact.currency == body.currency,
+                RevenueFact.day >= month,
+                RevenueFact.day < month_end(month),
+            )
+            .limit(1)
+        )
+        if rate is not None or has_revenue:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT, f"{month:%B %Y} is closed; its FX rate is locked"
+            )
     before = str(rate.rate) if rate else None
     if rate is None:
         rate = FxRate(
@@ -397,6 +416,7 @@ def finance_month(ctx: Auth, db: DbSession, month: MonthQuery) -> FinanceMonthOu
         fee=money(sum((r.fee_base or zero for r in rows), zero)),
         net_receivable=money(sum((r.net_base or zero for r in rows if r.cms_id), zero)),
         received=money(sum((r.received for r in rows), zero)),
+        fx_difference=money(sum((r.fx_difference for r in rows), zero)),
         outstanding=money(sum((r.outstanding or zero for r in rows), zero)),
         incomplete=any(r.warnings for r in rows),
         rows=[CmsMonthOut(**asdict(r)) for r in rows],
@@ -455,16 +475,7 @@ def finance_cms_month(cms_id: str, ctx: Auth, db: DbSession, month: MonthQuery) 
         )
         if statement
         else None,
-        receipts=[
-            ReceiptOut(
-                id=r.id,
-                received_on=r.received_on,
-                amount=r.amount,
-                reference=r.reference,
-                notes=r.notes,
-            )
-            for r in receipts
-        ],
+        receipts=[_receipt_out(db, ctx, r) for r in receipts],
         adjustments=[
             AdjustmentOut(id=a.id, amount=a.amount, reason=a.reason, created_at=a.created_at)
             for a in adjustments
@@ -508,12 +519,25 @@ def add_receipt(body: ReceiptIn, ctx: Auth, request: Request, db: DbSession) -> 
     cms = _cms(db, ctx, body.cms_partner_id)
     if body.received_on > company_today(ctx.organization):
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Received date is in the future")
+    base = ctx.organization.base_currency
+    currency = body.currency or base
+    if currency == base:
+        credited = body.amount
+    elif body.amount_base is None:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            f"Enter how much the bank credited in {base} for this {currency} payment",
+        )
+    else:
+        credited = body.amount_base
     receipt = BankReceipt(
         organization_id=ctx.organization.id,
         cms_partner_id=cms.id,
         month=_month(body.month),
         received_on=body.received_on,
+        currency=currency,
         amount=body.amount,
+        amount_base=credited,
         reference=body.reference,
         notes=body.notes,
     )
@@ -528,17 +552,26 @@ def add_receipt(body: ReceiptIn, ctx: Auth, request: Request, db: DbSession) -> 
         cms.id,
         {
             "name": f"{cms.name} {body.month}",
-            "amount": str(body.amount),
+            "amount": f"{currency} {body.amount}",
+            "credited": str(credited),
             "reference": body.reference,
         },
     )
     db.commit()
+    db.refresh(receipt)
+    return _receipt_out(db, ctx, receipt)
+
+
+def _receipt_out(db, ctx: AuthContext, r: BankReceipt) -> ReceiptOut:
     return ReceiptOut(
-        id=receipt.id,
-        received_on=receipt.received_on,
-        amount=receipt.amount,
-        reference=receipt.reference,
-        notes=receipt.notes,
+        id=r.id,
+        received_on=r.received_on,
+        currency=r.currency,
+        amount=r.amount,
+        amount_base=r.amount_base,
+        valued_base=receipt_value(db, ctx.organization, r),
+        reference=r.reference,
+        notes=r.notes,
     )
 
 

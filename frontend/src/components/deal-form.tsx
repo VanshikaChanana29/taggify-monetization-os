@@ -12,7 +12,7 @@ import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
 import { api } from "@/lib/api";
 import { COUNTRIES, DEAL_TYPE_LABELS, SCOPE_LABELS } from "@/lib/deals";
-import type { ContentOwner, Deal, DealType, EpisodeScope, StoredDealStatus } from "@/lib/types";
+import type { ContentOwner, Deal, DealType, EpisodeScope, Exclusivity, StoredDealStatus } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 type RangeRow = { season: string; from: string; to: string };
@@ -35,7 +35,16 @@ type Form = {
   fb_slot_limit: string;
   contract_url: string;
   notes: string;
+  languages: string;
+  exclusivity: Exclusivity | "";
+  renewal_terms: string;
+  notice_period_days: string;
+  clip_restrictions: string;
+  agreement_version: string;
 };
+
+const PAYS_FEE: DealType[] = ["fixed_fee", "hybrid"];
+const SHARES: DealType[] = ["revenue_share", "hybrid"];
 
 const EMPTY_RANGE: RangeRow = { season: "", from: "", to: "" };
 
@@ -59,6 +68,12 @@ function fromDeal(deal: Deal | null): Form {
       fb_slot_limit: "0",
       contract_url: "",
       notes: "",
+      languages: "",
+      exclusivity: "",
+      renewal_terms: "",
+      notice_period_days: "",
+      clip_restrictions: "",
+      agreement_version: "",
     };
   }
   return {
@@ -85,6 +100,12 @@ function fromDeal(deal: Deal | null): Form {
     fb_slot_limit: String(deal.fb_slot_limit),
     contract_url: deal.contract_url ?? "",
     notes: deal.notes ?? "",
+    languages: deal.languages.join(", "),
+    exclusivity: deal.exclusivity ?? "",
+    renewal_terms: deal.renewal_terms ?? "",
+    notice_period_days: deal.notice_period_days === null ? "" : String(deal.notice_period_days),
+    clip_restrictions: deal.clip_restrictions ?? "",
+    agreement_version: deal.agreement_version ?? "",
   };
 }
 
@@ -94,9 +115,9 @@ function toPayload(f: Form) {
     title: f.title,
     deal_type: f.deal_type,
     status: f.status,
-    fee_amount: f.deal_type === "fixed_fee" ? f.fee_amount || null : null,
-    currency: f.deal_type === "fixed_fee" ? f.currency : null,
-    revenue_share_pct: f.deal_type === "revenue_share" ? f.revenue_share_pct || null : null,
+    fee_amount: PAYS_FEE.includes(f.deal_type) ? f.fee_amount || null : null,
+    currency: PAYS_FEE.includes(f.deal_type) ? f.currency : null,
+    revenue_share_pct: SHARES.includes(f.deal_type) ? f.revenue_share_pct || null : null,
     term_start: f.term_start,
     term_end: f.term_end,
     episode_scope: f.episode_scope,
@@ -114,6 +135,15 @@ function toPayload(f: Form) {
     fb_slot_limit: Number(f.fb_slot_limit || 0),
     contract_url: f.contract_url || null,
     notes: f.notes || null,
+    languages: f.languages
+      .split(",")
+      .map((l) => l.trim())
+      .filter(Boolean),
+    exclusivity: f.exclusivity || null,
+    renewal_terms: f.renewal_terms || null,
+    notice_period_days: f.notice_period_days === "" ? null : Number(f.notice_period_days),
+    clip_restrictions: f.clip_restrictions || null,
+    agreement_version: f.agreement_version || null,
   };
 }
 
@@ -127,6 +157,7 @@ type FieldKey =
   | "territories"
   | "slots"
   | "contract_url"
+  | "notice_period_days"
   | "form";
 
 type Errors = { fields: Partial<Record<FieldKey, string>>; ranges: Record<number, string> };
@@ -141,6 +172,11 @@ function clientErrors(f: Form): Errors {
   }
   if (Number(f.yt_slot_limit || 0) + Number(f.fb_slot_limit || 0) === 0) {
     fields.slots = "Allow at least one YouTube or Facebook slot.";
+  }
+  const notice = f.notice_period_days === "" ? null : Number(f.notice_period_days);
+  if (notice !== null && f.term_start && f.term_end) {
+    const days = (Date.parse(f.term_end) - Date.parse(f.term_start)) / 86_400_000;
+    if (notice > days) fields.notice_period_days = "Notice period is longer than the whole licence term.";
   }
   if (!f.is_worldwide && f.territories.length === 0) {
     fields.territories = "Choose at least one territory, or tick Worldwide.";
@@ -159,7 +195,10 @@ function clientErrors(f: Form): Errors {
 const SERVER_FIELDS: [string, FieldKey][] = [
   ["term end", "term_end"],
   ["licence fee", "fee_amount"],
+  ["minimum guarantee", "fee_amount"],
   ["share percentage", "revenue_share_pct"],
+  ["revenue share", "revenue_share_pct"],
+  ["notice", "notice_period_days"],
   ["episode", "episodes"],
   ["season", "episodes"],
   ["territor", "territories"],
@@ -329,10 +368,16 @@ export function DealForm({ deal }: { deal: Deal | null }) {
           <Label>Deal type *</Label>
           <Choice value={form.deal_type} options={DEAL_TYPE_LABELS} onChange={(deal_type) => set({ deal_type })} />
         </div>
-        {form.deal_type === "fixed_fee" && (
+        {form.deal_type === "hybrid" && (
+          <p className="text-sm text-muted-foreground md:col-span-2">
+            Taggify pays the owner a minimum guarantee up front; the owner&apos;s revenue share is recouped against it, and only
+            the share above the guarantee is paid extra.
+          </p>
+        )}
+        {PAYS_FEE.includes(form.deal_type) && (
           <>
             <div className="space-y-2">
-              <Label htmlFor="fee">Licence fee *</Label>
+              <Label htmlFor="fee">{form.deal_type === "hybrid" ? "Minimum guarantee *" : "Licence fee *"}</Label>
               <Input
                 id="fee"
                 type="number"
@@ -350,11 +395,12 @@ export function DealForm({ deal }: { deal: Deal | null }) {
               <NativeSelect id="currency" value={form.currency} onChange={(e) => set({ currency: e.target.value })}>
                 <option value="INR">INR — Indian Rupee</option>
                 <option value="USD">USD — US Dollar</option>
+                <option value="AED">AED — UAE Dirham</option>
               </NativeSelect>
             </div>
           </>
         )}
-        {form.deal_type === "revenue_share" && (
+        {SHARES.includes(form.deal_type) && (
           <div className="space-y-2">
             <Label htmlFor="share">Owner&apos;s revenue share (%) *</Label>
             <Input
@@ -518,7 +564,79 @@ export function DealForm({ deal }: { deal: Deal | null }) {
         </div>
       </Section>
 
-      <Section title="Documents & notes" hint="Optional.">
+      <Section title="Contract terms" hint="From the signed agreement. Optional, but recorded per deal (working document §1).">
+        <div className="space-y-2">
+          <Label htmlFor="languages">Languages</Label>
+          <Input
+            id="languages"
+            placeholder="Hindi, English"
+            value={form.languages}
+            onChange={(e) => set({ languages: e.target.value })}
+          />
+          <p className="text-xs text-muted-foreground">Separate with commas.</p>
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="exclusivity">Exclusivity</Label>
+          <NativeSelect
+            id="exclusivity"
+            value={form.exclusivity}
+            onChange={(e) => set({ exclusivity: e.target.value as Exclusivity | "" })}
+          >
+            <option value="">Not recorded</option>
+            <option value="exclusive">Exclusive</option>
+            <option value="non_exclusive">Non-exclusive</option>
+          </NativeSelect>
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="notice">Notice period (days)</Label>
+          <Input
+            id="notice"
+            type="number"
+            min="0"
+            max="3650"
+            placeholder="e.g. 90"
+            className={err.notice_period_days ? INVALID : undefined}
+            value={form.notice_period_days}
+            onChange={(e) => set({ notice_period_days: e.target.value })}
+          />
+          <p className="text-xs text-muted-foreground">Days before the term ends to tell the owner about renewal.</p>
+          <FieldError message={err.notice_period_days} />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="version">Agreement version</Label>
+          <Input
+            id="version"
+            maxLength={60}
+            placeholder="e.g. v2 signed 12 Jan 2026"
+            value={form.agreement_version}
+            onChange={(e) => set({ agreement_version: e.target.value })}
+          />
+        </div>
+        <div className="space-y-2 md:col-span-2">
+          <Label htmlFor="renewal">Renewal terms</Label>
+          <textarea
+            id="renewal"
+            rows={2}
+            className="w-full rounded-xl border border-input bg-card px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            placeholder="e.g. Renews for 2 years at the same fee unless either side gives notice"
+            value={form.renewal_terms}
+            onChange={(e) => set({ renewal_terms: e.target.value })}
+          />
+        </div>
+        <div className="space-y-2 md:col-span-2">
+          <Label htmlFor="clips">Clip restrictions</Label>
+          <textarea
+            id="clips"
+            rows={2}
+            className="w-full rounded-xl border border-input bg-card px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            placeholder="e.g. Max 10 minutes per clip; no full episodes"
+            value={form.clip_restrictions}
+            onChange={(e) => set({ clip_restrictions: e.target.value })}
+          />
+        </div>
+      </Section>
+
+      <Section title="Documents & notes" hint="Optional. Upload the signed contract and annexures on the deal page after saving.">
         <div className="space-y-2 md:col-span-2">
           <Label htmlFor="contract">Contract link (Google Drive)</Label>
           <Input

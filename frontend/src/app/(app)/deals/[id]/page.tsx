@@ -7,7 +7,9 @@ import { Fragment, useCallback, useEffect, useState } from "react";
 
 import { EmptyRow, SortableHead, TablePagination } from "@/components/data-table";
 import { Notice } from "@/components/notice";
+import { DealDocuments } from "@/components/deal-documents";
 import { DealEconomicsPanel } from "@/components/deal-economics";
+import { DealEpisodes } from "@/components/deal-episodes";
 import { Pill } from "@/components/pill";
 import { type SlotAction, SlotAssignPanel } from "@/components/slot-assign-panel";
 import { Button } from "@/components/ui/button";
@@ -54,10 +56,21 @@ const FIELD_LABELS: Record<string, string> = {
   fb_slot_limit: "Facebook slots",
   contract_url: "Contract link",
   notes: "Notes",
+  languages: "Languages",
+  exclusivity: "Exclusivity",
+  renewal_terms: "Renewal terms",
+  notice_period_days: "Notice period (days)",
+  clip_restrictions: "Clip restrictions",
+  agreement_version: "Agreement version",
   channel: "Channel",
 };
 
-const VALUE_LABELS: Record<string, string> = { ...SLOT_STATUS_LABELS, ...DEAL_TYPE_LABELS };
+const VALUE_LABELS: Record<string, string> = {
+  ...SLOT_STATUS_LABELS,
+  ...DEAL_TYPE_LABELS,
+  exclusive: "Exclusive",
+  non_exclusive: "Non-exclusive",
+};
 
 function show(value: unknown): string {
   if (value === null || value === undefined || value === "") return "—";
@@ -217,6 +230,7 @@ function RightsChecker({ deal }: { deal: Deal }) {
             {result.allowed ? <CheckCircle2 className="h-5 w-5" /> : <XCircle className="h-5 w-5" />}
             {result.allowed ? "Allowed" : "Not allowed"} · {formatDate(result.checked_on)}
           </p>
+          {result.episode_title && <p className="mt-1 text-sm">Episode: {result.episode_title}</p>}
           {result.reasons.length > 0 && (
             <ul className="mt-2 list-disc space-y-1 pl-6 text-sm">
               {result.reasons.map((r) => (
@@ -251,6 +265,12 @@ function DealActivity({ dealId, refreshKey }: { dealId: string; refreshKey: numb
     "deal.installment_deleted": "deleted an installment",
     "deal.expense_added": "added an expense",
     "deal.expense_deleted": "deleted an expense",
+    "episode.added": "added episode details",
+    "episode.updated": "edited episode details",
+    "episode.deleted": "deleted episode details",
+    "episode.imported": "imported episodes",
+    "document.uploaded": "uploaded a document",
+    "document.deleted": "deleted a document",
   };
 
   return (
@@ -345,6 +365,10 @@ export default function DealDetailPage() {
       .catch((err: Error) => setError(err.message));
   }, [id]);
   useEffect(load, [load]);
+  const refresh = useCallback(() => {
+    load();
+    setActivityKey((k) => k + 1);
+  }, [load]);
 
   const slots = (deal?.slots ?? []).filter(
     (s) => (!platformFilter || s.platform === platformFilter) && (!statusFilter || s.status === statusFilter),
@@ -549,6 +573,8 @@ export default function DealDetailPage() {
 
       <DealEconomicsPanel dealId={deal.id} dealType={deal.deal_type} refreshKey={activityKey} />
 
+      <DealEpisodes dealId={deal.id} scope={deal.episode_scope} onChange={refresh} />
+
       <div className="grid gap-6 xl:grid-cols-3">
         <div className="space-y-6 xl:col-span-2">
           <SlotHistory dealId={deal.id} refreshKey={activityKey} />
@@ -557,6 +583,7 @@ export default function DealDetailPage() {
 
         <div className="space-y-6">
           <RightsChecker deal={deal} />
+          <DealDocuments dealId={deal.id} onChange={refresh} />
           <section className="rounded-2xl border bg-card p-6 shadow-sm">
             <h3 className="text-lg font-semibold">Terms</h3>
             <dl className="mt-4 space-y-3 text-sm">
@@ -578,6 +605,49 @@ export default function DealDetailPage() {
                   )}
                 </dd>
               </div>
+              <div className="flex justify-between gap-4 border-t pt-3">
+                <dt className="text-muted-foreground">Languages</dt>
+                <dd className="text-right font-medium">{deal.languages.length ? deal.languages.join(", ") : "—"}</dd>
+              </div>
+              <div className="flex justify-between gap-4 border-t pt-3">
+                <dt className="text-muted-foreground">Exclusivity</dt>
+                <dd className="text-right font-medium">
+                  {deal.exclusivity === "exclusive" ? "Exclusive" : deal.exclusivity === "non_exclusive" ? "Non-exclusive" : "—"}
+                </dd>
+              </div>
+              <div className="flex justify-between gap-4 border-t pt-3">
+                <dt className="text-muted-foreground">Notice period</dt>
+                <dd className="text-right font-medium">
+                  {deal.notice_period_days === null ? (
+                    "—"
+                  ) : (
+                    <>
+                      {deal.notice_period_days} days
+                      {deal.notice_deadline && (
+                        <span className="block text-xs font-normal text-muted-foreground">
+                          Tell the owner by {formatDate(deal.notice_deadline)}
+                        </span>
+                      )}
+                    </>
+                  )}
+                </dd>
+              </div>
+              <div className="flex justify-between gap-4 border-t pt-3">
+                <dt className="text-muted-foreground">Agreement version</dt>
+                <dd className="text-right font-medium">{deal.agreement_version ?? "—"}</dd>
+              </div>
+              {deal.renewal_terms && (
+                <div className="border-t pt-3">
+                  <dt className="text-muted-foreground">Renewal terms</dt>
+                  <dd className="mt-1 whitespace-pre-wrap">{deal.renewal_terms}</dd>
+                </div>
+              )}
+              {deal.clip_restrictions && (
+                <div className="border-t pt-3">
+                  <dt className="text-muted-foreground">Clip restrictions</dt>
+                  <dd className="mt-1 whitespace-pre-wrap">{deal.clip_restrictions}</dd>
+                </div>
+              )}
               <div className="flex justify-between gap-4 border-t pt-3">
                 <dt className="text-muted-foreground">Owner contact</dt>
                 <dd className="text-right">

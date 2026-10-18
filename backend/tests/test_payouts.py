@@ -213,7 +213,7 @@ def test_cannot_close_current_month(founder):
 def make_deal(c, ch, **overrides):
     body = deal_body(
         owner(c),
-        fee_amount="5000000",
+        fee_amount=overrides.pop("fee_amount", "5000000"),
         currency="INR",
         yt_slot_limit=1,
         fb_slot_limit=0,

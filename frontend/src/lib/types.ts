@@ -73,7 +73,8 @@ export type AdminUser = {
 // ---- Part 2: content owners and deals ---------------------------------------------------
 
 export type OwnerType = "licensor" | "vendor" | "owned";
-export type DealType = "fixed_fee" | "revenue_share" | "owned";
+export type DealType = "fixed_fee" | "revenue_share" | "hybrid" | "owned";
+export type Exclusivity = "exclusive" | "non_exclusive";
 export type StoredDealStatus = "draft" | "active" | "terminated";
 export type DealStatus = StoredDealStatus | "upcoming" | "expired";
 export type EpisodeScope = "all" | "ranges" | "seasons";
@@ -135,6 +136,15 @@ export type Deal = DealListItem & {
   territories: string[];
   contract_url: string | null;
   notes: string | null;
+  languages: string[];
+  exclusivity: Exclusivity | null;
+  renewal_terms: string | null;
+  notice_period_days: number | null;
+  notice_deadline: string | null;
+  clip_restrictions: string | null;
+  agreement_version: string | null;
+  episode_count: number;
+  document_count: number;
   owner_contact_name: string | null;
   owner_contact_email: string | null;
   slots: Slot[];
@@ -150,7 +160,32 @@ export type DealsSummary = {
   licence_value: { currency: string; amount: string }[];
 };
 
-export type RightsResult = { allowed: boolean; reasons: string[]; checked_on: string };
+export type RightsResult = { allowed: boolean; reasons: string[]; checked_on: string; episode_title: string | null };
+
+export type Episode = {
+  id: string;
+  season: number | null;
+  episode_number: number;
+  title: string;
+  description: string | null;
+  air_date: string | null;
+  duration_minutes: number | null;
+  language: string | null;
+  notes: string | null;
+  created_at: string;
+};
+
+export type DocumentKind = "contract" | "annexure" | "rights_evidence" | "invoice" | "other";
+
+export type DealDocument = {
+  id: string;
+  file_name: string;
+  content_type: string;
+  size_bytes: number;
+  kind: DocumentKind;
+  uploaded_by: string | null;
+  created_at: string;
+};
 
 // ---- Part 3: CMS partners, channels and people -------------------------------------------
 
@@ -345,6 +380,8 @@ export type CmsMonth = {
   variance: string | null;
   adjustments: string;
   received: string;
+  received_credited: string;
+  fx_difference: string;
   outstanding: string | null;
   channel_count: number;
   warnings: string[];
@@ -357,6 +394,7 @@ export type FinanceMonth = {
   fee: string;
   net_receivable: string;
   received: string;
+  fx_difference: string;
   outstanding: string;
   incomplete: boolean;
   rows: CmsMonth[];
@@ -385,7 +423,16 @@ export type CmsMonthDetail = {
     reference: string | null;
     notes: string | null;
   } | null;
-  receipts: { id: string; received_on: string; amount: string; reference: string | null; notes: string | null }[];
+  receipts: {
+    id: string;
+    received_on: string;
+    currency: string;
+    amount: string;
+    amount_base: string;
+    valued_base: string | null;
+    reference: string | null;
+    notes: string | null;
+  }[];
   adjustments: { id: string; amount: string; reason: string; created_at: string }[];
 };
 
@@ -441,6 +488,7 @@ export type DealEconomics = {
   incentives: string;
   expenses: string;
   owner_share: string;
+  royalty: string;
   net_contribution: string;
   recovery_pct: string | null;
   remaining: string | null;

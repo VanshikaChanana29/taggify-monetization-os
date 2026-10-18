@@ -8,6 +8,7 @@ from app.api import (
     cms_partners,
     content_owners,
     dashboard,
+    deal_assets,
     deals,
     employees,
     finance,
@@ -38,4 +39,5 @@ api.include_router(teams.router)
 api.include_router(finance.router)
 api.include_router(payouts.router)
 api.include_router(dashboard.router)
+api.include_router(deal_assets.router)
 app.include_router(api)

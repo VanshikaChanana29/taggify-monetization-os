@@ -50,7 +50,11 @@ class CmsMonth:
     statement_net: Decimal | None = None
     variance: Decimal | None = None
     adjustments: Decimal = Decimal("0.00")
+    # Receipts valued at the month's FX rate: what they clear of the receivable.
     received: Decimal = Decimal("0.00")
+    # What the bank actually credited, and the FX gain (+) or loss (−) between the two.
+    received_credited: Decimal = Decimal("0.00")
+    fx_difference: Decimal = Decimal("0.00")
     outstanding: Decimal | None = None
     channel_count: int = 0
     warnings: list[str] = field(default_factory=list)
@@ -86,6 +90,15 @@ def _gross_by_channel(db: Session, org: Organization, month: date, cms_id: uuid.
         RevenueFact.cms_partner_id == cms_id if cms_id else RevenueFact.cms_partner_id.is_(None)
     )
     return {(c, cur): (g or Decimal(0), v) for c, cur, g, v in db.execute(stmt)}
+
+
+def receipt_value(db: Session, org: Organization, receipt: BankReceipt) -> Decimal | None:
+    """A receipt at the settlement month's FX rate, so $15,000 clears $15,000 of the
+    receivable whatever rate the bank used (that difference is FX gain/loss)."""
+    if receipt.currency == org.base_currency:
+        return receipt.amount
+    rate = fx_rate(db, org, receipt.month, receipt.currency)
+    return money(receipt.amount * rate) if rate is not None else None
 
 
 def cms_month(db: Session, org: Organization, cms: CmsPartner | None, month: date) -> CmsMonth:
@@ -143,13 +156,24 @@ def cms_month(db: Session, org: Organization, cms: CmsPartner | None, month: dat
                 )
             )
         )
-        result.received = money(
-            db.scalar(
-                select(func.coalesce(func.sum(BankReceipt.amount), 0)).where(
-                    BankReceipt.cms_partner_id == cms.id, BankReceipt.month == month
-                )
+        receipts = db.scalars(
+            select(BankReceipt).where(
+                BankReceipt.cms_partner_id == cms.id, BankReceipt.month == month
             )
-        )
+        ).all()
+        for r in receipts:
+            valued = receipt_value(db, org, r)
+            if valued is None:
+                result.warnings.append(
+                    f"No {r.currency}→{org.base_currency} rate for this month to value a "
+                    "receipt; counted at the amount credited."
+                )
+                valued = r.amount_base
+            result.received += valued
+            result.received_credited += r.amount_base
+        result.received = money(result.received)
+        result.received_credited = money(result.received_credited)
+        result.fx_difference = result.received_credited - result.received
         if result.net_base is not None:
             result.outstanding = result.net_base + result.adjustments - result.received
     return result

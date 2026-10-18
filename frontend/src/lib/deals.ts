@@ -17,6 +17,7 @@ export const OWNER_TYPE_LABELS: Record<OwnerType, string> = {
 export const DEAL_TYPE_LABELS: Record<DealType, string> = {
   fixed_fee: "Fixed fee",
   revenue_share: "Revenue share",
+  hybrid: "Minimum guarantee + share",
   owned: "Owned IP",
 };
 
@@ -105,6 +106,9 @@ export function formatMoney(amount: string | number | null, currency: string | n
 export function dealValue(deal: Pick<DealListItem, "deal_type" | "fee_amount" | "currency" | "revenue_share_pct">): string {
   if (deal.deal_type === "fixed_fee") return formatMoney(deal.fee_amount, deal.currency);
   if (deal.deal_type === "revenue_share") return `${Number(deal.revenue_share_pct)}% revenue share`;
+  if (deal.deal_type === "hybrid") {
+    return `${formatMoney(deal.fee_amount, deal.currency)} MG + ${Number(deal.revenue_share_pct)}%`;
+  }
   return "Owned IP";
 }
 

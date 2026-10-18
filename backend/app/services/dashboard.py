@@ -31,12 +31,18 @@ from app.models import (
 )
 from app.services.cms_fees import money
 from app.services.deal_economics import deal_economics
-from app.services.deals import EXPIRING_SOON_DAYS, company_today, effective_status
+from app.services.deals import (
+    EXPIRING_SOON_DAYS,
+    company_today,
+    effective_status,
+    notice_deadline,
+)
 from app.services.incentives import calculate
 from app.services.settlement import CmsMonth, fx_rate, month_end, month_settlements
 
 TREND_MONTHS = 6
 INSTALLMENT_HORIZON_DAYS = 30
+NOTICE_HORIZON_DAYS = 30
 ZERO = Decimal("0.00")
 
 
@@ -196,7 +202,7 @@ def build(db: Session, org: Organization, month: date) -> Dashboard:
     deal_rows: list[DealRow] = []
     rights_total = net_total = ZERO
     for deal in deals:
-        if deal.deal_type != "fixed_fee":
+        if deal.deal_type not in ("fixed_fee", "hybrid"):
             continue
         e = deal_economics(db, org, deal)
         if not e.rights_cost:
@@ -453,6 +459,29 @@ def _operation_items(db, org, today, deals) -> list[Item]:
                 f"{first.title} ends {first.term_end:%d %b %Y}",
                 "/deals?status=expiring",
                 "danger" if first.term_end <= today + timedelta(days=30) else "warning",
+            )
+        )
+
+    horizon = today + timedelta(days=NOTICE_HORIZON_DAYS)
+    notices = sorted(
+        (
+            (notice_deadline(d), d)
+            for d in deals
+            if effective_status(d, today) == "active"
+            and notice_deadline(d) is not None
+            and today <= notice_deadline(d) <= horizon
+        ),
+        key=lambda x: x[0],
+    )
+    for deadline, d in notices:
+        items.append(
+            Item(
+                f"notice-{d.id}",
+                f"Renewal notice due for {d.title}",
+                f"Tell {d.owner.name} by {deadline:%d %b %Y} ({d.notice_period_days} days "
+                f"before the licence ends {d.term_end:%d %b %Y})",
+                f"/deals/{d.id}",
+                "danger" if deadline <= today + timedelta(days=7) else "warning",
             )
         )
 

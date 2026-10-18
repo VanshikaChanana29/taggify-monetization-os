@@ -80,6 +80,12 @@ const ACTION_LABELS: Record<string, string> = {
   "deal.installment_deleted": "Deleted an installment",
   "deal.expense_added": "Added a deal expense",
   "deal.expense_deleted": "Deleted a deal expense",
+  "episode.added": "Added episode details",
+  "episode.updated": "Edited episode details",
+  "episode.deleted": "Deleted episode details",
+  "episode.imported": "Imported episodes",
+  "document.uploaded": "Uploaded a deal document",
+  "document.deleted": "Deleted a deal document",
 };
 
 /** "What" filter: each option matches a group of actions. */
@@ -97,7 +103,19 @@ const ACTION_GROUPS: Record<string, { label: string; actions: string[] }> = {
   switches: { label: "Company switches", actions: ["auth.switch_organization"] },
   deals: {
     label: "Deals & content owners",
-    actions: ["deal.created", "deal.updated", "slot.updated", "owner.created", "owner.updated"],
+    actions: [
+      "deal.created",
+      "deal.updated",
+      "slot.updated",
+      "owner.created",
+      "owner.updated",
+      "episode.added",
+      "episode.updated",
+      "episode.deleted",
+      "episode.imported",
+      "document.uploaded",
+      "document.deleted",
+    ],
   },
   channels: {
     label: "Channels, slots & CMS",

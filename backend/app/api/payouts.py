@@ -459,8 +459,10 @@ def add_installment(
     deal_id: uuid.UUID, body: InstallmentIn, ctx: Auth, request: Request, db: DbSession
 ) -> InstallmentOut:
     deal = _deal(db, ctx, deal_id)
-    if deal.deal_type != "fixed_fee":
-        raise HTTPException(status.HTTP_409_CONFLICT, "Installments are for fixed-fee deals")
+    if deal.deal_type not in ("fixed_fee", "hybrid"):
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, "Installments are for fixed-fee and hybrid deals"
+        )
     i = DealInstallment(organization_id=ctx.organization.id, deal_id=deal.id, **body.model_dump())
     db.add(i)
     db.flush()

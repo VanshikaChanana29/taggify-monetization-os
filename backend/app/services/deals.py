@@ -1,7 +1,7 @@
 """Deal rules: derived status, slot generation, and the rights check."""
 
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from app.models import ContentDeal, DealSlot, Organization
@@ -24,6 +24,13 @@ def effective_status(deal: ContentDeal, today: date) -> str:
     if today > deal.term_end:
         return "expired"
     return "active"
+
+
+def notice_deadline(deal: ContentDeal) -> date | None:
+    """Last day to give renewal/termination notice: term end minus the notice period."""
+    if deal.notice_period_days is None:
+        return None
+    return deal.term_end - timedelta(days=deal.notice_period_days)
 
 
 def slot_limit(deal: ContentDeal, platform: str) -> int:

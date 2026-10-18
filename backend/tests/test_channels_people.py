@@ -323,6 +323,7 @@ def test_rights_check_needs_an_approved_destination(founder):
     ]
 
     assert founder.patch(url, json={"status": "active"}).status_code == 200
-    assert check(ch) == {"allowed": True, "reasons": [], "checked_on": check(ch)["checked_on"]}
+    r = check(ch)
+    assert (r["allowed"], r["reasons"]) == (True, [])
     assert not check(other)["allowed"]
     assert check(fb)["reasons"] == ["Kapil FB is a Facebook channel."]

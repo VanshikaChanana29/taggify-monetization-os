@@ -157,6 +157,7 @@ class EconomicsOut(BaseModel):
     incentives: Decimal
     expenses: Decimal
     owner_share: Decimal
+    royalty: Decimal
     net_contribution: Decimal
     recovery_pct: Decimal | None
     remaining: Decimal | None

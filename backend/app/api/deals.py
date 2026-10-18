@@ -5,7 +5,7 @@ from decimal import Decimal
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, HTTPException, Query, Request, status
-from sqlalchemy import Select, and_, or_, select
+from sqlalchemy import Select, and_, func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.api.deps import Auth, AuthContext, client_ip
@@ -15,6 +15,8 @@ from app.models import (
     Channel,
     ContentDeal,
     ContentOwner,
+    DealDocument,
+    DealEpisode,
     DealEpisodeRange,
     DealSlot,
     SlotAssignment,
@@ -50,6 +52,7 @@ from app.services.deals import (
     check_rights,
     company_today,
     effective_status,
+    notice_deadline,
     sync_slots,
 )
 from app.services.month_close import MonthClosedError, ensure_open
@@ -82,6 +85,12 @@ TRACKED = (
     "fb_slot_limit",
     "contract_url",
     "notes",
+    "languages",
+    "exclusivity",
+    "renewal_terms",
+    "notice_period_days",
+    "clip_restrictions",
+    "agreement_version",
 )
 
 StatusFilter = EffectiveStatus | Literal["expiring"]
@@ -168,6 +177,19 @@ def _out(db: Session, deal: ContentDeal, today: date) -> DealOut:
         territories=deal.territories,
         contract_url=deal.contract_url,
         notes=deal.notes,
+        languages=deal.languages,
+        exclusivity=deal.exclusivity,
+        renewal_terms=deal.renewal_terms,
+        notice_period_days=deal.notice_period_days,
+        notice_deadline=notice_deadline(deal),
+        clip_restrictions=deal.clip_restrictions,
+        agreement_version=deal.agreement_version,
+        episode_count=db.scalar(
+            select(func.count()).select_from(DealEpisode).where(DealEpisode.deal_id == deal.id)
+        ),
+        document_count=db.scalar(
+            select(func.count()).select_from(DealDocument).where(DealDocument.deal_id == deal.id)
+        ),
         owner_contact_name=deal.owner.contact_name,
         owner_contact_email=deal.owner.contact_email,
         slots=_slot_outs(db, list(deal.slots)),
@@ -249,7 +271,7 @@ def list_deals(
     q: str | None = None,
     owner_id: uuid.UUID | None = None,
     status_: Annotated[StatusFilter | None, Query(alias="status")] = None,
-    deal_type: Literal["fixed_fee", "revenue_share", "owned"] | None = None,
+    deal_type: Literal["fixed_fee", "revenue_share", "hybrid", "owned"] | None = None,
     sort: SortKey = "term_end",
     direction: Literal["asc", "desc"] = "asc",
 ) -> Page[DealListItem]:
@@ -425,7 +447,20 @@ def check_deal_rights(
     if body.channel_id:
         channel = _channel(db, ctx, body.channel_id)
         reasons += _destination_reasons(db, deal, channel, body.platform, on_date)
-    return RightsCheckOut(allowed=not reasons, reasons=reasons, checked_on=on_date)
+    title = None
+    if body.episode:
+        title = db.scalar(
+            select(DealEpisode.title).where(
+                DealEpisode.deal_id == deal.id,
+                DealEpisode.episode_number == body.episode,
+                DealEpisode.season == body.season
+                if deal.episode_scope == "seasons"
+                else DealEpisode.season.is_(None),
+            )
+        )
+    return RightsCheckOut(
+        allowed=not reasons, reasons=reasons, checked_on=on_date, episode_title=title
+    )
 
 
 SLOT_STATE_TEXT = {

@@ -65,6 +65,7 @@ export default function FxPage() {
           <Label htmlFor="fx-cur">Currency</Label>
           <NativeSelect id="fx-cur" className="w-32" value={form.currency} onChange={(e) => setForm({ ...form, currency: e.target.value })}>
             <option value="USD">USD</option>
+            <option value="AED">AED</option>
             <option value="EUR">EUR</option>
             <option value="GBP">GBP</option>
           </NativeSelect>

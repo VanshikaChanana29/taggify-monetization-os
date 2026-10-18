@@ -11,6 +11,7 @@ import { Notice } from "@/components/notice";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { api } from "@/lib/api";
 import { formatDate, todayISO } from "@/lib/deals";
@@ -42,7 +43,7 @@ function CmsMonthPage() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [statement, setStatement] = useState({ gross: "", fee: "", reference: "" });
-  const [receipt, setReceipt] = useState({ amount: "", received_on: todayISO(), reference: "" });
+  const [receipt, setReceipt] = useState({ currency: "", amount: "", amount_base: "", received_on: todayISO(), reference: "" });
   const [adjustment, setAdjustment] = useState({ amount: "", reason: "" });
 
   const load = useCallback(() => {
@@ -75,6 +76,9 @@ function CmsMonthPage() {
   const s = data.summary;
   const cur = s.currency;
   const base = data.base_currency;
+  // A CMS usually pays in its settlement currency (USD), sometimes AED, or the base currency.
+  const payCurrencies = Array.from(new Set([s.currency ?? "USD", "USD", "AED", base]));
+  const payCurrency = receipt.currency || payCurrencies[0];
   const hasCms = cmsId !== "none";
   const net = statement.gross && statement.fee ? (Number(statement.gross) - Number(statement.fee)).toFixed(2) : "";
 
@@ -220,13 +224,23 @@ function CmsMonthPage() {
 
           <section className="rounded-2xl border bg-card p-6 shadow-sm">
             <h3 className="text-lg font-semibold">Cash received</h3>
-            <p className="text-sm text-muted-foreground">Bank receipts for this month, in {base}.</p>
+            <p className="text-sm text-muted-foreground">
+              What the CMS paid, in the currency it paid (USD, AED…), and what the bank credited in {base}.
+            </p>
             <ul className="mt-4 space-y-2 text-sm">
-              {data.receipts.map((r) => (
+              {data.receipts.map((r) => {
+                const fx = r.valued_base !== null && r.currency !== base ? Number(r.amount_base) - Number(r.valued_base) : 0;
+                return (
                 <li key={r.id} className="flex items-center justify-between gap-2">
                   <span>
-                    <span className="font-semibold">{money(r.amount, base)}</span>
+                    <span className="font-semibold">{money(r.amount, r.currency)}</span>
+                    {r.currency !== base && <span> → {money(r.amount_base, base)} credited</span>}
                     <span className="text-muted-foreground"> · {formatDate(r.received_on)}{r.reference ? ` · ${r.reference}` : ""}</span>
+                    {fx !== 0 && (
+                      <span className={fx > 0 ? "block text-xs text-emerald-600" : "block text-xs text-red-600"}>
+                        FX {fx > 0 ? "gain" : "loss"} {money(Math.abs(fx), base)} vs the month&apos;s rate ({money(r.valued_base, base)})
+                      </span>
+                    )}
                   </span>
                   <Button
                     variant="ghost"
@@ -237,7 +251,8 @@ function CmsMonthPage() {
                     <Trash2 />
                   </Button>
                 </li>
-              ))}
+                );
+              })}
               {data.receipts.length === 0 && <li className="text-muted-foreground">Nothing received yet.</li>}
             </ul>
             <form
@@ -247,18 +262,51 @@ function CmsMonthPage() {
                 run(async () => {
                   await api("/finance/receipts", {
                     method: "POST",
-                    json: { cms_partner_id: cmsId, month, amount: receipt.amount, received_on: receipt.received_on, reference: receipt.reference || null },
+                    json: {
+                      cms_partner_id: cmsId,
+                      month,
+                      currency: payCurrency,
+                      amount: receipt.amount,
+                      amount_base: payCurrency === base ? null : receipt.amount_base,
+                      received_on: receipt.received_on,
+                      reference: receipt.reference || null,
+                    },
                   });
-                  setReceipt({ amount: "", received_on: todayISO(), reference: "" });
+                  setReceipt({ currency: receipt.currency, amount: "", amount_base: "", received_on: todayISO(), reference: "" });
                 }, "Receipt added.");
               }}
             >
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <Label htmlFor="rc-amount">Amount ({base}) *</Label>
-                  <Input id="rc-amount" type="number" step="0.01" min="0.01" required value={receipt.amount} onChange={(e) => setReceipt({ ...receipt, amount: e.target.value })} />
+                  <Label htmlFor="rc-currency">Paid in</Label>
+                  <NativeSelect id="rc-currency" value={payCurrency} onChange={(e) => setReceipt({ ...receipt, currency: e.target.value })}>
+                    {payCurrencies.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </NativeSelect>
                 </div>
                 <div className="space-y-1">
+                  <Label htmlFor="rc-amount">Amount ({payCurrency}) *</Label>
+                  <Input id="rc-amount" type="number" step="0.01" min="0.01" required value={receipt.amount} onChange={(e) => setReceipt({ ...receipt, amount: e.target.value })} />
+                </div>
+                {payCurrency !== base && (
+                  <div className="col-span-2 space-y-1">
+                    <Label htmlFor="rc-base">Bank credited ({base}) *</Label>
+                    <Input
+                      id="rc-base"
+                      type="number"
+                      step="0.01"
+                      min="0.01"
+                      required
+                      placeholder={`What reached the bank in ${base}`}
+                      value={receipt.amount_base}
+                      onChange={(e) => setReceipt({ ...receipt, amount_base: e.target.value })}
+                    />
+                  </div>
+                )}
+                <div className="col-span-2 space-y-1">
                   <Label htmlFor="rc-date">Received on *</Label>
                   <Input id="rc-date" type="date" max={todayISO()} required value={receipt.received_on} onChange={(e) => setReceipt({ ...receipt, received_on: e.target.value })} />
                 </div>
@@ -314,8 +362,14 @@ function CmsMonthPage() {
             <div className="mt-6 space-y-1 border-t pt-4 text-sm">
               <p className="flex justify-between"><span className="text-muted-foreground">Net receivable</span><span>{money(s.net_base, base)}</span></p>
               <p className="flex justify-between"><span className="text-muted-foreground">± Adjustments</span><span>{money(s.adjustments, base)}</span></p>
-              <p className="flex justify-between"><span className="text-muted-foreground">− Received</span><span>{money(s.received, base)}</span></p>
+              <p className="flex justify-between"><span className="text-muted-foreground">− Received (at the month&apos;s rate)</span><span>{money(s.received, base)}</span></p>
               <p className="flex justify-between text-base font-bold"><span>Outstanding</span><span>{money(s.outstanding, base)}</span></p>
+              {Number(s.fx_difference) !== 0 && (
+                <p className="flex justify-between pt-2 text-xs">
+                  <span className="text-muted-foreground">FX {Number(s.fx_difference) > 0 ? "gain" : "loss"} on receipts (bank vs month rate)</span>
+                  <span className={Number(s.fx_difference) > 0 ? "text-emerald-600" : "text-red-600"}>{money(s.fx_difference, base)}</span>
+                </p>
+              )}
             </div>
           </section>
         </div>

@@ -53,6 +53,8 @@ class Economics:
     incentives: Decimal = Decimal(0)
     expenses: Decimal = Decimal(0)
     owner_share: Decimal = Decimal(0)
+    # The owner's full revenue share before netting the minimum guarantee (hybrid deals).
+    royalty: Decimal = Decimal(0)
     net_contribution: Decimal = Decimal(0)
     recovery_pct: Decimal | None = None
     remaining: Decimal | None = None
@@ -70,7 +72,8 @@ def deal_economics(db: Session, org: Organization, deal: ContentDeal) -> Economi
     warnings: list[str] = []
 
     rights_cost = None
-    if deal.deal_type == "fixed_fee" and deal.fee_amount is not None:
+    # The rights cost is the licence fee, or for a hybrid deal the minimum guarantee.
+    if deal.deal_type in ("fixed_fee", "hybrid") and deal.fee_amount is not None:
         if deal.currency == base:
             rights_cost = deal.fee_amount
         else:
@@ -179,8 +182,12 @@ def deal_economics(db: Session, org: Organization, deal: ContentDeal) -> Economi
             )
         )
     )
-    if deal.deal_type == "revenue_share" and deal.revenue_share_pct is not None:
-        result.owner_share = money(result.gross * deal.revenue_share_pct / 100)
+    if deal.deal_type in ("revenue_share", "hybrid") and deal.revenue_share_pct is not None:
+        result.royalty = money(result.gross * deal.revenue_share_pct / 100)
+        # Hybrid: the minimum guarantee is an advance on the owner's share, so only the
+        # share above it is an extra cost.
+        recouped = (rights_cost or Decimal(0)) if deal.deal_type == "hybrid" else Decimal(0)
+        result.owner_share = max(Decimal("0.00"), result.royalty - recouped)
     result.net_contribution = (
         result.gross - result.cms_fee - result.incentives - result.expenses - result.owner_share
     )

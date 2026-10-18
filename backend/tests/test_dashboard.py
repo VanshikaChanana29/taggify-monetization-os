@@ -133,6 +133,7 @@ def test_operations_needing_attention(founder, setup):  # noqa: F811
             term_end=str(TODAY + timedelta(days=20)),
             yt_slot_limit=2,
             fb_slot_limit=0,
+            notice_period_days=15,
         ),
     ).json()
     r = post(
@@ -150,6 +151,8 @@ def test_operations_needing_attention(founder, setup):  # noqa: F811
     assert ops["vacant"]["title"] == "1 unused slot on live deals"
     assert ops["vacant"]["href"] == f"/deals/{soon['id']}"
     assert ops["unmanaged"]["title"] == "1 channel without a manager"
+    notice = ops[f"notice-{soon['id']}"]  # ends in 20 days, 15 days' notice → due in 5
+    assert (notice["title"], notice["severity"]) == ("Renewal notice due for CID", "danger")
 
     listed = founder.get("/api/channels?managed=no").json()["items"]
     assert [c["name"] for c in listed] == ["Spare Channel"]

@@ -6,7 +6,8 @@ from typing import Literal, Self
 from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 
 OwnerType = Literal["licensor", "vendor", "owned"]
-DealType = Literal["fixed_fee", "revenue_share", "owned"]
+DealType = Literal["fixed_fee", "revenue_share", "hybrid", "owned"]
+Exclusivity = Literal["exclusive", "non_exclusive"]
 StoredStatus = Literal["draft", "active", "terminated"]
 EffectiveStatus = Literal["draft", "upcoming", "active", "expired", "terminated"]
 EpisodeScope = Literal["all", "ranges", "seasons"]
@@ -97,8 +98,22 @@ class DealIn(BaseModel):
     fb_slot_limit: int = Field(ge=0, le=100)
     contract_url: str | None = Field(default=None, max_length=500)
     notes: str | None = Field(default=None, max_length=5000)
+    languages: list[str] = Field(default_factory=list, max_length=50)
+    exclusivity: Exclusivity | None = None
+    renewal_terms: str | None = Field(default=None, max_length=5000)
+    notice_period_days: int | None = Field(default=None, ge=0, le=3650)
+    clip_restrictions: str | None = Field(default=None, max_length=5000)
+    agreement_version: str | None = Field(default=None, max_length=60)
 
-    @field_validator("contract_url", "notes", "currency", mode="before")
+    @field_validator(
+        "contract_url",
+        "notes",
+        "currency",
+        "renewal_terms",
+        "clip_restrictions",
+        "agreement_version",
+        mode="before",
+    )
     @classmethod
     def blank(cls, value: str | None) -> str | None:
         return _blank_to_none(value)
@@ -116,6 +131,12 @@ class DealIn(BaseModel):
                 raise ValueError("A fixed-fee deal needs a licence fee and currency")
             self.currency = self.currency.upper()
             self.revenue_share_pct = None
+        elif self.deal_type == "hybrid":
+            if self.fee_amount is None or not self.currency:
+                raise ValueError("A hybrid deal needs a minimum guarantee and currency")
+            if self.revenue_share_pct is None:
+                raise ValueError("A hybrid deal needs the owner's revenue share percentage")
+            self.currency = self.currency.upper()
         elif self.deal_type == "revenue_share":
             if self.revenue_share_pct is None:
                 raise ValueError("A revenue-share deal needs a share percentage")
@@ -143,6 +164,13 @@ class DealIn(BaseModel):
             if any(len(c) != 2 or not c.isalpha() for c in codes):
                 raise ValueError("Territories must be 2-letter country codes")
             self.territories = sorted(codes)
+
+        seen: dict[str, str] = {}
+        for lang in self.languages:
+            name = " ".join(lang.split())[:40]
+            if name:
+                seen.setdefault(name.lower(), name)
+        self.languages = list(seen.values())
 
         if self.yt_slot_limit + self.fb_slot_limit == 0:
             raise ValueError("Allow at least one YouTube or Facebook slot")
@@ -198,6 +226,16 @@ class DealOut(DealListItem):
     territories: list[str]
     contract_url: str | None
     notes: str | None
+    languages: list[str]
+    exclusivity: Exclusivity | None
+    renewal_terms: str | None
+    notice_period_days: int | None
+    # term_end − notice period: the last day to tell the owner about renewal.
+    notice_deadline: date | None
+    clip_restrictions: str | None
+    agreement_version: str | None
+    episode_count: int
+    document_count: int
     owner_contact_name: str | None
     owner_contact_email: str | None
     slots: list[SlotOut]
@@ -232,3 +270,5 @@ class RightsCheckOut(BaseModel):
     allowed: bool
     reasons: list[str]
     checked_on: date
+    # From the deal's episode list, when that episode has details.
+    episode_title: str | None = None

@@ -304,6 +304,7 @@ def test_rights_check_allows_licensed_use(founder):
         "allowed": True,
         "reasons": [],
         "checked_on": str(TODAY),
+        "episode_title": None,
     }
 
 

@@ -39,12 +39,17 @@ export function DealEconomicsPanel({ dealId, dealType, refreshKey }: { dealId: s
   const cur = e.base_currency;
   const pct = e.recovery_pct ? Math.min(100, Math.max(0, Number(e.recovery_pct))) : 0;
   const rows: [string, string, boolean?][] = [
-    ...(e.rights_cost ? [["Content rights acquisition", money(e.rights_cost, cur)] as [string, string]] : []),
+    ...(e.rights_cost
+      ? [[dealType === "hybrid" ? "Minimum guarantee (rights cost)" : "Content rights acquisition", money(e.rights_cost, cur)] as [string, string]]
+      : []),
     ["Gross revenue earned", money(e.gross, cur)],
     ["CMS commission", `−${money(e.cms_fee, cur)}`],
     ["Incentives", `−${money(e.incentives, cur)}`],
     ["Operating expenses", `−${money(e.expenses, cur)}`],
     ...(dealType === "revenue_share" ? [["Owner's revenue share", `−${money(e.owner_share, cur)}`] as [string, string]] : []),
+    ...(dealType === "hybrid"
+      ? [[`Owner's share above the guarantee (share earned ${money(e.royalty, cur)})`, `−${money(e.owner_share, cur)}`] as [string, string]]
+      : []),
     ["Net contribution", money(e.net_contribution, cur), true],
     ...(e.remaining !== null ? [["Remaining investment to recover", money(e.remaining, cur), true] as [string, string, boolean]] : []),
   ];
@@ -118,7 +123,7 @@ export function DealEconomicsPanel({ dealId, dealType, refreshKey }: { dealId: s
       </div>
 
       <div className="grid gap-6 xl:grid-cols-2">
-        {dealType === "fixed_fee" && (
+        {(dealType === "fixed_fee" || dealType === "hybrid") && (
           <div>
             <h4 className="font-semibold">Installments to the content owner</h4>
             <p className="text-sm text-muted-foreground">

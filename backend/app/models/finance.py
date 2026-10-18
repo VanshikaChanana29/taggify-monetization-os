@@ -118,8 +118,12 @@ class BankReceipt(UUIDPrimaryKeyMixin, OrgScopedMixin, TimestampMixin, Base):
     )
     month: Mapped[date] = mapped_column(Date, index=True)
     received_on: Mapped[date] = mapped_column(Date)
-    # In the company's base currency (what the bank shows).
+    # What the CMS paid, in the currency it paid in (USD, AED, INR…).
+    currency: Mapped[str] = mapped_column(String(3), server_default="INR")
     amount: Mapped[Decimal] = mapped_column(Numeric(18, 2))
+    # What the bank actually credited in the company's base currency. The difference from
+    # the month's FX valuation is an FX gain/loss, not a change in what the CMS owes.
+    amount_base: Mapped[Decimal] = mapped_column(Numeric(18, 2))
     reference: Mapped[str | None] = mapped_column(String(200))
     notes: Mapped[str | None] = mapped_column(Text)
 

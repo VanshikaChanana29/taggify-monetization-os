@@ -2,14 +2,25 @@ import uuid
 from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import CheckConstraint, Date, ForeignKey, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import (
+    CheckConstraint,
+    Date,
+    ForeignKey,
+    LargeBinary,
+    Numeric,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, OrgScopedMixin, TimestampMixin, UUIDPrimaryKeyMixin
 
 OWNER_TYPES = ("licensor", "vendor", "owned")
-DEAL_TYPES = ("fixed_fee", "revenue_share", "owned")
+# hybrid = a minimum guarantee paid up front, recouped against a revenue share.
+DEAL_TYPES = ("fixed_fee", "revenue_share", "hybrid", "owned")
+EXCLUSIVITY = ("exclusive", "non_exclusive")
 DEAL_STATUSES = ("draft", "active", "terminated")
 EPISODE_SCOPES = ("all", "ranges", "seasons")
 PLATFORMS = ("youtube", "facebook")
@@ -59,6 +70,13 @@ class ContentDeal(UUIDPrimaryKeyMixin, OrgScopedMixin, TimestampMixin, Base):
     fb_slot_limit: Mapped[int] = mapped_column(default=0)
     contract_url: Mapped[str | None] = mapped_column(String(500))
     notes: Mapped[str | None] = mapped_column(Text)
+    # Rights inventory fields from the working document (§1).
+    languages: Mapped[list[str]] = mapped_column(JSONB, default=list, server_default="[]")
+    exclusivity: Mapped[str | None] = mapped_column(String(20))
+    renewal_terms: Mapped[str | None] = mapped_column(Text)
+    notice_period_days: Mapped[int | None]
+    clip_restrictions: Mapped[str | None] = mapped_column(Text)
+    agreement_version: Mapped[str | None] = mapped_column(String(60))
 
     owner: Mapped[ContentOwner] = relationship(lazy="joined")
     episode_ranges: Mapped[list["DealEpisodeRange"]] = relationship(
@@ -105,3 +123,52 @@ class DealSlot(UUIDPrimaryKeyMixin, OrgScopedMixin, TimestampMixin, Base):
     @property
     def code(self) -> str:
         return f"{SLOT_PREFIX[self.platform]}-{self.number:02d}"
+
+
+class DealEpisode(UUIDPrimaryKeyMixin, OrgScopedMixin, TimestampMixin, Base):
+    """Metadata for one licensed episode (slide 4 step 03): title, synopsis, air date…"""
+
+    __tablename__ = "deal_episodes"
+    __table_args__ = (
+        # NULLS NOT DISTINCT so episode 101 without a season is unique too.
+        UniqueConstraint(
+            "deal_id",
+            "season",
+            "episode_number",
+            name="uq_deal_episode",
+            postgresql_nulls_not_distinct=True,
+        ),
+    )
+
+    deal_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("content_deals.id", ondelete="CASCADE"), index=True
+    )
+    season: Mapped[int | None]
+    episode_number: Mapped[int]
+    title: Mapped[str] = mapped_column(String(300))
+    description: Mapped[str | None] = mapped_column(Text)
+    air_date: Mapped[date | None] = mapped_column(Date)
+    duration_minutes: Mapped[int | None]
+    language: Mapped[str | None] = mapped_column(String(60))
+    notes: Mapped[str | None] = mapped_column(Text)
+
+
+class DealDocument(UUIDPrimaryKeyMixin, OrgScopedMixin, TimestampMixin, Base):
+    """A file attached to a deal: signed contract, annexure, rights evidence (slide 4 step 03).
+
+    Stored in the database for now; moves to object storage with production (Part 8).
+    """
+
+    __tablename__ = "deal_documents"
+
+    deal_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("content_deals.id", ondelete="CASCADE"), index=True
+    )
+    file_name: Mapped[str] = mapped_column(String(255))
+    content_type: Mapped[str] = mapped_column(String(120))
+    size_bytes: Mapped[int]
+    kind: Mapped[str] = mapped_column(String(30), default="contract")
+    uploaded_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    data: Mapped[bytes] = mapped_column(LargeBinary, deferred=True)
