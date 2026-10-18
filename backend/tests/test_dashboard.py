@@ -149,7 +149,7 @@ def test_operations_needing_attention(founder, setup):  # noqa: F811
     assert ops["expiring"]["severity"] == "danger"
     assert ops["whitelisting"]["title"] == "1 whitelisting request pending"
     assert ops["vacant"]["title"] == "1 unused slot on live deals"
-    assert ops["vacant"]["href"] == f"/deals/{soon['id']}"
+    assert ops["vacant"]["href"] == f"/deals/{soon['id']}?tab=slots"
     assert ops["unmanaged"]["title"] == "1 channel without a manager"
     notice = ops[f"notice-{soon['id']}"]  # ends in 20 days, 15 days' notice → due in 5
     assert (notice["title"], notice["severity"]) == ("Renewal notice due for CID", "danger")

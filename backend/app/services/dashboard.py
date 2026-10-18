@@ -383,7 +383,7 @@ def _money_items(db, org, month, today, rows, run) -> list[Item]:
                 f"installment-{inst.id}",
                 f"{title} installment {'overdue' if overdue else 'due'}",
                 f"{'Was due' if overdue else 'Due'} {inst.due_date:%d %b %Y}",
-                f"/deals/{inst.deal_id}",
+                f"/deals/{inst.deal_id}?tab=payments",
                 "danger" if overdue else "info",
                 inst.amount,
             )
@@ -492,7 +492,7 @@ def _operation_items(db, org, today, deals) -> list[Item]:
                 "whitelisting",
                 f"{len(pending)} whitelisting request{'s' if len(pending) > 1 else ''} pending",
                 ", ".join(sorted({f"{d.title} {s.code}" for d, s in pending}))[:200],
-                f"/deals/{pending[0][0].id}",
+                f"/deals/{pending[0][0].id}?tab=slots",
                 "warning",
             )
         )
@@ -520,7 +520,7 @@ def _operation_items(db, org, today, deals) -> list[Item]:
                 "vacant",
                 f"{count} unused slot{'s' if count > 1 else ''} on live deals",
                 ", ".join(sorted(titles[i] for i, _ in vacant)),
-                f"/deals/{vacant[0][0]}" if len(vacant) == 1 else "/deals?status=active",
+                f"/deals/{vacant[0][0]}?tab=slots" if len(vacant) == 1 else "/deals?status=active",
                 "info",
             )
         )

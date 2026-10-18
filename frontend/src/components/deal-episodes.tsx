@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { EmptyRow, SearchInput, TablePagination } from "@/components/data-table";
 import { Notice } from "@/components/notice";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -186,8 +187,15 @@ export function DealEpisodes({ dealId, scope, onChange }: { dealId: string; scop
             ))}
           </Notice>
         )}
+        <Dialog
+          open={editing !== null}
+          onClose={() => setEditing(null)}
+          title={editing === "new" ? "Add episode" : "Edit episode"}
+          description="Only episodes inside the licence can be added."
+          wide
+        >
         {editing && (
-          <form onSubmit={save} className="grid gap-3 rounded-xl border bg-muted/40 p-4 md:grid-cols-6">
+          <form onSubmit={save} className="grid gap-4 md:grid-cols-6">
             {scope === "seasons" && (
               <div className="space-y-1">
                 <Label htmlFor="ep-season">Season *</Label>
@@ -246,14 +254,17 @@ export function DealEpisodes({ dealId, scope, onChange }: { dealId: string; scop
                 <Notice kind="error">{fieldError.message}</Notice>
               </div>
             )}
-            <div className="flex gap-2 md:col-span-6">
-              <Button type="submit">{editing === "new" ? "Add episode" : "Save"}</Button>
-              <Button type="button" variant="outline" onClick={() => setEditing(null)}>
-                Cancel
-              </Button>
+            <div className="md:col-span-6">
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setEditing(null)}>
+                  Cancel
+                </Button>
+                <Button type="submit">{editing === "new" ? "Add episode" : "Save"}</Button>
+              </DialogFooter>
             </div>
           </form>
         )}
+        </Dialog>
         <SearchInput value={search} onChange={setSearch} placeholder="Search title, details or episode number…" />
       </div>
 

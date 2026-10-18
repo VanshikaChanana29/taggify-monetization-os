@@ -21,7 +21,11 @@ const TITLES: Record<SlotAction, string> = {
   unassign: "Remove the channel from",
 };
 
-/** Inline panel under a slot row: pick a channel (assign/replace) or confirm removal. */
+export function slotActionTitle(action: SlotAction, slot: Slot): string {
+  return `${TITLES[action]} ${slot.code}`;
+}
+
+/** Popup body: pick a channel (assign/replace) or confirm removal. */
 export function SlotAssignPanel({
   dealId,
   slot,
@@ -75,12 +79,8 @@ export function SlotAssignPanel({
   }
 
   return (
-    <form onSubmit={submit} className="space-y-4 rounded-xl border border-primary/30 bg-accent/40 p-4">
-      <p className="font-semibold">
-        {TITLES[action]} <span className="font-mono">{slot.code}</span>
-        {action !== "assign" && slot.channel_name && <span className="font-normal text-muted-foreground"> · now {slot.channel_name}</span>}
-      </p>
-      <div className="grid gap-3 md:grid-cols-4">
+    <form onSubmit={submit} className="space-y-4">
+      <div className="grid gap-4 md:grid-cols-4">
         {action !== "unassign" && (
           <>
             <div className="space-y-1 md:col-span-2">
@@ -134,12 +134,12 @@ export function SlotAssignPanel({
         </p>
       )}
       {error && <Notice kind="error">{error}</Notice>}
-      <div className="flex gap-2">
-        <Button type="submit" size="sm" variant={action === "unassign" ? "destructive" : "default"} disabled={saving}>
-          {action === "assign" ? "Assign" : action === "replace" ? "Replace" : "Remove channel"}
-        </Button>
-        <Button type="button" size="sm" variant="outline" onClick={onCancel}>
+      <div className="flex justify-end gap-2 border-t pt-4">
+        <Button type="button" variant="outline" onClick={onCancel}>
           Cancel
+        </Button>
+        <Button type="submit" variant={action === "unassign" ? "destructive" : "default"} disabled={saving}>
+          {action === "assign" ? "Assign" : action === "replace" ? "Replace" : "Remove channel"}
         </Button>
       </div>
     </form>
