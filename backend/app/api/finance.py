@@ -395,7 +395,11 @@ def delete_schedule(schedule_id: uuid.UUID, ctx: Auth, request: Request, db: DbS
         "cms.fee_schedule_deleted",
         "cms_partner",
         schedule.cms_partner_id,
-        {"from": f"{schedule.effective_from:%Y-%m}", "tiers": schedule.tiers},
+        {
+            "name": db.get(CmsPartner, schedule.cms_partner_id).name,
+            "from": f"{schedule.effective_from:%Y-%m}",
+            "tiers": schedule.tiers,
+        },
     )
     db.delete(schedule)
     db.commit()
