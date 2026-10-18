@@ -19,6 +19,7 @@ export function DealEconomicsPanel({ dealId, dealType, refreshKey }: { dealId: s
   const [error, setError] = useState<string | null>(null);
   const [inst, setInst] = useState({ due_date: "", amount: "" });
   const [exp, setExp] = useState({ spent_on: todayISO(), amount: "", description: "" });
+  const [paidOn, setPaidOn] = useState<Record<string, string>>({});
 
   const load = useCallback(() => {
     api<DealEconomics>(`/deals/${dealId}/economics`).then(setE).catch((err: Error) => setError(err.message));
@@ -146,16 +147,29 @@ export function DealEconomicsPanel({ dealId, dealType, refreshKey }: { dealId: s
                     ) : (
                       <Pill tone={DEAL_STATUS_TONES.expired}>Due</Pill>
                     )}
+                    {!i.paid_on && (
+                      <Input
+                        aria-label="Paid on"
+                        type="date"
+                        className="h-9 w-40"
+                        max={todayISO()}
+                        value={paidOn[i.id] ?? todayISO()}
+                        onChange={(ev) => setPaidOn({ ...paidOn, [i.id]: ev.target.value })}
+                      />
+                    )}
                     <Button
                       size="sm"
                       variant="outline"
                       onClick={() =>
                         run(() =>
-                          api(`/installments/${i.id}`, { method: "PATCH", json: i.paid_on ? { paid_on: null } : { paid_on: todayISO() } }),
+                          api(`/installments/${i.id}`, {
+                            method: "PATCH",
+                            json: i.paid_on ? { paid_on: null } : { paid_on: paidOn[i.id] ?? todayISO() },
+                          }),
                         )
                       }
                     >
-                      {i.paid_on ? "Mark unpaid" : "Mark paid today"}
+                      {i.paid_on ? "Mark unpaid" : "Mark paid"}
                     </Button>
                     {!i.paid_on && (
                       <Button size="icon" variant="ghost" aria-label="Delete installment" onClick={() => run(() => api(`/installments/${i.id}`, { method: "DELETE" }))}>
