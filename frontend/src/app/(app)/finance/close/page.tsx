@@ -1,21 +1,20 @@
 "use client";
 
-import { AlertTriangle, ArrowLeft, CheckCircle2, Lock, LockOpen, XCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Lock, LockOpen, XCircle } from "lucide-react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { Suspense, useCallback, useEffect, useState } from "react";
 
 import { EmptyRow } from "@/components/data-table";
-import { MonthPicker } from "@/components/month-picker";
+import { useFinanceMonth } from "@/components/finance/finance-shell";
 import { Notice } from "@/components/notice";
-import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { InfoTip } from "@/components/ui/info-tip";
 import { HELP } from "@/lib/help";
 import { api } from "@/lib/api";
-import { compactInr, formatMonth, shiftMonth, thisMonth } from "@/lib/finance";
+import { compactInr, formatMonth } from "@/lib/finance";
 import { formatDateTime } from "@/lib/format";
 import type { CloseStatus, ClosedMonth } from "@/lib/types";
 
@@ -29,7 +28,7 @@ const STEPS = [
 
 function ClosePage() {
   const router = useRouter();
-  const month = useSearchParams().get("month") ?? shiftMonth(thisMonth(), -1);
+  const [month] = useFinanceMonth();
   const [status, setStatus] = useState<CloseStatus | null>(null);
   const [closes, setCloses] = useState<ClosedMonth[]>([]);
   const [notes, setNotes] = useState("");
@@ -59,17 +58,10 @@ function ClosePage() {
 
   return (
     <div className="space-y-8">
-      <Link href={`/finance?month=${month}`} className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-primary">
-        <ArrowLeft className="h-4 w-4" />
-        CMS & Finance
-      </Link>
-      <PageHeader
-        title="Month close"
-        description="Lock a finished month (PDF slide 16 step 8). After closing, later platform revisions become traceable adjustments, not silent overwrites."
-      />
-      <div className="flex">
-        <MonthPicker month={month} onChange={(m) => router.replace(`/finance/close?month=${m}`)} />
-      </div>
+      <p className="text-sm text-muted-foreground">
+        Lock a finished month (PDF slide 16, step 8). After closing, revenue, FX and fee tiers for the month cannot change — later platform
+        revisions go in as adjustments, so nothing is silently rewritten.
+      </p>
 
       {error && <Notice kind="error">{error}</Notice>}
       {notice && <Notice kind="success">{notice}</Notice>}

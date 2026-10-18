@@ -1,21 +1,21 @@
 "use client";
 
-import { AlertTriangle, ArrowLeft, Calculator, CheckCircle2, Lock, RotateCcw } from "lucide-react";
+import { AlertTriangle, Calculator, CheckCircle2, Lock, RotateCcw } from "lucide-react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
 import { Fragment, Suspense, useCallback, useEffect, useState } from "react";
 
 import { EmptyRow } from "@/components/data-table";
-import { MonthPicker } from "@/components/month-picker";
+import { useFinanceMonth } from "@/components/finance/finance-shell";
 import { Notice } from "@/components/notice";
-import { PageHeader } from "@/components/page-header";
 import { Pill } from "@/components/pill";
 import { Button } from "@/components/ui/button";
+import { InfoTip } from "@/components/ui/info-tip";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { UserAvatar } from "@/components/user-avatar";
 import { api } from "@/lib/api";
 import { DEAL_STATUS_TONES } from "@/lib/deals";
-import { money, shiftMonth, thisMonth } from "@/lib/finance";
+import { formatMonth, money } from "@/lib/finance";
+import { HELP } from "@/lib/help";
 import { formatDateTime } from "@/lib/format";
 import type { IncentiveRun } from "@/lib/types";
 
@@ -27,8 +27,7 @@ const STATUS: Record<IncentiveRun["status"], { label: string; tone: string; help
 };
 
 function IncentivesPage() {
-  const router = useRouter();
-  const month = useSearchParams().get("month") ?? shiftMonth(thisMonth(), -1);
+  const [month] = useFinanceMonth();
   const [run, setRun] = useState<IncentiveRun | null>(null);
   const [open, setOpen] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -57,17 +56,16 @@ function IncentivesPage() {
 
   return (
     <div className="space-y-8">
-      <Link href={`/finance?month=${month}`} className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-primary">
-        <ArrowLeft className="h-4 w-4" />
-        CMS & Finance
-      </Link>
-      <PageHeader
-        title="Incentives"
-        description="Each person's % of the gross of the channels they managed — and team leads on their team's channels — counted day by day (PDF slides 12–13)."
-      />
-
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <MonthPicker month={month} onChange={(m) => router.replace(`/finance/incentives?month=${m}`)} />
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border bg-card p-6 shadow-sm">
+        <div>
+          <h3 className="text-lg font-semibold">
+            Incentives for {formatMonth(month)}
+            <InfoTip text={HELP.incentiveRate} />
+          </h3>
+          <p className="text-sm text-muted-foreground">
+            Each person&apos;s % of the gross of the channels they managed — and team leads on their team&apos;s channels — counted day by day (PDF slides 12–13).
+          </p>
+        </div>
         <div className="flex flex-wrap items-center gap-2">
           {run && (run.status === "preview" || run.status === "draft") && (
             <Button variant="outline" disabled={busy} onClick={() => act("compute")}>
