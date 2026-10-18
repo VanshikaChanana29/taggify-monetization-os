@@ -6,7 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useState } from "react";
 
 import { ChannelForm } from "@/components/channel-form";
-import { EmptyRow, FilterBar, SearchInput, SortableHead, TablePagination } from "@/components/data-table";
+import { DEFAULT_PAGE_SIZE, PAGE_SIZES, EmptyRow, FilterBar, SearchInput, SortableHead, TablePagination } from "@/components/data-table";
 import { Notice } from "@/components/notice";
 import { PageHeader } from "@/components/page-header";
 import { Pill } from "@/components/pill";
@@ -42,7 +42,7 @@ function ChannelsPage() {
   const [q, setQ] = useState("");
   const [sort, setSort] = useState<SortState<SortKey>>({ key: "name", dir: "asc" });
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(25);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [data, setData] = useState<Page<ChannelListItem> | null>(null);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -274,7 +274,7 @@ function ChannelsPage() {
               setPageSize(size);
               setPage(1);
             }}
-            pageSizes={[25, 50, 100]}
+            pageSizes={PAGE_SIZES}
             noun="channels"
           />
         )}

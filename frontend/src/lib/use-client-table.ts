@@ -30,7 +30,7 @@ export function useClientTable<T, S extends Record<string, (row: T) => SortValue
   rows,
   sortBy,
   initialSort,
-  initialPageSize = 10,
+  initialPageSize = 5,
   resetKey = "",
 }: {
   rows: T[];

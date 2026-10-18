@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 
-import { EmptyRow, FilterBar, SearchInput, SortableHead, TablePagination } from "@/components/data-table";
+import { DEFAULT_PAGE_SIZE, PAGE_SIZES, EmptyRow, FilterBar, SearchInput, SortableHead, TablePagination } from "@/components/data-table";
 import { Notice } from "@/components/notice";
 import { PageHeader } from "@/components/page-header";
 import { Pill } from "@/components/pill";
@@ -59,7 +59,7 @@ function DealsPage() {
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<SortState<SortKey>>({ key: "term_end", dir: "asc" });
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(25);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [data, setData] = useState<Page<DealListItem> | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -253,7 +253,7 @@ function DealsPage() {
               setPageSize(size);
               setPage(1);
             }}
-            pageSizes={[25, 50, 100]}
+            pageSizes={PAGE_SIZES}
             noun="deals"
           />
         )}

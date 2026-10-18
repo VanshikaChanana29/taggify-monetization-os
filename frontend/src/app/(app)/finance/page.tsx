@@ -1,48 +1,160 @@
 "use client";
 
-import { AlertTriangle, ArrowRight, Upload } from "lucide-react";
+import { ArrowRight, CheckCircle2, ChevronDown, Circle, Hourglass, Landmark, Wallet } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 
-import { EmptyRow } from "@/components/data-table";
 import { useFinanceMonth } from "@/components/finance/finance-shell";
-import { MoneyFlow, MonthSteps } from "@/components/finance/money-flow";
 import { Notice } from "@/components/notice";
 import { Pill } from "@/components/pill";
+import { StatCard } from "@/components/stat-card";
 import { Button } from "@/components/ui/button";
-import { InfoTip } from "@/components/ui/info-tip";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { api } from "@/lib/api";
 import { DEAL_STATUS_TONES } from "@/lib/deals";
 import { compactInr, formatMonth, money } from "@/lib/finance";
 import { HELP } from "@/lib/help";
 import type { CloseStatus, CmsMonth, FinanceMonth } from "@/lib/types";
+import { cn } from "@/lib/utils";
 
-/** Where a CMS stands for the month, in one word. */
-function payStatus(r: CmsMonth): { label: string; tone: string } {
-  if (!r.cms_id) return { label: "No CMS", tone: DEAL_STATUS_TONES.expired };
+type Task = { key: string; title: string; why: string; href: string; action: string; done: boolean; blocked?: boolean };
+
+/** The month's to-do list, in the order finance works through it (PDF slide 16). */
+function tasks(month: string, data: FinanceMonth, status: CloseStatus | null): Task[] {
+  const label = formatMonth(month);
+  const m = `month=${month}`;
+  const list: Task[] = [
+    {
+      key: "revenue",
+      title: `Import ${label} revenue`,
+      why: "Upload what each channel earned this month.",
+      href: `/finance/revenue?${m}`,
+      action: "Import revenue",
+      done: Number(data.gross) > 0,
+    },
+  ];
+  for (const r of data.rows.filter((x) => x.cms_id && x.warnings.length)) {
+    const fx = r.warnings.some((w) => w.includes("rate"));
+    list.push({
+      key: `setup-${r.cms_id}`,
+      title: fx ? `Set the ${r.currency} rate for ${label}` : `Add ${r.cms_name}'s fee tiers`,
+      why: r.warnings[0],
+      href: fx ? "/finance/fx" : `/cms-partners/${r.cms_id}`,
+      action: fx ? "Set rate" : "Add fee tiers",
+      done: false,
+    });
+  }
+  for (const r of data.rows.filter((x) => x.cms_id)) {
+    const base = `/finance/${r.cms_id}?${m}`;
+    const differs = r.variance !== null && Number(r.variance) !== 0;
+    list.push({
+      key: `statement-${r.cms_id}`,
+      title: r.statement_net === null ? `Upload ${r.cms_name}'s statement` : differs ? `Check ${r.cms_name}'s statement` : `${r.cms_name}'s statement matches`,
+      why:
+        r.statement_net === null
+          ? "Compare what the CMS says with our numbers, channel by channel."
+          : differs
+            ? `It differs from ours by ${money(r.variance, r.currency)} — find the channel and record an adjustment.`
+            : "Their numbers agree with ours.",
+      href: `${base}&tab=statement`,
+      action: r.statement_net === null ? "Upload statement" : "Open statement",
+      done: r.statement_net !== null && !differs,
+    });
+    const out = Number(r.outstanding ?? 0);
+    const paid = Number(r.net_base ?? 0) > 0 && out <= 0;
+    list.push({
+      key: `cash-${r.cms_id}`,
+      title: paid ? `${r.cms_name} has paid` : `Record the money ${r.cms_name} paid`,
+      why: paid ? "Nothing is owed for this month." : `${money(r.outstanding, data.base_currency)} still to come. Check the bank and record each payment.`,
+      href: `${base}&tab=cash`,
+      action: "Record payment",
+      done: paid,
+    });
+  }
+  const incentives = status?.checks.find((c) => c.key === "incentives");
+  list.push({
+    key: "incentives",
+    title: `Approve ${label} incentives`,
+    why: "Each manager's and team lead's % of the gross, for payout.",
+    href: `/finance/incentives?${m}`,
+    action: "Open incentives",
+    done: Boolean(incentives?.ok),
+  });
+  list.push({
+    key: "close",
+    title: `Close ${label}`,
+    why: status?.can_close || status?.closed ? "Locks the month so its numbers cannot change silently." : "Possible once incentives are approved and every CMS has fee tiers and an FX rate.",
+    href: `/finance/close?${m}`,
+    action: "Close month",
+    done: Boolean(status?.closed),
+    blocked: !status?.closed && !status?.can_close,
+  });
+  return list;
+}
+
+function payState(r: CmsMonth): { label: string; tone: string } {
   if (r.warnings.length) return { label: "Setup missing", tone: DEAL_STATUS_TONES.draft };
-  const net = Number(r.net_base ?? 0);
   const out = Number(r.outstanding ?? 0);
-  if (net > 0 && out <= 0) return { label: "Paid", tone: DEAL_STATUS_TONES.active };
+  if (Number(r.net_base ?? 0) > 0 && out <= 0) return { label: "Paid", tone: DEAL_STATUS_TONES.active };
   if (Number(r.received) > 0) return { label: "Partly paid", tone: DEAL_STATUS_TONES.draft };
   return { label: "Not paid yet", tone: DEAL_STATUS_TONES.terminated };
 }
 
-function statementCell(r: CmsMonth) {
-  if (!r.cms_id) return <span className="text-muted-foreground">—</span>;
-  if (r.statement_net === null) return <Pill tone={DEAL_STATUS_TONES.expired}>Not entered</Pill>;
-  if (r.variance === null || Number(r.variance) === 0) return <Pill tone={DEAL_STATUS_TONES.active}>Matches</Pill>;
-  return <Pill tone={DEAL_STATUS_TONES.draft}>Differs {money(r.variance, r.currency)}</Pill>;
+function CmsCard({ r, month }: { r: CmsMonth; month: string }) {
+  const st = payState(r);
+  const net = Number(r.net_base ?? 0);
+  const pct = net > 0 ? Math.min(100, Math.max(0, (Number(r.received) / net) * 100)) : 0;
+  const statement =
+    r.statement_net === null ? "Statement not uploaded" : r.variance !== null && Number(r.variance) !== 0 ? `Statement differs by ${money(r.variance, r.currency)}` : "Statement matches";
+  return (
+    <Link href={`/finance/${r.cms_id ?? "none"}?month=${month}`} className="group flex flex-col rounded-2xl border bg-card p-5 shadow-sm transition-colors hover:border-primary/50">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-lg font-semibold">{r.cms_name}</p>
+          <p className="text-xs text-muted-foreground">
+            {r.channel_count} channel{r.channel_count === 1 ? "" : "s"} · earned {money(r.gross, r.currency)}
+          </p>
+        </div>
+        {r.cms_id && <Pill tone={st.tone}>{st.label}</Pill>}
+      </div>
+      {r.cms_id ? (
+        <>
+          <div className="mt-4 grid grid-cols-3 gap-2 text-sm">
+            <div>
+              <p className="text-xs text-muted-foreground">Owes us</p>
+              <p className="font-semibold">{compactInr(r.net_base)}</p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Received</p>
+              <p className="font-semibold text-emerald-700 dark:text-emerald-400">{compactInr(r.received)}</p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Still due</p>
+              <p className="font-semibold">{compactInr(r.outstanding)}</p>
+            </div>
+          </div>
+          <div className="mt-3 h-2 overflow-hidden rounded-full bg-muted" title={`${Math.round(pct)}% received`}>
+            <div className="h-full rounded-full bg-emerald-600" style={{ width: `${pct}%` }} />
+          </div>
+          <p className={cn("mt-3 text-xs", r.statement_net !== null && Number(r.variance ?? 0) === 0 ? "text-emerald-700 dark:text-emerald-400" : "text-muted-foreground")}>
+            {statement}
+          </p>
+        </>
+      ) : (
+        <p className="mt-3 text-sm text-muted-foreground">These channels have no CMS — their earnings are not collected by a partner.</p>
+      )}
+      <span className="mt-4 inline-flex items-center gap-1 text-sm font-medium text-primary">
+        Open {r.cms_name} <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+      </span>
+    </Link>
+  );
 }
 
 function FinanceOverview() {
-  const router = useRouter();
   const [month] = useFinanceMonth();
   const [data, setData] = useState<FinanceMonth | null>(null);
   const [status, setStatus] = useState<CloseStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [showDone, setShowDone] = useState(false);
 
   useEffect(() => {
     setData(null);
@@ -55,142 +167,129 @@ function FinanceOverview() {
       .catch(() => setStatus(null));
   }, [month]);
 
-  const base = data?.base_currency ?? "INR";
-  const fmt = (v: string | null | undefined) => (base === "INR" ? compactInr(v) : money(v, base));
-  const adjustments = data ? data.rows.reduce((n, r) => n + Number(r.adjustments), 0) : 0;
+  if (error) return <Notice kind="error">{error}</Notice>;
+  if (!data) return <p className="text-muted-foreground">Loading…</p>;
+
+  const list = tasks(month, data, status);
+  const todo = list.filter((t) => !t.done);
+  const done = list.filter((t) => t.done);
+  const next = todo.find((t) => !t.blocked) ?? todo[0];
+  const fmt = (v: string | null | undefined) => (data.base_currency === "INR" ? compactInr(v) : money(v, data.base_currency));
 
   return (
     <div className="space-y-6">
-      {status && <MonthSteps status={status} />}
-      {error && <Notice kind="error">{error}</Notice>}
-      {data?.incomplete && (
-        <Notice kind="warning">Some numbers for {formatMonth(month)} are missing a fee schedule or FX rate — see the CMS rows below.</Notice>
-      )}
-
-      <section className="space-y-3">
+      {/* 1. What to do now */}
+      <section className="rounded-2xl border bg-card p-6 shadow-sm">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h3 className="text-lg font-semibold">
-              {formatMonth(month)}: from earnings to cash
-              <InfoTip text={HELP.outstanding} />
-            </h3>
-            <p className="text-sm text-muted-foreground">All CMS partners together, in {base}. Foreign revenue converted at the month&apos;s FX rate.</p>
+            <h3 className="text-lg font-semibold">To finish {formatMonth(month)}</h3>
+            <p className="text-sm text-muted-foreground">
+              {todo.length === 0 ? "Everything is done for this month." : `${done.length} of ${list.length} done — work down the list.`}
+            </p>
           </div>
-          <Button asChild>
-            <Link href={`/finance/revenue?month=${month}`}>
-              <Upload />
-              Import revenue
-            </Link>
-          </Button>
+          <div className="h-2 w-48 overflow-hidden rounded-full bg-muted">
+            <div className="h-full rounded-full bg-emerald-600" style={{ width: `${(done.length / list.length) * 100}%` }} />
+          </div>
         </div>
-        {data && (
-          <MoneyFlow
-            steps={[
-              { label: "Gross revenue", value: fmt(data.gross), info: HELP.grossRevenue, sub: "What the platforms reported" },
-              { label: "CMS commission", value: fmt(data.fee), op: "−", tone: "minus", info: HELP.cmsCommission },
-              { label: "Net receivable", value: fmt(data.net_receivable), op: "=", info: HELP.netReceivable, sub: "What CMS partners owe" },
-              {
-                label: "Cash received",
-                value: fmt(data.received),
-                op: "−",
-                tone: "minus",
-                info: HELP.cashReceived,
-                sub: adjustments ? `Adjustments ${fmt(String(adjustments))}` : undefined,
-              },
-              {
-                label: "Outstanding",
-                value: fmt(data.outstanding),
-                op: "=",
-                tone: Number(data.outstanding) > 0 ? "warn" : "result",
-                info: HELP.outstanding,
-                sub: Number(data.outstanding) > 0 ? "Still to come from CMS partners" : "Nothing owed",
-              },
-            ]}
-          />
+
+        {next && (
+          <div className="mt-5 flex flex-wrap items-center justify-between gap-4 rounded-xl border-2 border-primary/40 bg-primary/5 p-4">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wider text-primary">Do this next</p>
+              <p className="mt-1 text-lg font-semibold">{next.title}</p>
+              <p className="text-sm text-muted-foreground">{next.why}</p>
+            </div>
+            <Button size="lg" asChild>
+              <Link href={next.href}>
+                {next.action}
+                <ArrowRight />
+              </Link>
+            </Button>
+          </div>
         )}
-        {data && Number(data.fx_difference) !== 0 && (
-          <p className="text-xs text-muted-foreground">
-            FX {Number(data.fx_difference) > 0 ? "gain" : "loss"} on receipts this month: {money(data.fx_difference, base)}
-            <InfoTip text={HELP.fxDifference} />
-          </p>
+
+        {todo.length > 1 && (
+          <ul className="mt-4 divide-y">
+            {todo
+              .filter((t) => t !== next)
+              .map((t) => (
+                <li key={t.key} className="flex flex-wrap items-center justify-between gap-3 py-3">
+                  <div className="flex items-start gap-3">
+                    <Circle className="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground" />
+                    <div>
+                      <p className={cn("font-medium", t.blocked && "text-muted-foreground")}>{t.title}</p>
+                      <p className="text-sm text-muted-foreground">{t.why}</p>
+                    </div>
+                  </div>
+                  <Button variant="outline" size="sm" asChild disabled={t.blocked}>
+                    <Link href={t.href}>{t.action}</Link>
+                  </Button>
+                </li>
+              ))}
+          </ul>
+        )}
+
+        {done.length > 0 && (
+          <div className="mt-3 border-t pt-3">
+            <button type="button" onClick={() => setShowDone((v) => !v)} className="flex items-center gap-1 text-sm font-medium text-muted-foreground hover:text-foreground">
+              <ChevronDown className={cn("h-4 w-4 transition-transform", showDone && "rotate-180")} />
+              Done ({done.length})
+            </button>
+            {showDone && (
+              <ul className="mt-2 space-y-2">
+                {done.map((t) => (
+                  <li key={t.key} className="flex items-center gap-3 text-sm">
+                    <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-600" />
+                    <Link href={t.href} className="hover:text-primary">
+                      {t.title}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         )}
       </section>
 
-      <section id="cms-breakdown" className="scroll-mt-24 overflow-hidden rounded-2xl border bg-card shadow-sm">
-        <div className="p-6 pb-4">
-          <h3 className="text-lg font-semibold">
-            By CMS partner
-            <InfoTip text={HELP.cms} />
-          </h3>
-          <p className="text-sm text-muted-foreground">Click a CMS to see its channels, enter its statement and record what it paid.</p>
-        </div>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>CMS</TableHead>
-              <TableHead className="text-right">Gross</TableHead>
-              <TableHead className="text-right">CMS fee</TableHead>
-              <TableHead className="text-right">Net due</TableHead>
-              <TableHead>
-                Their statement
-                <InfoTip text={HELP.variance} />
-              </TableHead>
-              <TableHead className="text-right">Received</TableHead>
-              <TableHead className="text-right">Outstanding</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead />
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {data?.rows.map((r) => {
-              const st = payStatus(r);
-              return (
-                <TableRow
-                  key={r.cms_id ?? "none"}
-                  className="cursor-pointer align-top"
-                  onClick={() => router.push(`/finance/${r.cms_id ?? "none"}?month=${month}`)}
-                >
-                  <TableCell>
-                    <p className="font-semibold">{r.cms_name}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {r.channel_count} channel{r.channel_count === 1 ? "" : "s"}
-                      {r.fee_rule ? ` · ${r.fee_rule}` : ""}
-                    </p>
-                    {r.warnings.map((w) => (
-                      <p key={w} className="mt-1 flex items-start gap-1 text-xs text-amber-600">
-                        <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
-                        {w}
-                      </p>
-                    ))}
-                  </TableCell>
-                  <TableCell className="whitespace-nowrap text-right">{money(r.gross, r.currency)}</TableCell>
-                  <TableCell className="whitespace-nowrap text-right">{r.fee === null ? "—" : money(r.fee, r.currency)}</TableCell>
-                  <TableCell className="whitespace-nowrap text-right font-semibold">
-                    {r.net === null ? "—" : money(r.net, r.currency)}
-                    {r.net_base && r.currency !== base && <span className="block text-xs font-normal text-muted-foreground">{money(r.net_base, base)}</span>}
-                  </TableCell>
-                  <TableCell>{statementCell(r)}</TableCell>
-                  <TableCell className="whitespace-nowrap text-right">{money(r.received, base)}</TableCell>
-                  <TableCell className="whitespace-nowrap text-right font-semibold">{r.cms_id ? money(r.outstanding, base) : "—"}</TableCell>
-                  <TableCell>
-                    <Pill tone={st.tone}>{st.label}</Pill>
-                  </TableCell>
-                  <TableCell>
-                    <ArrowRight className="h-4 w-4 text-muted-foreground" />
-                  </TableCell>
-                </TableRow>
-              );
-            })}
-            {data && data.rows.length === 0 && (
-              <EmptyRow colSpan={9}>
-                No revenue or payments for {formatMonth(month)} yet.{" "}
-                <Link href={`/finance/revenue?month=${month}`} className="text-primary hover:underline" onClick={(e) => e.stopPropagation()}>
-                  Import revenue
-                </Link>
-              </EmptyRow>
-            )}
-          </TableBody>
-        </Table>
+      {/* 2. Three numbers */}
+      <div className="grid gap-5 md:grid-cols-3">
+        <StatCard
+          label="CMS partners owe us"
+          value={fmt(data.net_receivable)}
+          icon={Landmark}
+          tone="slate"
+          info={HELP.netReceivable}
+          hint={<span>Earned {fmt(data.gross)} − CMS fees {fmt(data.fee)}</span>}
+        />
+        <StatCard label="Received in the bank" value={fmt(data.received)} icon={Wallet} tone="green" info={HELP.cashReceived} />
+        <StatCard
+          label="Still to come"
+          value={fmt(data.outstanding)}
+          icon={Hourglass}
+          tone={Number(data.outstanding) > 0 ? "amber" : "green"}
+          info={HELP.outstanding}
+          hint={Number(data.outstanding) > 0 ? <span>Follow up with the CMS partners below</span> : <span>Nothing owed</span>}
+        />
+      </div>
+
+      {/* 3. One card per CMS */}
+      <section>
+        <h3 className="mb-3 text-lg font-semibold">CMS partners · {formatMonth(month)}</h3>
+        {data.rows.length ? (
+          <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+            {data.rows.map((r) => (
+              <CmsCard key={r.cms_id ?? "none"} r={r} month={month} />
+            ))}
+          </div>
+        ) : (
+          <p className="rounded-2xl border border-dashed p-8 text-center text-sm text-muted-foreground">
+            No revenue for {formatMonth(month)} yet.{" "}
+            <Link href={`/finance/revenue?month=${month}`} className="font-medium text-primary hover:underline">
+              Import revenue
+            </Link>{" "}
+            to begin.
+          </p>
+        )}
       </section>
     </div>
   );

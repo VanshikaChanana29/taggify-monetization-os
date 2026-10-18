@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-import { EmptyRow, FilterBar, SortableHead, TablePagination } from "@/components/data-table";
+import { DEFAULT_PAGE_SIZE, PAGE_SIZES, EmptyRow, FilterBar, SortableHead, TablePagination } from "@/components/data-table";
 import { Notice } from "@/components/notice";
 import { PageHeader } from "@/components/page-header";
 import { useOrganization } from "@/components/session-provider";
@@ -189,7 +189,7 @@ export default function ActivityPage() {
   const [filters, setFilters] = useState<Filters>(NO_FILTERS);
   const [sort, setSort] = useState<SortState<"when">>({ key: "when", dir: "desc" });
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(25);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [data, setData] = useState<Page<AuditLog> | null>(null);
   const [actors, setActors] = useState<AuditActor[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -340,7 +340,7 @@ export default function ActivityPage() {
               setPageSize(size);
               setPage(1);
             }}
-            pageSizes={[25, 50, 100]}
+            pageSizes={PAGE_SIZES}
             noun="events"
           />
         )}

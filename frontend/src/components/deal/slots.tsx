@@ -4,7 +4,7 @@ import { Pencil } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
-import { EmptyRow, SortableHead, TablePagination } from "@/components/data-table";
+import { EmptyRow, PAGE_SIZES, SortableHead, TablePagination } from "@/components/data-table";
 import { Field, TEXTAREA } from "@/components/deal/form-bits";
 import { Notice } from "@/components/notice";
 import { Pill } from "@/components/pill";
@@ -86,7 +86,7 @@ function SlotTable({
   onEdit: (slot: Slot) => void;
 }) {
   const rows = slots.filter((s) => !status || s.status === status);
-  const table = useClientTable({ rows, sortBy: SLOT_SORT, initialSort: { key: "code", dir: "asc" }, initialPageSize: 5, resetKey: status });
+  const table = useClientTable({ rows, sortBy: SLOT_SORT, initialSort: { key: "code", dir: "asc" }, resetKey: status });
   const used = slots.filter((s) => s.status !== "unassigned").length;
   const active = slots.filter((s) => s.status === "active").length;
   const pending = slots.filter((s) => s.status === "pending_whitelist").length;
@@ -165,7 +165,7 @@ function SlotTable({
         total={table.total}
         onPageChange={table.setPage}
         onPageSizeChange={table.setPageSize}
-        pageSizes={[5, 10, 25]}
+        pageSizes={PAGE_SIZES}
         noun="slots"
       />
     </section>

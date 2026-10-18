@@ -3,7 +3,7 @@
 import { Download, Pencil, Plus, Trash2, Upload } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { EmptyRow, SearchInput, TablePagination } from "@/components/data-table";
+import { DEFAULT_PAGE_SIZE, PAGE_SIZES, EmptyRow, SearchInput, TablePagination } from "@/components/data-table";
 import { Notice } from "@/components/notice";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogFooter } from "@/components/ui/dialog";
@@ -46,7 +46,7 @@ function fromEpisode(e: Episode): Form {
 export function DealEpisodes({ dealId, scope, onChange }: { dealId: string; scope: EpisodeScope; onChange: () => void }) {
   const [data, setData] = useState<Page<Episode> | null>(null);
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [search, setSearch] = useState("");
   const [q, setQ] = useState("");
   const [editing, setEditing] = useState<Episode | "new" | null>(null);
@@ -320,7 +320,7 @@ export function DealEpisodes({ dealId, scope, onChange }: { dealId: string; scop
             setPageSize(size);
             setPage(1);
           }}
-          pageSizes={[10, 25, 50, 100]}
+          pageSizes={PAGE_SIZES}
           noun="episodes"
         />
       )}

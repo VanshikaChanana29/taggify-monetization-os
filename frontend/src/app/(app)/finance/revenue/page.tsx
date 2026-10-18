@@ -4,7 +4,7 @@ import { Download, FileUp, Upload } from "lucide-react";
 import Link from "next/link";
 import { Fragment, Suspense, useCallback, useEffect, useRef, useState } from "react";
 
-import { EmptyRow, SortableHead, TablePagination } from "@/components/data-table";
+import { DEFAULT_PAGE_SIZE, PAGE_SIZES, EmptyRow, SortableHead, TablePagination } from "@/components/data-table";
 import { useFinanceMonth } from "@/components/finance/finance-shell";
 import { Notice } from "@/components/notice";
 import { Pill } from "@/components/pill";
@@ -87,7 +87,7 @@ function RevenueTab() {
   const [cms, setCms] = useState("");
   const [sort, setSort] = useState<SortState<"day" | "gross">>({ key: "day", dir: "desc" });
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(25);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [facts, setFacts] = useState<Page<RevenueFact> | null>(null);
 
   const loadImports = useCallback(() => {
@@ -203,7 +203,7 @@ function RevenueTab() {
           </TableBody>
         </Table>
         {facts && (
-          <TablePagination page={page} pageSize={pageSize} total={facts.total} onPageChange={setPage} onPageSizeChange={(n) => { setPageSize(n); setPage(1); }} pageSizes={[25, 50, 100]} noun="lines" />
+          <TablePagination page={page} pageSize={pageSize} total={facts.total} onPageChange={setPage} onPageSizeChange={(n) => { setPageSize(n); setPage(1); }} pageSizes={PAGE_SIZES} noun="lines" />
         )}
       </section>
 

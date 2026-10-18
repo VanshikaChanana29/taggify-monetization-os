@@ -57,13 +57,17 @@ function pageList(page: number, pageCount: number): (number | "…")[] {
   return out;
 }
 
+/** Lists show 5 rows at first everywhere; the founder can ask for more. */
+export const DEFAULT_PAGE_SIZE = 5;
+export const PAGE_SIZES = [5, 10, 25, 50];
+
 export function TablePagination({
   page,
   pageSize,
   total,
   onPageChange,
   onPageSizeChange,
-  pageSizes = [10, 25, 50],
+  pageSizes = PAGE_SIZES,
   noun = "rows",
 }: {
   page: number;
