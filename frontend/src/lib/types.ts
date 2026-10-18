@@ -275,6 +275,9 @@ export type Employee = {
   is_active: boolean;
   notes: string | null;
   channel_count: number;
+  channel_names: string[];
+  manager_rate: string | null;
+  team_lead_rate: string | null;
   created_at: string;
 };
 
@@ -514,7 +517,11 @@ export type Dashboard = {
     payable: string;
   }[];
   channels: { id: string; name: string; platform: Platform; manager: string | null; gross: string }[];
+  aging: { cms_id: string; cms_name: string; buckets: Record<AgingBucket, string>; total: string }[];
+  people: { id: string; name: string; channels: number; gross: string; incentive: string }[];
 };
+
+export type AgingBucket = "not_due" | "d0_30" | "d31_60" | "d61_90" | "d90_plus";
 
 export type GroupDashboard = {
   month: string;

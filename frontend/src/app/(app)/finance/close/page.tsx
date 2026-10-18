@@ -21,6 +21,7 @@ const STEPS = [
   { key: "revenue", label: "1–2 · Platform data", href: "/finance/revenue" },
   { key: "pricing", label: "3 · Fee tiers + FX", href: "/finance/fx" },
   { key: "statements", label: "4–5 · CMS statements reconciled", href: "/finance" },
+  { key: "cash", label: "6 · Cash received", href: "/finance" },
   { key: "incentives", label: "7 · Incentives approved", href: "/finance/incentives" },
 ];
 
@@ -64,7 +65,9 @@ function ClosePage() {
         title="Month close"
         description="Lock a finished month (PDF slide 16 step 8). After closing, later platform revisions become traceable adjustments, not silent overwrites."
       />
-      <MonthPicker month={month} onChange={(m) => router.replace(`/finance/close?month=${m}`)} />
+      <div className="flex">
+        <MonthPicker month={month} onChange={(m) => router.replace(`/finance/close?month=${m}`)} />
+      </div>
 
       {error && <Notice kind="error">{error}</Notice>}
       {notice && <Notice kind="success">{notice}</Notice>}

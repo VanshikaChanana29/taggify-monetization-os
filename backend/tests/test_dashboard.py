@@ -62,6 +62,31 @@ def test_cards_match_finance_and_deals(founder, setup):  # noqa: F811
         "gross": "160000.00",
     }
 
+    # Receivables aging (docx §9): last month's balance is 0–30 days old.
+    assert dash["aging"] == [
+        {
+            "cms_id": setup["cms"],
+            "cms_name": "CMS A",
+            "buckets": {
+                "not_due": "0.00",
+                "d0_30": "28000.00",
+                "d31_60": "0.00",
+                "d61_90": "0.00",
+                "d90_plus": "0.00",
+            },
+            "total": "28000.00",
+        }
+    ]
+    # Leaderboard: Ananya managed ₹1,60,000 and earns 1 % ($20 = ₹1,600); Kabir leads (0.5 %).
+    top = {p["name"]: p for p in dash["people"]}
+    assert dash["people"][0]["name"] == "Ananya"
+    assert (top["Ananya"]["gross"], top["Ananya"]["incentive"], top["Ananya"]["channels"]) == (
+        "160000.00",
+        "1600.00",
+        1,
+    )
+    assert (top["Kabir"]["gross"], top["Kabir"]["incentive"]) == ("0.00", "800.00")
+
 
 def test_money_needing_attention(founder, setup):  # noqa: F811
     d = make_deal(founder, setup["channel"])

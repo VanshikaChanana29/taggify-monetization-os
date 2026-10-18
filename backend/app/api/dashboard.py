@@ -10,12 +10,14 @@ from app.api.deps import Auth
 from app.core.database import DbSession
 from app.models import Membership, Organization
 from app.schemas.dashboard import (
+    AgingOut,
     AttentionItem,
     CompanyRow,
     DashboardOut,
     DealRecovery,
     GroupOut,
     TopChannel,
+    TopPerson,
     TotalsOut,
     TrendPoint,
 )
@@ -57,6 +59,8 @@ def dashboard(ctx: Auth, db: DbSession, month: str | None = MonthParam) -> Dashb
         operations=[AttentionItem(**asdict(i)) for i in d.operations],
         deals=[DealRecovery(**asdict(r)) for r in d.deals],
         channels=[TopChannel(**asdict(c)) for c in d.channels],
+        aging=[AgingOut(**asdict(a)) for a in d.aging],
+        people=[TopPerson(**asdict(p)) for p in d.people],
     )
 
 

@@ -612,6 +612,8 @@ def delete_expense(expense_id: uuid.UUID, ctx: Auth, request: Request, db: DbSes
 def _checks(db: Session, ctx: AuthContext, month) -> list[CloseCheck]:
     rows = month_settlements(db, ctx.organization, month)
     run = _run(db, ctx, month)
+    # Slide 16 step 6: cash received against what each CMS owes.
+    unpaid = [r.cms_name for r in rows if r.cms_id and (r.net_base or 0) > 0 and not r.received]
     checks = [
         CloseCheck(
             key="revenue",
@@ -637,6 +639,14 @@ def _checks(db: Session, ctx: AuthContext, month) -> list[CloseCheck]:
             if all(r.statement_net is not None for r in rows if r.cms_id)
             else "Missing CMS statement for: "
             + ", ".join(r.cms_name for r in rows if r.cms_id and r.statement_net is None),
+        ),
+        CloseCheck(
+            key="cash",
+            ok=not unpaid,
+            blocking=False,
+            message="Bank receipts recorded for every CMS"
+            if not unpaid
+            else "No bank receipt yet for: " + ", ".join(unpaid),
         ),
         CloseCheck(
             key="incentives",

@@ -75,6 +75,21 @@ function show(value: unknown): string {
   return String(value);
 }
 
+/** "5 active · 2 pending whitelist · 3 empty", as on PDF slide 5. */
+function slotSplit(slots: Deal["slots"], platform: Platform): string {
+  const mine = slots.filter((s) => s.platform === platform);
+  const count = (st: string) => mine.filter((s) => s.status === st).length;
+  return [
+    [count("active"), "active"],
+    [count("pending_whitelist"), "pending whitelist"],
+    [count("reserved"), "reserved"],
+    [count("unassigned"), "empty"],
+  ]
+    .filter(([n]) => n)
+    .map(([n, label]) => `${n} ${label}`)
+    .join(" · ");
+}
+
 function InfoCard({ label, value, sub }: { label: string; value: React.ReactNode; sub?: string }) {
   return (
     <div className="rounded-2xl bg-muted/60 p-5">
@@ -91,6 +106,7 @@ function RightsChecker({ deal }: { deal: Deal }) {
   const [season, setSeason] = useState("");
   const [episode, setEpisode] = useState("");
   const [territory, setTerritory] = useState(deal.territories[0] ?? "");
+  const [channelId, setChannelId] = useState("");
   const [result, setResult] = useState<RightsResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -107,6 +123,7 @@ function RightsChecker({ deal }: { deal: Deal }) {
             season: season ? Number(season) : null,
             episode: episode ? Number(episode) : null,
             territory: territory || null,
+            channel_id: channelId || null,
           },
         }),
       );
@@ -121,11 +138,21 @@ function RightsChecker({ deal }: { deal: Deal }) {
         <ShieldCheck className="h-5 w-5 text-primary" />
         <h3 className="text-lg font-semibold">Rights check</h3>
       </div>
-      <p className="text-sm text-muted-foreground">Can this content be published here, on this date?</p>
+      <p className="text-sm text-muted-foreground">
+        Can this episode be published on this channel, on this date? Checks episode, term, territory and that the channel holds an
+        approved slot (PDF slide 4).
+      </p>
       <form onSubmit={check} className="mt-4 grid gap-3 sm:grid-cols-2">
         <div className="space-y-1">
           <Label htmlFor="rc-platform">Platform</Label>
-          <NativeSelect id="rc-platform" value={platform} onChange={(e) => setPlatform(e.target.value as Platform)}>
+          <NativeSelect
+            id="rc-platform"
+            value={platform}
+            onChange={(e) => {
+              setPlatform(e.target.value as Platform);
+              setChannelId("");
+            }}
+          >
             <option value="youtube">YouTube</option>
             <option value="facebook">Facebook</option>
           </NativeSelect>
@@ -158,6 +185,19 @@ function RightsChecker({ deal }: { deal: Deal }) {
             </NativeSelect>
           </div>
         )}
+        <div className="space-y-1">
+          <Label htmlFor="rc-channel">Destination channel</Label>
+          <NativeSelect id="rc-channel" value={channelId} onChange={(e) => setChannelId(e.target.value)}>
+            <option value="">Any (rights only)</option>
+            {deal.slots
+              .filter((s) => s.platform === platform && s.channel_id)
+              .map((s) => (
+                <option key={s.id} value={s.channel_id!}>
+                  {s.channel_name} ({s.code})
+                </option>
+              ))}
+          </NativeSelect>
+        </div>
         <div className="flex items-end">
           <Button type="submit" className="w-full">
             Check
@@ -205,6 +245,12 @@ function DealActivity({ dealId, refreshKey }: { dealId: string; refreshKey: numb
     "slot.assigned": "assigned a channel",
     "slot.replaced": "replaced a channel",
     "slot.unassigned": "removed a channel",
+    "deal.installment_added": "added an installment",
+    "deal.installment_paid": "marked an installment paid",
+    "deal.installment_unpaid": "marked an installment unpaid",
+    "deal.installment_deleted": "deleted an installment",
+    "deal.expense_added": "added an expense",
+    "deal.expense_deleted": "deleted an expense",
   };
 
   return (
@@ -363,10 +409,12 @@ export default function DealDetailPage() {
         <InfoCard
           label="YouTube slots"
           value={deal.yt_slot_limit ? `${deal.yt_slots_used} / ${deal.yt_slot_limit} in use` : "None"}
+          sub={deal.yt_slot_limit ? slotSplit(deal.slots, "youtube") : undefined}
         />
         <InfoCard
           label="Facebook slots"
           value={deal.fb_slot_limit ? `${deal.fb_slots_used} / ${deal.fb_slot_limit} in use` : "None"}
+          sub={deal.fb_slot_limit ? slotSplit(deal.slots, "facebook") : undefined}
         />
       </div>
 

@@ -4,7 +4,7 @@ from decimal import Decimal
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request, status
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import Auth, AuthContext, client_ip
@@ -16,6 +16,8 @@ from app.models import (
     DealSlot,
     Employee,
     EmployeeRole,
+    IncentiveRate,
+    Organization,
     SlotAssignment,
     Team,
     TeamLeadAssignment,
@@ -72,22 +74,39 @@ def _get(db: Session, ctx: AuthContext, employee_id: uuid.UUID) -> Employee:
     return employee
 
 
-def _channel_counts(db: Session, organization_id: uuid.UUID) -> dict[uuid.UUID, int]:
-    return dict(
-        db.execute(
-            select(ChannelManagerAssignment.employee_id, func.count())
-            .where(
-                ChannelManagerAssignment.organization_id == organization_id,
-                ChannelManagerAssignment.end_date.is_(None),
-            )
-            .group_by(ChannelManagerAssignment.employee_id)
-        ).all()
-    )
+def _channel_names(db: Session, ids: list[uuid.UUID]) -> dict[uuid.UUID, list[str]]:
+    names: dict[uuid.UUID, list[str]] = defaultdict(list)
+    for employee_id, name in db.execute(
+        select(ChannelManagerAssignment.employee_id, Channel.name)
+        .join(Channel, Channel.id == ChannelManagerAssignment.channel_id)
+        .where(
+            ChannelManagerAssignment.employee_id.in_(ids),
+            ChannelManagerAssignment.end_date.is_(None),
+        )
+        .order_by(Channel.name)
+    ):
+        names[employee_id].append(name)
+    return names
+
+
+def _current_rates(db: Session, ids: list[uuid.UUID]) -> dict[tuple[uuid.UUID, str], Decimal]:
+    """The rate in force today for each (person, kind): the latest that has started."""
+    org = db.get(Organization, db.get(Employee, ids[0]).organization_id)
+    today = company_today(org)
+    rates: dict[tuple[uuid.UUID, str], Decimal] = {}
+    for r in db.scalars(
+        select(IncentiveRate)
+        .where(IncentiveRate.employee_id.in_(ids), IncentiveRate.effective_from <= today)
+        .order_by(IncentiveRate.effective_from.desc())
+    ):
+        rates.setdefault((r.employee_id, r.kind), r.rate_pct)
+    return rates
 
 
 def _outs(db: Session, people: list[Employee]) -> list[EmployeeOut]:
     ids = [p.id for p in people]
-    counts = _channel_counts(db, people[0].organization_id) if people else {}
+    channels = _channel_names(db, ids) if ids else {}
+    rates = _current_rates(db, ids) if ids else {}
     memberships = open_memberships(db, ids)
     leads = team_leads_for(db, ids)
     led: dict[uuid.UUID, list[TeamRef]] = defaultdict(list)
@@ -123,7 +142,10 @@ def _outs(db: Session, people: list[Employee]) -> list[EmployeeOut]:
                 salary_currency=e.salary_currency,
                 is_active=e.is_active,
                 notes=e.notes,
-                channel_count=counts.get(e.id, 0),
+                channel_count=len(channels.get(e.id, [])),
+                channel_names=channels.get(e.id, []),
+                manager_rate=rates.get((e.id, "manager")),
+                team_lead_rate=rates.get((e.id, "team_lead")),
                 created_at=e.created_at,
             )
         )

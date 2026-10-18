@@ -297,3 +297,32 @@ def test_people_and_channels_are_isolated_between_companies(make_founder, login)
         ).status_code
         == 404
     )
+
+
+def test_rights_check_needs_an_approved_destination(founder):
+    """Slide 4: publish only to a channel that holds an approved slot of the deal."""
+    d = new_deal(founder)
+    ch = channel(founder, "Kapil Comedy 01")
+    other = channel(founder, "Random Channel")
+    fb = channel(founder, "Kapil FB", platform="facebook")
+
+    def check(channel_id, platform="youtube"):
+        return founder.post(
+            f"/api/deals/{d['id']}/check-rights",
+            json={"platform": platform, "episode": 120, "channel_id": channel_id},
+        ).json()
+
+    r = check(ch)
+    assert not r["allowed"] and "does not hold a slot" in r["reasons"][0]
+
+    url = f"/api/deals/{d['id']}/slots/{slot_id(d, 'YT-01')}"
+    post(founder, f"{url}/assign", channel_id=ch)  # pending whitelist by default
+    r = check(ch)
+    assert r["reasons"] == [
+        "Kapil Comedy 01 holds YT-01, but the slot is still waiting for whitelist approval."
+    ]
+
+    assert founder.patch(url, json={"status": "active"}).status_code == 200
+    assert check(ch) == {"allowed": True, "reasons": [], "checked_on": check(ch)["checked_on"]}
+    assert not check(other)["allowed"]
+    assert check(fb)["reasons"] == ["Kapil FB is a Facebook channel."]

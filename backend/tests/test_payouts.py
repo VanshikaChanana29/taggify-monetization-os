@@ -136,6 +136,12 @@ def test_close_needs_pricing_and_approved_incentives_then_locks(founder, setup):
     revenue(founder, [(day(1), 1000)])
     status = founder.get(f"/api/finance/close?month={MONTH}").json()
     assert status["can_close"] is False
+    cash = next(c for c in status["checks"] if c["key"] == "cash")  # slide 16 step 6
+    assert (cash["ok"], cash["blocking"], cash["message"]) == (
+        False,
+        False,
+        "No bank receipt yet for: CMS A",
+    )
     assert post(founder, "/api/finance/close", month=MONTH).status_code == 409
 
     post(founder, "/api/finance/incentives/compute", month=MONTH)
@@ -297,3 +303,16 @@ def test_payouts_isolated(make_founder, login, setup, founder):
     assert s.get(f"/api/employees/{setup['ananya']}/incentive-rates").status_code == 404
     d = make_deal(founder, setup["channel"])
     assert s.get(f"/api/deals/{d['id']}/economics").status_code == 404
+
+
+def test_roster_shows_channels_and_current_rates(founder, setup):  # noqa: F811
+    """Slide 12: the people list shows assigned assets and the gross incentive %."""
+    rate(founder, setup["ananya"], "manager", "2", start=TODAY + timedelta(days=30))  # future
+    people = {p["full_name"]: p for p in founder.get("/api/employees").json()}
+    a, k = people["Ananya"], people["Kabir"]
+    assert (a["channel_names"], a["manager_rate"], a["team_lead_rate"]) == (
+        ["Kapil Comedy 01"],
+        "1.000",
+        None,
+    )
+    assert (k["manager_rate"], k["team_lead_rate"]) == (None, "0.500")

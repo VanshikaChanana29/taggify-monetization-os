@@ -152,6 +152,10 @@ class EmployeeOut(BaseModel):
     is_active: bool
     notes: str | None
     channel_count: int
+    # Names of the channels they manage now, and today's incentive rates (slide 12 roster).
+    channel_names: list[str] = []
+    manager_rate: Decimal | None = None
+    team_lead_rate: Decimal | None = None
     created_at: datetime
 
 

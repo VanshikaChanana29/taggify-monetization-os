@@ -224,6 +224,8 @@ class RightsCheckIn(BaseModel):
     episode: int | None = Field(default=None, ge=1)
     season: int | None = Field(default=None, ge=1)
     territory: str | None = Field(default=None, min_length=2, max_length=2)
+    # Optional destination: the channel/page the clip would go on (slide 4 critical control).
+    channel_id: uuid.UUID | None = None
 
 
 class RightsCheckOut(BaseModel):

@@ -45,6 +45,7 @@ from app.services.assignments import (
 from app.services.audit import record_audit
 from app.services.deals import (
     EXPIRING_SOON_DAYS,
+    PLATFORM_NAMES,
     SlotInUseError,
     check_rights,
     company_today,
@@ -420,7 +421,48 @@ def check_deal_rights(
         season=body.season,
         territory=body.territory,
     )
-    return RightsCheckOut(allowed=result.allowed, reasons=result.reasons, checked_on=on_date)
+    reasons = list(result.reasons)
+    if body.channel_id:
+        channel = _channel(db, ctx, body.channel_id)
+        reasons += _destination_reasons(db, deal, channel, body.platform, on_date)
+    return RightsCheckOut(allowed=not reasons, reasons=reasons, checked_on=on_date)
+
+
+SLOT_STATE_TEXT = {
+    "reserved": "only reserved",
+    "pending_whitelist": "still waiting for whitelist approval",
+}
+
+
+def _destination_reasons(
+    db: Session, deal: ContentDeal, channel: Channel, platform: str, on_date: date
+) -> list[str]:
+    """The channel must hold an approved (active) slot of this deal on that date."""
+    if channel.platform != platform:
+        return [f"{channel.name} is a {PLATFORM_NAMES[channel.platform]} channel."]
+    reasons = []
+    if channel.status != "active":
+        reasons.append(f"{channel.name} is inactive.")
+    held = db.execute(
+        select(SlotAssignment, DealSlot)
+        .join(DealSlot, DealSlot.id == SlotAssignment.slot_id)
+        .where(
+            DealSlot.deal_id == deal.id,
+            SlotAssignment.channel_id == channel.id,
+            SlotAssignment.start_date <= on_date,
+            or_(SlotAssignment.end_date.is_(None), SlotAssignment.end_date >= on_date),
+        )
+    ).first()
+    if held is None:
+        reasons.append(f"{channel.name} does not hold a slot in this deal on {on_date:%d %b %Y}.")
+    else:
+        assignment, slot = held
+        if assignment.end_date is None and slot.status != "active":
+            reasons.append(
+                f"{channel.name} holds {slot.code}, but the slot is "
+                f"{SLOT_STATE_TEXT.get(slot.status, slot.status)}."
+            )
+    return reasons
 
 
 # ---- Slot <-> channel (Part 3) ------------------------------------------------------------

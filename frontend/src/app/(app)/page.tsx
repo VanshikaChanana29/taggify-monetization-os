@@ -30,7 +30,7 @@ import { api } from "@/lib/api";
 import { DEAL_STATUS_LABELS, DEAL_STATUS_TONES } from "@/lib/deals";
 import { compactInr, formatMonth, money, shiftMonth } from "@/lib/finance";
 import { PLATFORM_LABELS, PLATFORM_TONES } from "@/lib/people";
-import type { AttentionItem, Dashboard, GroupDashboard } from "@/lib/types";
+import type { AgingBucket, AttentionItem, Dashboard, GroupDashboard } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 const SEVERITY = {
@@ -38,6 +38,13 @@ const SEVERITY = {
   warning: { icon: AlertTriangle, className: "text-amber-600 dark:text-amber-400", label: "Check" },
   info: { icon: Info, className: "text-sky-600 dark:text-sky-400", label: "To do" },
 } as const;
+
+const AGING: [AgingBucket, string][] = [
+  ["d0_30", "0–30 days"],
+  ["d31_60", "31–60"],
+  ["d61_90", "61–90"],
+  ["d90_plus", "90+"],
+];
 
 function change(now: string, before: string, previousMonth: string) {
   const a = Number(now);
@@ -250,6 +257,84 @@ function CompanyView({ data }: { data: Dashboard }) {
       </div>
 
       <TrendChart points={data.trend} currency={cur} />
+
+      <div className="grid gap-6 xl:grid-cols-5">
+        <section className="overflow-hidden rounded-2xl border bg-card shadow-sm xl:col-span-3">
+          <div className="p-6 pb-4">
+            <h3 className="text-lg font-semibold">CMS receivables aging</h3>
+            <p className="text-sm text-muted-foreground">
+              Still owed by each CMS, by days since the settlement month ended (up to {formatMonth(m)}).
+            </p>
+          </div>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>CMS</TableHead>
+                {AGING.map(([k, label]) => (
+                  <TableHead key={k} className="text-right">
+                    {label}
+                  </TableHead>
+                ))}
+                <TableHead className="text-right">Total</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {data.aging.map((a) => (
+                <TableRow key={a.cms_id}>
+                  <TableCell>
+                    <Link href={`/finance/${a.cms_id}?month=${m}`} className="font-semibold hover:text-primary">
+                      {a.cms_name}
+                    </Link>
+                  </TableCell>
+                  {AGING.map(([k]) => (
+                    <TableCell
+                      key={k}
+                      className={cn(
+                        "text-right",
+                        Number(a.buckets[k]) === 0 && "text-muted-foreground",
+                        (k === "d61_90" || k === "d90_plus") && Number(a.buckets[k]) > 0 && "font-semibold text-red-600 dark:text-red-400",
+                      )}
+                    >
+                      {Number(a.buckets[k]) === 0 ? "—" : fmt(a.buckets[k])}
+                    </TableCell>
+                  ))}
+                  <TableCell className="text-right font-semibold">{fmt(a.total)}</TableCell>
+                </TableRow>
+              ))}
+              {data.aging.length === 0 && <EmptyRow colSpan={6}>No CMS owes anything.</EmptyRow>}
+            </TableBody>
+          </Table>
+        </section>
+
+        <section className="overflow-hidden rounded-2xl border bg-card shadow-sm xl:col-span-2">
+          <div className="p-6 pb-4">
+            <h3 className="text-lg font-semibold">Top people</h3>
+            <p className="text-sm text-muted-foreground">Gross of the channels they managed in {formatMonth(m)}, and their incentive.</p>
+          </div>
+          <Table>
+            <TableBody>
+              {data.people.map((p, i) => (
+                <TableRow key={p.id}>
+                  <TableCell className="w-8 text-muted-foreground">{i + 1}</TableCell>
+                  <TableCell>
+                    <Link href={`/people/${p.id}`} className="font-semibold hover:text-primary">
+                      {p.name}
+                    </Link>
+                    <p className="text-xs text-muted-foreground">
+                      {p.channels ? `${p.channels} channel${p.channels > 1 ? "s" : ""} · ${fmt(p.gross)}` : "Team lead"}
+                    </p>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <p className="font-semibold">{fmt(p.incentive)}</p>
+                    <p className="text-xs text-muted-foreground">incentive</p>
+                  </TableCell>
+                </TableRow>
+              ))}
+              {data.people.length === 0 && <EmptyRow colSpan={3}>No incentives this month.</EmptyRow>}
+            </TableBody>
+          </Table>
+        </section>
+      </div>
 
       <div className="grid gap-6 xl:grid-cols-5">
         <section className="overflow-hidden rounded-2xl border bg-card shadow-sm xl:col-span-3">

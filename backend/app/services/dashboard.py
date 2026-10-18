@@ -22,6 +22,7 @@ from app.models import (
     ContentDeal,
     DealInstallment,
     DealSlot,
+    Employee,
     IncentiveRun,
     MonthClose,
     Organization,
@@ -31,6 +32,7 @@ from app.models import (
 from app.services.cms_fees import money
 from app.services.deal_economics import deal_economics
 from app.services.deals import EXPIRING_SOON_DAYS, company_today, effective_status
+from app.services.incentives import calculate
 from app.services.settlement import CmsMonth, fx_rate, month_end, month_settlements
 
 TREND_MONTHS = 6
@@ -99,6 +101,28 @@ class ChannelRow:
     gross: Decimal
 
 
+AGING_BUCKETS = ("not_due", "d0_30", "d31_60", "d61_90", "d90_plus")
+
+
+@dataclass
+class AgingRow:
+    """What a CMS still owes, by how long ago the settlement month ended."""
+
+    cms_id: uuid.UUID
+    cms_name: str
+    buckets: dict[str, Decimal]
+    total: Decimal
+
+
+@dataclass
+class PersonRow:
+    id: uuid.UUID
+    name: str
+    channels: int
+    gross: Decimal  # gross of the channels they managed this month, base currency
+    incentive: Decimal
+
+
 @dataclass
 class Dashboard:
     month: date
@@ -114,6 +138,8 @@ class Dashboard:
     operations: list[Item] = field(default_factory=list)
     deals: list[DealRow] = field(default_factory=list)
     channels: list[ChannelRow] = field(default_factory=list)
+    aging: list[AgingRow] = field(default_factory=list)
+    people: list[PersonRow] = field(default_factory=list)
 
 
 def activity_months(db: Session, org: Organization) -> set[date]:
@@ -208,7 +234,66 @@ def build(db: Session, org: Organization, month: date) -> Dashboard:
     )
     result.money = _money_items(db, org, month, today, rows, run)
     result.operations = _operation_items(db, org, today, deals)
+    result.aging = _aging(db, org, month, today, rows)
+    result.people = _top_people(db, org, month)
     return result
+
+
+def _bucket(days: int) -> str:
+    if days < 0:
+        return "not_due"
+    if days <= 30:
+        return "d0_30"
+    if days <= 60:
+        return "d31_60"
+    return "d61_90" if days <= 90 else "d90_plus"
+
+
+def _aging(db, org, month, today, rows) -> list[AgingRow]:
+    """Outstanding per CMS up to the viewed month, aged from each month's end (docx §9)."""
+    out: dict[uuid.UUID, AgingRow] = {}
+    for m in sorted(m for m in activity_months(db, org) if m <= month):
+        age = (today - month_end(m)).days
+        for r in rows(m):
+            if not (r.cms_id and r.outstanding):
+                continue
+            row = out.setdefault(
+                r.cms_id, AgingRow(r.cms_id, r.cms_name, dict.fromkeys(AGING_BUCKETS, ZERO), ZERO)
+            )
+            row.buckets[_bucket(age)] += r.outstanding
+            row.total += r.outstanding
+    return sorted((r for r in out.values() if r.total), key=lambda r: -r.total)
+
+
+def _top_people(db: Session, org: Organization, month: date, limit: int = 5):
+    """Leaderboard: who managed the most gross this month, and what they earn on it."""
+    calc = calculate(db, org, month)
+    rows: dict[uuid.UUID, PersonRow] = {}
+    names = dict(
+        db.execute(
+            select(Employee.id, Employee.full_name).where(Employee.organization_id == org.id)
+        ).all()
+    )
+    channels: dict[uuid.UUID, set] = defaultdict(set)
+    for line in calc.lines:
+        row = rows.setdefault(
+            line.employee_id, PersonRow(line.employee_id, names[line.employee_id], 0, ZERO, ZERO)
+        )
+        key = (line.employee_id, line.channel_id, line.kind, line.currency)
+        row.incentive += calc.amount_base.get(key, ZERO)
+        if line.kind == "manager":
+            channels[line.employee_id].add(line.channel_id)
+            rate = (
+                Decimal(1)
+                if line.currency == org.base_currency
+                else fx_rate(db, org, month, line.currency)
+            )
+            if rate is not None:
+                row.gross += money(line.gross * rate)
+    for employee_id, row in rows.items():
+        row.channels = len(channels[employee_id])
+    ranked = sorted(rows.values(), key=lambda r: (-r.gross, -r.incentive, r.name))
+    return ranked[:limit]
 
 
 def _top_channels(db: Session, org: Organization, month: date, limit: int = 5):

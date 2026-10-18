@@ -46,6 +46,21 @@ class TopChannel(BaseModel):
     gross: Decimal
 
 
+class AgingOut(BaseModel):
+    cms_id: uuid.UUID
+    cms_name: str
+    buckets: dict[str, Decimal]
+    total: Decimal
+
+
+class TopPerson(BaseModel):
+    id: uuid.UUID
+    name: str
+    channels: int
+    gross: Decimal
+    incentive: Decimal
+
+
 class DashboardOut(BaseModel):
     month: str
     base_currency: str
@@ -60,6 +75,8 @@ class DashboardOut(BaseModel):
     operations: list[AttentionItem]
     deals: list[DealRecovery]
     channels: list[TopChannel]
+    aging: list[AgingOut]
+    people: list[TopPerson]
 
 
 class CompanyRow(TotalsOut):

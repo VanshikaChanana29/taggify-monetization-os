@@ -28,6 +28,7 @@ const SORT_BY = {
   lead: (e: Employee) => e.team_lead?.name ?? null,
   channels: (e: Employee) => e.channel_count,
   pay: (e: Employee) => (e.monthly_salary ? Number(e.monthly_salary) : null),
+  incentive: (e: Employee) => Number(e.manager_rate ?? e.team_lead_rate ?? -1),
 };
 
 export default function PeoplePage() {
@@ -150,6 +151,7 @@ export default function PeoplePage() {
               <SortableHead label="Team lead" sortKey="lead" sort={table.sort} onSort={table.toggleSort} />
               <SortableHead label="Channels" sortKey="channels" sort={table.sort} onSort={table.toggleSort} />
               <SortableHead label="Fixed pay / mo" sortKey="pay" sort={table.sort} onSort={table.toggleSort} />
+              <SortableHead label="Gross incentive" sortKey="incentive" sort={table.sort} onSort={table.toggleSort} />
               <TableHead>Status</TableHead>
             </TableRow>
           </TableHeader>
@@ -180,15 +182,34 @@ export default function PeoplePage() {
                   )}
                 </TableCell>
                 <TableCell>{e.team_lead?.name ?? <span className="text-muted-foreground">—</span>}</TableCell>
-                <TableCell className="font-semibold">{e.channel_count}</TableCell>
+                <TableCell className="max-w-56">
+                  {e.channel_count ? (
+                    <span title={e.channel_names.join(", ")}>
+                      <span className="font-semibold">{e.channel_count}</span>
+                      <span className="block truncate text-xs text-muted-foreground">{e.channel_names.join(", ")}</span>
+                    </span>
+                  ) : (
+                    <span className="text-muted-foreground">—</span>
+                  )}
+                </TableCell>
                 <TableCell className="whitespace-nowrap">{formatMoney(e.monthly_salary, e.salary_currency)}</TableCell>
+                <TableCell className="whitespace-nowrap">
+                  {e.manager_rate || e.team_lead_rate ? (
+                    <>
+                      {e.manager_rate && <span className="block">{Number(e.manager_rate)}% of gross</span>}
+                      {e.team_lead_rate && <span className="block text-xs text-muted-foreground">{Number(e.team_lead_rate)}% on team</span>}
+                    </>
+                  ) : (
+                    <span className="text-muted-foreground">—</span>
+                  )}
+                </TableCell>
                 <TableCell>
                   <StatusPill active={e.is_active} />
                 </TableCell>
               </TableRow>
             ))}
             {table.total === 0 && (
-              <EmptyRow colSpan={7}>{people.length ? "Nobody matches these filters." : "No people yet — add your team."}</EmptyRow>
+              <EmptyRow colSpan={8}>{people.length ? "Nobody matches these filters." : "No people yet — add your team."}</EmptyRow>
             )}
           </TableBody>
         </Table>
