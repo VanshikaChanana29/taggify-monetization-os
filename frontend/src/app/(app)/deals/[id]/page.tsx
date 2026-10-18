@@ -20,7 +20,7 @@ import { api } from "@/lib/api";
 import { DEAL_STATUS_LABELS, DEAL_STATUS_TONES, DEAL_TYPE_LABELS, dealValue, episodeSummary, formatDate } from "@/lib/deals";
 import type { Deal, DealEconomics } from "@/lib/types";
 
-const TABS: DealTab[] = ["overview", "slots", "payments", "profitability", "episodes", "documents", "activity"];
+const TABS: DealTab[] = ["overview", "slots", "payments", "profitability", "episodes", "documents", "history"];
 
 function Fact({ label, value, sub }: { label: string; value: React.ReactNode; sub?: string }) {
   return (
@@ -114,7 +114,7 @@ function DealDetail() {
           { key: "profitability", label: "Profitability" },
           { key: "episodes", label: "Episodes", count: deal.episode_count },
           { key: "documents", label: "Documents", count: deal.document_count },
-          { key: "activity", label: "Activity" },
+          { key: "history", label: "History" },
         ]}
       />
 
@@ -128,7 +128,7 @@ function DealDetail() {
         (economics ? <DealProfitability deal={deal} e={economics} onChange={() => refresh()} /> : <p className="text-muted-foreground">Loading…</p>)}
       {tab === "episodes" && <DealEpisodes dealId={deal.id} scope={deal.episode_scope} onChange={() => refresh()} />}
       {tab === "documents" && <DealDocuments dealId={deal.id} onChange={() => refresh()} />}
-      {tab === "activity" && <DealActivity dealId={deal.id} refreshKey={refreshKey} />}
+      {tab === "history" && <DealActivity dealId={deal.id} refreshKey={refreshKey} currency={economics?.base_currency ?? "INR"} />}
     </div>
   );
 }

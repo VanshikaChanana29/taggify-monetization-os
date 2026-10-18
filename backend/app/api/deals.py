@@ -344,7 +344,13 @@ def create_deal(body: DealIn, ctx: Auth, request: Request, db: DbSession) -> Dea
         user_id=ctx.user.id,
         entity_type="deal",
         entity_id=deal.id,
-        details={"title": deal.title},
+        details={
+            "title": deal.title,
+            "deal_type": deal.deal_type,
+            "fee": f"{deal.currency} {deal.fee_amount}" if deal.fee_amount else None,
+            "term": f"{deal.term_start} → {deal.term_end}",
+            "slots": f"YT {deal.yt_slot_limit} · FB {deal.fb_slot_limit}",
+        },
         ip=client_ip(request),
     )
     db.commit()

@@ -518,7 +518,10 @@ def mark_installment(
         {
             "title": deal.title if deal else None,
             "due": str(i.due_date),
+            "amount": str(i.amount),
             "paid": str(i.paid_amount) if i.paid_amount else None,
+            "paid_on": str(i.paid_on) if i.paid_on else None,
+            "reference": i.reference,
         },
     )
     db.commit()
