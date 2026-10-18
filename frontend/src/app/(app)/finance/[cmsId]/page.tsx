@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, ChevronRight, Pencil, Plus, Trash2 } from "lucide-react";
+import { AlertTriangle, ChevronRight, Plus, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useState } from "react";
@@ -9,6 +9,7 @@ import { EmptyRow } from "@/components/data-table";
 import { Field, INVALID, fieldFor } from "@/components/deal/form-bits";
 import { useFinanceMonth } from "@/components/finance/finance-shell";
 import { MoneyFlow } from "@/components/finance/money-flow";
+import { StatementTab } from "@/components/finance/statement-tab";
 import { Notice } from "@/components/notice";
 import { Pill } from "@/components/pill";
 import { Button } from "@/components/ui/button";
@@ -42,8 +43,7 @@ function CmsMonthPage() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [errors, setErrors] = useState<Errors>({});
-  const [dialog, setDialog] = useState<"statement" | "receipt" | "adjustment" | null>(null);
-  const [statement, setStatement] = useState({ gross: "", fee: "", reference: "" });
+  const [dialog, setDialog] = useState<"receipt" | "adjustment" | null>(null);
   const [receipt, setReceipt] = useState({ currency: "", amount: "", amount_base: "", received_on: todayISO(), reference: "" });
   const [adjustment, setAdjustment] = useState({ direction: "-1", amount: "", reason: "" });
 
@@ -90,7 +90,6 @@ function CmsMonthPage() {
   const hasCms = cmsId !== "none";
   const payCurrencies = Array.from(new Set([cur, "USD", "AED", base]));
   const payCurrency = receipt.currency || payCurrencies[0];
-  const stNet = statement.gross && statement.fee ? (Number(statement.gross) - Number(statement.fee)).toFixed(2) : "";
   const preview =
     payCurrency === cur && s.fx_rate && receipt.amount && cur !== base ? Number(receipt.amount) * Number(s.fx_rate) : null;
   const fxGap = preview !== null && receipt.amount_base ? Number(receipt.amount_base) - preview : null;
@@ -239,83 +238,18 @@ function CmsMonthPage() {
       )}
 
       {tab === "statement" && hasCms && (
-        <section className="rounded-2xl border bg-card p-6 shadow-sm">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <h3 className="text-lg font-semibold">
-                {s.cms_name}&apos;s statement vs our calculation
-                <InfoTip text={HELP.statement} />
-              </h3>
-              <p className="text-sm text-muted-foreground">Enter the totals from the statement the CMS sent for {formatMonth(month)}.</p>
-            </div>
-            <Button
-              onClick={() => {
-                setStatement(
-                  data.statement
-                    ? { gross: String(Number(data.statement.gross_amount)), fee: String(Number(data.statement.fee_amount)), reference: data.statement.reference ?? "" }
-                    : { gross: "", fee: "", reference: "" },
-                );
-                setErrors({});
-                setDialog("statement");
-              }}
-            >
-              {data.statement ? <Pencil /> : <Plus />}
-              {data.statement ? "Edit statement" : "Enter statement"}
-            </Button>
-          </div>
-          {data.statement ? (
-            <>
-              <div className="mt-5 overflow-hidden rounded-xl border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead />
-                      <TableHead className="text-right">Our calculation</TableHead>
-                      <TableHead className="text-right">Their statement</TableHead>
-                      <TableHead className="text-right">Difference</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {(
-                      [
-                        ["Gross", s.gross, data.statement.gross_amount],
-                        ["CMS fee", s.fee, data.statement.fee_amount],
-                        ["Net", s.net, data.statement.net_amount],
-                      ] as [string, string | null, string][]
-                    ).map(([label, ours, theirs]) => {
-                      const diff = ours === null ? null : Number(theirs) - Number(ours);
-                      return (
-                        <TableRow key={label} className={label === "Net" ? "font-semibold" : ""}>
-                          <TableCell>{label}</TableCell>
-                          <TableCell className="text-right">{ours === null ? "—" : money(ours, cur)}</TableCell>
-                          <TableCell className="text-right">{money(theirs, data.statement!.currency)}</TableCell>
-                          <TableCell className={cn("text-right", diff ? "text-amber-600" : "text-emerald-600")}>
-                            {diff === null ? "—" : diff === 0 ? "✓ same" : money(diff, cur)}
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              </div>
-              <div className="mt-4">
-                {Number(s.variance ?? 0) === 0 ? (
-                  <Notice kind="success">The statement matches our numbers.</Notice>
-                ) : (
-                  <Notice kind="warning">
-                    {s.cms_name} says the net is {money(s.variance, cur)} different. Ask them why; if it is a chargeback, tax or a late revision,
-                    record it under Adjustments so the outstanding balance is right.
-                  </Notice>
-                )}
-              </div>
-              {data.statement.reference && <p className="mt-3 text-sm text-muted-foreground">Reference: {data.statement.reference}</p>}
-            </>
-          ) : (
-            <p className="mt-5 rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">
-              No statement entered yet. When {s.cms_name} sends its {formatMonth(month)} statement, enter its gross and fee here to check them against ours.
-            </p>
-          )}
-        </section>
+        <StatementTab
+          cmsId={cmsId}
+          month={month}
+          summary={s}
+          statement={data.statement}
+          reconciliation={data.reconciliation}
+          onSaved={(message) => {
+            setNotice(message);
+            setError(null);
+            load();
+          }}
+        />
       )}
 
       {tab === "cash" && hasCms && (
@@ -461,58 +395,6 @@ function CmsMonthPage() {
       )}
 
       {/* ---- Popups ---------------------------------------------------------------------- */}
-      <Dialog
-        open={dialog === "statement"}
-        onClose={() => setDialog(null)}
-        title={`${s.cms_name} statement · ${formatMonth(month)}`}
-        description="Copy the totals from the statement the CMS sent."
-      >
-        <form
-          className="grid gap-4 sm:grid-cols-2"
-          onSubmit={(e) => {
-            e.preventDefault();
-            submit(
-              () =>
-                api("/finance/statements", {
-                  method: "PUT",
-                  json: { cms_partner_id: cmsId, month, currency: cur, gross_amount: statement.gross, fee_amount: statement.fee, net_amount: stNet, reference: statement.reference || null },
-                }),
-              "Statement saved.",
-              [["gross", "gross"], ["fee", "fee"], ["net", "fee"], ["closed", "form"]],
-            );
-          }}
-        >
-          <Field id="st-gross" label={`Gross on their statement (${cur}) *`} error={errors.gross}>
-            <Input id="st-gross" type="number" step="0.01" min="0" required className={errors.gross ? INVALID : undefined} value={statement.gross} onChange={(e) => setStatement({ ...statement, gross: e.target.value })} />
-          </Field>
-          <Field id="st-fee" label={`Their fee (${cur}) *`} error={errors.fee}>
-            <Input id="st-fee" type="number" step="0.01" min="0" required className={errors.fee ? INVALID : undefined} value={statement.fee} onChange={(e) => setStatement({ ...statement, fee: e.target.value })} />
-          </Field>
-          <div className="rounded-xl bg-muted/50 p-3 text-sm sm:col-span-2">
-            Net on their statement: <span className="font-semibold">{stNet ? money(stNet, cur) : "—"}</span>
-            {stNet && s.net !== null && (
-              <span className="text-muted-foreground"> · ours {money(s.net, cur)} · difference {money(Number(stNet) - Number(s.net), cur)}</span>
-            )}
-          </div>
-          <Field id="st-ref" label="Statement number / reference" className="sm:col-span-2">
-            <Input id="st-ref" value={statement.reference} onChange={(e) => setStatement({ ...statement, reference: e.target.value })} />
-          </Field>
-          {errors.form && (
-            <div className="sm:col-span-2">
-              <Notice kind="error">{errors.form}</Notice>
-            </div>
-          )}
-          <div className="sm:col-span-2">
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setDialog(null)}>
-                Cancel
-              </Button>
-              <Button type="submit">Save statement</Button>
-            </DialogFooter>
-          </div>
-        </form>
-      </Dialog>
-
       <Dialog
         open={dialog === "receipt"}
         onClose={() => setDialog(null)}

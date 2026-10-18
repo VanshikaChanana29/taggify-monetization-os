@@ -4,8 +4,19 @@ import uuid
 from dataclasses import asdict
 from decimal import Decimal
 from typing import Annotated
+from urllib.parse import quote
 
-from fastapi import APIRouter, File, HTTPException, Query, Request, Response, UploadFile, status
+from fastapi import (
+    APIRouter,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    Request,
+    Response,
+    UploadFile,
+    status,
+)
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -14,6 +25,7 @@ from app.api.pagination import Page, Pagination, paginate
 from app.core.database import DbSession
 from app.models import (
     BankReceipt,
+    Channel,
     CmsAdjustment,
     CmsFeeSchedule,
     CmsPartner,
@@ -36,8 +48,10 @@ from app.schemas.finance import (
     FxRateOut,
     ReceiptIn,
     ReceiptOut,
+    ReconLineOut,
     RevenueFactOut,
     RevenueImportOut,
+    StatementImportOut,
     StatementIn,
     StatementOut,
     Tier,
@@ -55,6 +69,8 @@ from app.services.settlement import (
     month_settlements,
     receipt_value,
 )
+from app.services.statements import TEMPLATE as STATEMENT_TEMPLATE
+from app.services.statements import parse_statement, reconcile
 
 router = APIRouter(tags=["finance"])
 
@@ -460,25 +476,17 @@ def finance_cms_month(cms_id: str, ctx: Auth, db: DbSession, month: MonthQuery) 
         if cms
         else []
     )
+    lines = channel_lines(db, ctx.organization, cms, m, summary)
+    recon = []
+    if statement and statement.lines and statement.currency == summary.currency:
+        recon = reconcile(lines, statement.lines, {c.channel_id: c.channel_name for c in lines})
     return CmsMonthDetail(
         month=month,
         base_currency=ctx.organization.base_currency,
         summary=CmsMonthOut(**asdict(summary)),
-        channels=[
-            ChannelLineOut(**asdict(c))
-            for c in channel_lines(db, ctx.organization, cms, m, summary)
-        ],
-        statement=StatementOut(
-            id=statement.id,
-            currency=statement.currency,
-            gross_amount=statement.gross_amount,
-            fee_amount=statement.fee_amount,
-            net_amount=statement.net_amount,
-            reference=statement.reference,
-            notes=statement.notes,
-        )
-        if statement
-        else None,
+        channels=[ChannelLineOut(**asdict(c)) for c in lines],
+        statement=_statement_out(db, statement) if statement else None,
+        reconciliation=[ReconLineOut(**asdict(r)) for r in recon],
         receipts=[_receipt_out(db, ctx, r) for r in receipts],
         adjustments=[
             AdjustmentOut(id=a.id, amount=a.amount, reason=a.reason, created_at=a.created_at)
@@ -504,6 +512,13 @@ def set_statement(body: StatementIn, ctx: Auth, request: Request, db: DbSession)
     else:
         for k, v in values.items():
             setattr(statement, k, v)
+        statement.version += 1
+    # Typed-in totals replace any uploaded breakdown.
+    statement.source = "manual"
+    statement.file_name = None
+    statement.file_data = None
+    statement.lines = []
+    statement.uploaded_by_id = ctx.user.id
     db.flush()
     _audit(
         db,
@@ -515,7 +530,134 @@ def set_statement(body: StatementIn, ctx: Auth, request: Request, db: DbSession)
         {"name": f"{cms.name} {body.month}", "before": before, "net": str(body.net_amount)},
     )
     db.commit()
-    return StatementOut(id=statement.id, **values)
+    return _statement_out(db, statement)
+
+
+def _statement_out(db: Session, st: CmsStatement) -> StatementOut:
+    user = db.get(User, st.uploaded_by_id) if st.uploaded_by_id else None
+    return StatementOut(
+        id=st.id,
+        currency=st.currency,
+        gross_amount=st.gross_amount,
+        fee_amount=st.fee_amount,
+        net_amount=st.net_amount,
+        reference=st.reference,
+        notes=st.notes,
+        source=st.source,  # type: ignore[arg-type]
+        file_name=st.file_name,
+        version=st.version,
+        uploaded_by=user.full_name if user else None,
+        updated_at=st.updated_at,
+        line_count=len(st.lines),
+    )
+
+
+@router.get("/finance/statements/template")
+def statement_template(_: Auth) -> Response:
+    return Response(
+        STATEMENT_TEMPLATE,
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="cms-statement-template.csv"'},
+    )
+
+
+@router.post("/finance/statements/import")
+async def import_statement(
+    ctx: Auth,
+    request: Request,
+    db: DbSession,
+    cms_partner_id: Annotated[uuid.UUID, Form()],
+    month: Annotated[str, Form(pattern=r"^\d{4}-\d{2}$")],
+    file: Annotated[UploadFile, File()],
+    reference: Annotated[str | None, Form(max_length=200)] = None,
+) -> StatementImportOut:
+    """Upload the CMS's own per-channel statement; its totals replace any typed-in ones."""
+    cms = _cms(db, ctx, cms_partner_id)
+    m = _month(month)
+    content = await file.read(MAX_UPLOAD_BYTES + 1)
+    if len(content) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "File is larger than 5 MB")
+    if not content.strip():
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "The file is empty")
+    currency = cms_month(db, ctx.organization, cms, m).currency or "USD"
+    channels = db.scalars(
+        select(Channel).where(
+            Channel.organization_id == ctx.organization.id, Channel.platform == cms.platform
+        )
+    ).all()
+    parsed = parse_statement(content, currency, list(channels))
+    if not parsed.lines:
+        return StatementImportOut(
+            statement=None, lines_saved=0, lines_matched=0, lines_unknown=0, errors=parsed.errors
+        )
+    statement = db.scalar(
+        select(CmsStatement).where(CmsStatement.cms_partner_id == cms.id, CmsStatement.month == m)
+    )
+    before = str(statement.net_amount) if statement else None
+    if statement is None:
+        statement = CmsStatement(
+            organization_id=ctx.organization.id, cms_partner_id=cms.id, month=m, currency=currency
+        )
+        db.add(statement)
+    else:
+        statement.version += 1
+    statement.currency = currency
+    statement.gross_amount = money(parsed.gross)
+    statement.fee_amount = money(parsed.fee)
+    statement.net_amount = money(parsed.net)
+    statement.reference = (reference or "").strip() or statement.reference
+    statement.source = "file"
+    statement.file_name = (file.filename or "statement.csv").replace("\\", "/").split("/")[-1][:255]
+    statement.file_data = content
+    statement.uploaded_by_id = ctx.user.id
+    statement.lines = parsed.lines
+    db.flush()
+    matched = sum(1 for line in parsed.lines if line.channel_id)
+    _audit(
+        db,
+        ctx,
+        request,
+        "cms.statement_saved",
+        "cms_partner",
+        cms.id,
+        {
+            "name": f"{cms.name} {month}",
+            "file": statement.file_name,
+            "version": statement.version,
+            "lines": len(parsed.lines),
+            "before": before,
+            "net": str(statement.net_amount),
+        },
+    )
+    db.commit()
+    return StatementImportOut(
+        statement=_statement_out(db, statement),
+        lines_saved=len(parsed.lines),
+        lines_matched=matched,
+        lines_unknown=len(parsed.lines) - matched,
+        errors=parsed.errors,
+    )
+
+
+@router.get("/finance/statements/{statement_id}/file")
+def download_statement(statement_id: uuid.UUID, ctx: Auth, db: DbSession) -> Response:
+    st = db.scalar(
+        select(CmsStatement).where(
+            CmsStatement.id == statement_id, CmsStatement.organization_id == ctx.organization.id
+        )
+    )
+    if st is None or st.file_data is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No uploaded file for this statement")
+    name = st.file_name or "statement.csv"
+    ascii_name = name.encode("ascii", "replace").decode().replace('"', "").replace("?", "_")
+    return Response(
+        st.file_data,
+        media_type="text/csv",
+        headers={
+            "Content-Disposition": f'attachment; filename="{ascii_name}"; '
+            f"filename*=UTF-8''{quote(name)}"
+        },
+    )
 
 
 @router.post("/finance/receipts", status_code=status.HTTP_201_CREATED)

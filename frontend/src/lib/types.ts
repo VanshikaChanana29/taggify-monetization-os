@@ -400,6 +400,46 @@ export type FinanceMonth = {
   rows: CmsMonth[];
 };
 
+export type Statement = {
+  id: string;
+  currency: string;
+  gross_amount: string;
+  fee_amount: string;
+  net_amount: string;
+  reference: string | null;
+  notes: string | null;
+  source: "manual" | "file";
+  file_name: string | null;
+  version: number;
+  uploaded_by: string | null;
+  updated_at: string | null;
+  line_count: number;
+};
+
+export type ReconStatus = "match" | "differs" | "missing_in_statement" | "not_in_our_data" | "unknown_channel";
+
+export type ReconLine = {
+  channel_id: string | null;
+  channel_name: string;
+  external_id: string | null;
+  our_gross: string | null;
+  their_gross: string | null;
+  our_fee: string | null;
+  their_fee: string | null;
+  our_net: string | null;
+  their_net: string | null;
+  difference: string | null;
+  status: ReconStatus;
+};
+
+export type StatementImport = {
+  statement: Statement | null;
+  lines_saved: number;
+  lines_matched: number;
+  lines_unknown: number;
+  errors: { line: number; message: string }[];
+};
+
 export type CmsMonthDetail = {
   month: string;
   base_currency: string;
@@ -414,15 +454,8 @@ export type CmsMonthDetail = {
     net_share: string | null;
     views: number | null;
   }[];
-  statement: {
-    id: string;
-    currency: string;
-    gross_amount: string;
-    fee_amount: string;
-    net_amount: string;
-    reference: string | null;
-    notes: string | null;
-  } | null;
+  statement: Statement | null;
+  reconciliation: ReconLine[];
   receipts: {
     id: string;
     received_on: string;

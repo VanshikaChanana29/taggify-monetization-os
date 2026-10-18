@@ -3,7 +3,16 @@ from datetime import date
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import BigInteger, Date, ForeignKey, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import (
+    BigInteger,
+    Date,
+    ForeignKey,
+    LargeBinary,
+    Numeric,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -106,6 +115,40 @@ class CmsStatement(UUIDPrimaryKeyMixin, OrgScopedMixin, TimestampMixin, Base):
     net_amount: Mapped[Decimal] = mapped_column(Numeric(18, 2))
     reference: Mapped[str | None] = mapped_column(String(200))
     notes: Mapped[str | None] = mapped_column(Text)
+    # "manual" = totals typed in; "file" = the CMS's per-channel breakdown was uploaded.
+    source: Mapped[str] = mapped_column(String(10), server_default="manual")
+    file_name: Mapped[str | None] = mapped_column(String(255))
+    file_data: Mapped[bytes | None] = mapped_column(LargeBinary, deferred=True)
+    uploaded_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    # Goes up each time the statement is replaced; earlier versions stay in the activity log.
+    version: Mapped[int] = mapped_column(server_default="1")
+
+    lines: Mapped[list["CmsStatementLine"]] = relationship(
+        cascade="all, delete-orphan", order_by="CmsStatementLine.line_no"
+    )
+
+
+class CmsStatementLine(UUIDPrimaryKeyMixin, Base):
+    """One channel's line on a CMS statement file (working document §3: "match statement
+    lines to channel IDs, month, gross, fee …")."""
+
+    __tablename__ = "cms_statement_lines"
+
+    statement_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("cms_statements.id", ondelete="CASCADE"), index=True
+    )
+    line_no: Mapped[int]
+    external_id: Mapped[str] = mapped_column(String(100))
+    channel_name: Mapped[str | None] = mapped_column(String(200))
+    # Our channel with that ID, if there is one.
+    channel_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("channels.id", ondelete="SET NULL"), index=True
+    )
+    gross_amount: Mapped[Decimal] = mapped_column(Numeric(18, 2))
+    fee_amount: Mapped[Decimal] = mapped_column(Numeric(18, 2))
+    net_amount: Mapped[Decimal] = mapped_column(Numeric(18, 2))
 
 
 class BankReceipt(UUIDPrimaryKeyMixin, OrgScopedMixin, TimestampMixin, Base):

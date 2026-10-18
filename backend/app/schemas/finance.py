@@ -170,6 +170,41 @@ class StatementOut(BaseModel):
     net_amount: Decimal
     reference: str | None
     notes: str | None
+    source: Literal["manual", "file"] = "manual"
+    file_name: str | None = None
+    version: int = 1
+    uploaded_by: str | None = None
+    updated_at: datetime | None = None
+    line_count: int = 0
+
+
+ReconStatus = Literal[
+    "match", "differs", "missing_in_statement", "not_in_our_data", "unknown_channel"
+]
+
+
+class ReconLineOut(BaseModel):
+    channel_id: uuid.UUID | None
+    channel_name: str
+    external_id: str | None
+    our_gross: Decimal | None
+    their_gross: Decimal | None
+    our_fee: Decimal | None
+    their_fee: Decimal | None
+    our_net: Decimal | None
+    their_net: Decimal | None
+    difference: Decimal | None
+    status: Literal[
+        "match", "differs", "missing_in_statement", "not_in_our_data", "unknown_channel"
+    ]
+
+
+class StatementImportOut(BaseModel):
+    statement: StatementOut | None
+    lines_saved: int
+    lines_matched: int
+    lines_unknown: int
+    errors: list[dict[str, Any]]
 
 
 class ReceiptOut(BaseModel):
@@ -199,6 +234,7 @@ class CmsMonthDetail(BaseModel):
     statement: StatementOut | None
     receipts: list[ReceiptOut]
     adjustments: list[AdjustmentOut]
+    reconciliation: list[ReconLineOut] = []
 
 
 class StatementIn(_MonthField):
