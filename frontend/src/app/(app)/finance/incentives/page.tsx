@@ -56,7 +56,7 @@ function IncentivesPage() {
 
   return (
     <div className="space-y-8">
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border bg-card p-6 shadow-sm">
+      <div className="space-y-4 rounded-2xl border bg-card p-6 shadow-sm">
         <div>
           <h3 className="text-lg font-semibold">
             Incentives for {formatMonth(month)}
@@ -66,9 +66,17 @@ function IncentivesPage() {
             Each person&apos;s % of the gross of the channels they managed — and team leads on their team&apos;s channels — counted day by day (PDF slides 12–13).
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-3 border-t pt-4">
+          {run && (
+            <p className="w-full text-sm text-muted-foreground sm:w-auto">
+              {run.status === "preview" && "Step 1: Calculate to save this as a draft. Step 2: Approve it for payout."}
+              {run.status === "draft" && "Saved as a draft. Check the lines, then Approve (or Recalculate after fixing data)."}
+              {run.status === "approved" && "Approved and frozen for payout. Reopen only to correct a mistake."}
+              {run.status === "locked" && "The month is closed, so these incentives are locked."}
+            </p>
+          )}
           {run && (run.status === "preview" || run.status === "draft") && (
-            <Button variant="outline" disabled={busy} onClick={() => act("compute")}>
+            <Button variant={run.status === "preview" ? "default" : "outline"} disabled={busy} onClick={() => act("compute")}>
               <Calculator />
               {run.status === "preview" ? "Calculate" : "Recalculate"}
             </Button>
