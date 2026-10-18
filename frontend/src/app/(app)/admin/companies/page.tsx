@@ -108,13 +108,15 @@ export default function CompaniesPage() {
       />
 
       <div className="grid gap-5 md:grid-cols-3">
-        <StatCard label="Companies" value={companies.length} icon={Building2} />
-        <StatCard label="Active founders" value={totalFounders} icon={Users} tone="green" />
+        <StatCard label="Companies" value={companies.length} icon={Building2} info="Each company's data is separate; founders only see the companies they are given." />
+        <StatCard label="Active founders" value={totalFounders} icon={Users} tone="green" href="/admin/users" />
         <StatCard
           label="Without founders"
           value={companies.filter((c) => c.active_users === 0).length}
           icon={UserX}
           tone="amber"
+          info="Nobody can work in these companies yet — add a founder under All users."
+          href="/admin/users"
         />
       </div>
 

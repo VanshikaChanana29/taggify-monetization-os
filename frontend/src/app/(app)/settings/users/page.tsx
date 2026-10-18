@@ -67,7 +67,7 @@ export default function UsersPage() {
       />
 
       <div className="grid gap-5 md:grid-cols-2">
-        <StatCard label="Total founders" value={members.length} icon={Users} />
+        <StatCard label="Total founders" value={members.length} icon={Users} info="Only founders log in. Ask the super admin to add or remove one." />
         <StatCard
           label="Active"
           value={members.filter((m) => m.is_active).length}

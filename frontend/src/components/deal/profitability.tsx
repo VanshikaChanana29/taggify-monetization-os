@@ -10,6 +10,8 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { InfoTip } from "@/components/ui/info-tip";
+import { HELP } from "@/lib/help";
 import { api } from "@/lib/api";
 import { formatDate, todayISO } from "@/lib/deals";
 import { formatMonth, money } from "@/lib/finance";
@@ -76,7 +78,9 @@ export function DealProfitability({ deal, e, onChange }: { deal: Deal; e: DealEc
 
       <div className="grid gap-6 xl:grid-cols-5">
         <section className="rounded-2xl border bg-card p-6 shadow-sm xl:col-span-2">
-          <p className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Economic recovery</p>
+          <p className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+            Economic recovery <InfoTip text={HELP.recovery} />
+          </p>
           {pct === null ? (
             <p className="mt-3 text-muted-foreground">No rights cost on this deal, so there is nothing to recover.</p>
           ) : (
@@ -159,7 +163,9 @@ export function DealProfitability({ deal, e, onChange }: { deal: Deal; e: DealEc
       <section className="overflow-hidden rounded-2xl border bg-card shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3 p-6 pb-3">
           <div>
-            <h3 className="text-lg font-semibold">Operating expenses</h3>
+            <h3 className="text-lg font-semibold">
+              Operating expenses <InfoTip text={HELP.expenses} />
+            </h3>
             <p className="text-sm text-muted-foreground">Editing, promotion and other costs charged to this deal.</p>
           </div>
           <Button variant="outline" onClick={() => setAdding(true)}>

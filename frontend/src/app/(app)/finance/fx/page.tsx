@@ -13,6 +13,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { InfoTip } from "@/components/ui/info-tip";
+import { HELP } from "@/lib/help";
 import { api } from "@/lib/api";
 import { formatMonth, shiftMonth, thisMonth } from "@/lib/finance";
 import type { FxRate } from "@/lib/types";
@@ -71,7 +73,7 @@ export default function FxPage() {
           </NativeSelect>
         </div>
         <div className="space-y-1">
-          <Label htmlFor="fx-rate">1 {form.currency} = ? {organization.base_currency}</Label>
+          <Label htmlFor="fx-rate">1 {form.currency} = ? {organization.base_currency} <InfoTip text={HELP.fxRate} /></Label>
           <Input id="fx-rate" type="number" step="0.000001" min="0.000001" required placeholder="84.00" value={form.rate} onChange={(e) => setForm({ ...form, rate: e.target.value })} />
         </div>
         <Button type="submit">Save rate</Button>

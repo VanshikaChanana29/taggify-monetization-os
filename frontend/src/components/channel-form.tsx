@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
+import { InfoTip } from "@/components/ui/info-tip";
+import { HELP } from "@/lib/help";
 import { api } from "@/lib/api";
 import { EXTERNAL_ID_HINT } from "@/lib/people";
 import type { ChannelListItem, CmsPartner, Platform } from "@/lib/types";
@@ -87,7 +89,7 @@ export function ChannelForm({
         <Input id="ch-name" required autoFocus value={form.name} onChange={(e) => set({ name: e.target.value })} />
       </div>
       <div className="space-y-2">
-        <Label htmlFor="ch-external">{form.platform === "youtube" ? "Channel ID" : "Page ID"} *</Label>
+        <Label htmlFor="ch-external">{form.platform === "youtube" ? "Channel ID" : "Page ID"} * <InfoTip text={HELP.externalId} /></Label>
         <Input
           id="ch-external"
           required
@@ -101,7 +103,7 @@ export function ChannelForm({
         <Input id="ch-url" type="url" placeholder="https://…" value={form.url} onChange={(e) => set({ url: e.target.value })} />
       </div>
       <div className="space-y-2">
-        <Label htmlFor="ch-cms">{form.platform === "youtube" ? "CMS" : "Business portfolio"}</Label>
+        <Label htmlFor="ch-cms">{form.platform === "youtube" ? "CMS" : "Business portfolio"} <InfoTip text={HELP.cms} /></Label>
         <NativeSelect id="ch-cms" value={form.cms_partner_id} onChange={(e) => set({ cms_partner_id: e.target.value })}>
           <option value="">None yet</option>
           {cmsOptions.map((c) => (

@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
+import { InfoTip } from "@/components/ui/info-tip";
+import { HELP } from "@/lib/help";
 import { api } from "@/lib/api";
 import { todayISO } from "@/lib/deals";
 import { roleAbilities } from "@/lib/people";
@@ -99,7 +101,7 @@ export function EmployeeForm({
         <Input id="emp-name" required autoFocus value={form.full_name} onChange={(e) => set({ full_name: e.target.value })} />
       </div>
       <div className="space-y-2">
-        <Label htmlFor="emp-role">Role *</Label>
+        <Label htmlFor="emp-role">Role * <InfoTip text={HELP.role} /></Label>
         <NativeSelect id="emp-role" required value={form.role_id} onChange={(e) => set({ role_id: e.target.value })}>
           <option value="">Select…</option>
           {roles.map((r) => (
@@ -118,7 +120,7 @@ export function EmployeeForm({
         </p>
       </div>
       <div className="space-y-2">
-        <Label htmlFor="emp-team">Team</Label>
+        <Label htmlFor="emp-team">Team <InfoTip text={HELP.team} /></Label>
         <NativeSelect id="emp-team" value={form.team_id} onChange={(e) => set({ team_id: e.target.value })}>
           <option value="">No team</option>
           {teamOptions.map((t) => (
@@ -140,7 +142,7 @@ export function EmployeeForm({
       </div>
       {employee && teamChanged && (
         <div className="space-y-2">
-          <Label htmlFor="emp-team-date">Team change from</Label>
+          <Label htmlFor="emp-team-date">Team change from <InfoTip text={HELP.effectiveDate} /></Label>
           <Input
             id="emp-team-date"
             type="date"
@@ -163,7 +165,7 @@ export function EmployeeForm({
         <Input id="emp-join" type="date" value={form.join_date} onChange={(e) => set({ join_date: e.target.value })} />
       </div>
       <div className="space-y-2">
-        <Label htmlFor="emp-salary">Fixed pay / month</Label>
+        <Label htmlFor="emp-salary">Fixed pay / month <InfoTip text={HELP.fixedPay} /></Label>
         <Input id="emp-salary" type="number" min="0" step="1" value={form.monthly_salary} onChange={(e) => set({ monthly_salary: e.target.value })} />
       </div>
       <div className="space-y-2">

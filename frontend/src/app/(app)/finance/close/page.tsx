@@ -12,6 +12,8 @@ import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { InfoTip } from "@/components/ui/info-tip";
+import { HELP } from "@/lib/help";
 import { api } from "@/lib/api";
 import { compactInr, formatMonth, shiftMonth, thisMonth } from "@/lib/finance";
 import { formatDateTime } from "@/lib/format";
@@ -75,7 +77,7 @@ function ClosePage() {
       {status && (
         <div className="grid gap-6 lg:grid-cols-3">
           <section className="rounded-2xl border bg-card p-6 shadow-sm lg:col-span-2">
-            <h3 className="text-lg font-semibold">Checklist · {formatMonth(month)}</h3>
+            <h3 className="text-lg font-semibold">Checklist · {formatMonth(month)} <InfoTip text={HELP.monthClose} /></h3>
             <ul className="mt-4 space-y-3">
               {STEPS.map((step) => {
                 const check = status.checks.find((c) => c.key === step.key);

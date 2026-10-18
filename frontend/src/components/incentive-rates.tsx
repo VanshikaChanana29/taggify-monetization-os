@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
+import { InfoTip } from "@/components/ui/info-tip";
+import { HELP } from "@/lib/help";
 import { api } from "@/lib/api";
 import { formatDate, todayISO } from "@/lib/deals";
 import type { IncentiveKind, IncentiveRate } from "@/lib/types";
@@ -55,7 +57,7 @@ export function IncentiveRates({ employeeId, canLead }: { employeeId: string; ca
 
   return (
     <section className="rounded-2xl border bg-card p-6 shadow-sm">
-      <h3 className="text-lg font-semibold">Incentive rates</h3>
+      <h3 className="text-lg font-semibold">Incentive rates <InfoTip text={HELP.incentiveRate} /></h3>
       <p className="text-sm text-muted-foreground">% of channel gross, before the CMS fee. Changes apply from their date; past months never move.</p>
       <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
         {(["manager", ...(canLead ? ["team_lead"] : [])] as IncentiveKind[]).map((k) => (
@@ -95,7 +97,7 @@ export function IncentiveRates({ employeeId, canLead }: { employeeId: string; ca
             <Input id="ir-rate" type="number" min="0" max="100" step="0.001" required placeholder="1" value={form.rate_pct} onChange={(e) => setForm({ ...form, rate_pct: e.target.value })} />
           </div>
           <div className="space-y-1">
-            <Label htmlFor="ir-from">From *</Label>
+            <Label htmlFor="ir-from">From * <InfoTip text={HELP.effectiveDate} /></Label>
             <Input id="ir-from" type="date" required value={form.effective_from} onChange={(e) => setForm({ ...form, effective_from: e.target.value })} />
           </div>
         </div>

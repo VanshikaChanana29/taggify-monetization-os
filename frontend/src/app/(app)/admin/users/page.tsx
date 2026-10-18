@@ -167,13 +167,40 @@ export default function AllUsersPage() {
       />
 
       <div className="grid gap-5 md:grid-cols-3">
-        <StatCard label="Total users" value={users.length} icon={Users} />
-        <StatCard label="Active founders" value={activeFounders} icon={UserCheck} tone="green" />
+        <StatCard
+          label="Total users"
+          value={users.length}
+          icon={Users}
+          active={!status && !role && !companyFilter}
+          onClick={() => {
+            setStatus("");
+            setRole("");
+            setCompanyFilter("");
+          }}
+        />
+        <StatCard
+          label="Active founders"
+          value={activeFounders}
+          icon={UserCheck}
+          tone="green"
+          info="Founders who can log in to at least one company."
+          active={role === "founder" && status === "active"}
+          onClick={() => {
+            setRole("founder");
+            setStatus("active");
+          }}
+        />
         <StatCard
           label="Super admins"
           value={users.filter((u) => u.is_superadmin).length}
           icon={Crown}
           tone="amber"
+          info="Super admins create companies and founders. They do not see business data unless also a founder."
+          active={role === "superadmin"}
+          onClick={() => {
+            setRole("superadmin");
+            setStatus("");
+          }}
         />
       </div>
 

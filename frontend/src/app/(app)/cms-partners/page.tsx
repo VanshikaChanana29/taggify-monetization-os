@@ -16,6 +16,7 @@ import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { api } from "@/lib/api";
+import { HELP } from "@/lib/help";
 import { PLATFORM_LABELS, PLATFORM_TONES } from "@/lib/people";
 import type { CmsPartner, Platform } from "@/lib/types";
 import { useClientTable } from "@/lib/use-client-table";
@@ -92,8 +93,22 @@ export default function CmsPartnersPage() {
       />
 
       <div className="grid gap-5 md:grid-cols-2">
-        <StatCard label="Active partners" value={rows.filter((r) => r.is_active).length} icon={Server} />
-        <StatCard label="Channels linked" value={rows.reduce((n, r) => n + r.channel_count, 0)} icon={Tv} tone="green" />
+        <StatCard
+          label="Active partners"
+          value={rows.filter((r) => r.is_active).length}
+          icon={Server}
+          info={HELP.cms}
+          active={!platform}
+          onClick={() => setPlatform("")}
+        />
+        <StatCard
+          label="Channels linked"
+          value={rows.reduce((n, r) => n + r.channel_count, 0)}
+          icon={Tv}
+          tone="green"
+          info="Channels that send their earnings through one of these CMS partners."
+          href="/channels"
+        />
       </div>
 
       {error && <Notice kind="error">{error}</Notice>}

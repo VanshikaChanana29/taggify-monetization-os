@@ -11,8 +11,10 @@ import { Notice } from "@/components/notice";
 import { PageHeader } from "@/components/page-header";
 import { StatCard } from "@/components/stat-card";
 import { Button } from "@/components/ui/button";
+import { InfoTip } from "@/components/ui/info-tip";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { api } from "@/lib/api";
+import { HELP } from "@/lib/help";
 import { compactInr, money, shiftMonth, thisMonth } from "@/lib/finance";
 import type { FinanceMonth } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -73,14 +75,17 @@ function FinancePage() {
       {error && <Notice kind="error">{error}</Notice>}
 
       <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Gross revenue" value={data ? fmt(data.gross) : "…"} icon={Coins} tone="slate" />
-        <StatCard label="CMS commission" value={data ? fmt(data.fee) : "…"} icon={Percent} tone="amber" />
-        <StatCard label="Net receivable" value={data ? fmt(data.net_receivable) : "…"} icon={Banknote} tone="green" />
-        <StatCard label="Cash received" value={data ? fmt(data.received) : "…"} icon={Banknote} />
+        <StatCard label="Gross revenue" value={data ? fmt(data.gross) : "…"} icon={Coins} tone="slate" info={HELP.grossRevenue} href="#cms-breakdown" />
+        <StatCard label="CMS commission" value={data ? fmt(data.fee) : "…"} icon={Percent} tone="amber" info={HELP.cmsCommission} href="#cms-breakdown" />
+        <StatCard label="Net receivable" value={data ? fmt(data.net_receivable) : "…"} icon={Banknote} tone="green" info={HELP.netReceivable} href="#cms-breakdown" />
+        <StatCard label="Cash received" value={data ? fmt(data.received) : "…"} icon={Banknote} info={HELP.cashReceived} href="#cms-breakdown" />
       </div>
 
       <div className="flex items-center justify-between rounded-2xl bg-foreground px-8 py-6 text-background">
-        <p className="text-lg font-semibold uppercase tracking-wider">Outstanding CMS balance</p>
+        <p className="text-lg font-semibold uppercase tracking-wider">
+          Outstanding CMS balance
+          <InfoTip text={HELP.outstanding} className="text-background/70 hover:text-background" />
+        </p>
         <p className="text-4xl font-bold text-emerald-300">{data ? fmt(data.outstanding) : "…"}</p>
       </div>
       <p className="-mt-5 text-xs text-muted-foreground">
@@ -88,7 +93,7 @@ function FinancePage() {
         the month&apos;s FX rate.
       </p>
 
-      <div className="overflow-hidden rounded-2xl border bg-card shadow-sm">
+      <div id="cms-breakdown" className="scroll-mt-24 overflow-hidden rounded-2xl border bg-card shadow-sm">
         <Table>
           <TableHeader>
             <TableRow>
@@ -97,7 +102,10 @@ function FinancePage() {
               <TableHead>CMS fee</TableHead>
               <TableHead>Net due</TableHead>
               <TableHead>Net ({base})</TableHead>
-              <TableHead>vs statement</TableHead>
+              <TableHead>
+                vs statement
+                <InfoTip text={HELP.variance} />
+              </TableHead>
               <TableHead>Received</TableHead>
               <TableHead>Outstanding</TableHead>
               <TableHead />

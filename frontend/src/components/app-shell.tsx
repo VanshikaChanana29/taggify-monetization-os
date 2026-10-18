@@ -30,28 +30,50 @@ import { UserAvatar } from "@/components/user-avatar";
 import type { Me } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-type NavItem = { label: string; icon: LucideIcon; href?: string };
+type NavItem = { label: string; icon: LucideIcon; href?: string; step?: number; hint?: string };
+type NavGroup = { title?: string; items: NavItem[] };
 
-const COMPANY_NAV: NavItem[] = [
-  { label: "Dashboard", icon: LayoutGrid, href: "/" },
-  { label: "Deals", icon: Handshake, href: "/deals" },
-  { label: "Content owners", icon: Building, href: "/content-owners" },
-  { label: "Channels", icon: MonitorPlay, href: "/channels" },
-  { label: "CMS partners", icon: Server, href: "/cms-partners" },
-  { label: "People", icon: Users, href: "/people" },
-  { label: "CMS & Finance", icon: Landmark, href: "/finance" },
-  // Built in later parts
-  { label: "Approvals", icon: ClipboardCheck },
-  { label: "Users", icon: UserCog, href: "/settings/users" },
-  { label: "Roles", icon: BadgeCheck, href: "/settings/roles" },
-  { label: "Activity", icon: History, href: "/settings/activity" },
-  { label: "My account", icon: UserRound, href: "/settings/account" },
+/** In the order a founder sets the business up (PDF slide 2), then money, then settings. */
+const COMPANY_NAV: NavGroup[] = [
+  { items: [{ label: "Dashboard", icon: LayoutGrid, href: "/", hint: "Money and operations on one screen" }] },
+  {
+    title: "Set up, in this order",
+    items: [
+      { label: "Content owners", icon: Building, href: "/content-owners", step: 1, hint: "Sony, other vendors, your own IP" },
+      { label: "Deals", icon: Handshake, href: "/deals", step: 2, hint: "Licences: episodes, term, slots, fee" },
+      { label: "CMS partners", icon: Server, href: "/cms-partners", step: 3, hint: "Who collects YouTube/Facebook money, and their fee slabs" },
+      { label: "People", icon: Users, href: "/people", step: 4, hint: "Team, roles, team leads, incentive %" },
+      { label: "Channels", icon: MonitorPlay, href: "/channels", step: 5, hint: "YouTube channels & Facebook pages, put into deal slots" },
+    ],
+  },
+  {
+    title: "Money",
+    items: [{ label: "CMS & Finance", icon: Landmark, href: "/finance", hint: "Revenue, CMS settlement, cash, incentives, month close" }],
+  },
+  {
+    title: "Operations",
+    // Built in later parts
+    items: [{ label: "Approvals", icon: ClipboardCheck }],
+  },
+  {
+    title: "Settings",
+    items: [
+      { label: "Users", icon: UserCog, href: "/settings/users", hint: "Founders who can log in" },
+      { label: "Roles", icon: BadgeCheck, href: "/settings/roles", hint: "Job roles and what each may do" },
+      { label: "Activity", icon: History, href: "/settings/activity", hint: "Who did what, across the company" },
+      { label: "My account", icon: UserRound, href: "/settings/account" },
+    ],
+  },
 ];
 
-const ADMIN_NAV: NavItem[] = [
-  { label: "Companies", icon: Building2, href: "/admin/companies" },
-  { label: "All users", icon: Users, href: "/admin/users" },
-  { label: "My account", icon: UserRound, href: "/settings/account" },
+const ADMIN_NAV: NavGroup[] = [
+  {
+    items: [
+      { label: "Companies", icon: Building2, href: "/admin/companies" },
+      { label: "All users", icon: Users, href: "/admin/users" },
+      { label: "My account", icon: UserRound, href: "/settings/account" },
+    ],
+  },
 ];
 
 const TITLES: Record<string, string> = {
@@ -170,38 +192,56 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
         <div className="flex-1 space-y-5 overflow-y-auto px-4 py-5">
           {me.user.is_superadmin && me.organization && <ModeSwitch mode={mode} />}
-          <nav className="space-y-1">
-            {nav.map((item) => {
-              const active =
-                item.href === pathname || (item.href !== "/" && pathname.startsWith(`${item.href}/`));
-              return item.href ? (
-                <Link
-                  key={item.label}
-                  href={item.href}
-                  className={cn(
-                    "flex items-center gap-3 rounded-xl px-4 py-3 text-[15px] font-medium transition-colors",
-                    active
-                      ? "bg-primary text-primary-foreground shadow-md shadow-primary/20"
-                      : "text-sidebar-foreground hover:bg-sidebar-accent",
-                  )}
-                >
-                  <item.icon className="h-5 w-5" />
-                  {item.label}
-                </Link>
-              ) : (
-                <span
-                  key={item.label}
-                  title="Coming in a later part"
-                  className="flex cursor-default items-center gap-3 rounded-xl px-4 py-3 text-[15px] font-medium text-muted-foreground/50"
-                >
-                  <item.icon className="h-5 w-5" />
-                  {item.label}
-                  <span className="ml-auto rounded-md bg-muted px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide">
-                    Soon
-                  </span>
-                </span>
-              );
-            })}
+          <nav className="space-y-5">
+            {nav.map((group, g) => (
+              <div key={group.title ?? g} className="space-y-1">
+                {group.title && (
+                  <p className="px-4 pb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">{group.title}</p>
+                )}
+                {group.items.map((item) => {
+                  const active =
+                    item.href === pathname || (item.href !== "/" && pathname.startsWith(`${item.href}/`));
+                  return item.href ? (
+                    <Link
+                      key={item.label}
+                      href={item.href}
+                      title={item.hint}
+                      className={cn(
+                        "flex items-center gap-3 rounded-xl px-4 py-2.5 text-[15px] font-medium transition-colors",
+                        active
+                          ? "bg-primary text-primary-foreground shadow-md shadow-primary/20"
+                          : "text-sidebar-foreground hover:bg-sidebar-accent",
+                      )}
+                    >
+                      <item.icon className="h-5 w-5" />
+                      <span className="flex-1">{item.label}</span>
+                      {item.step && (
+                        <span
+                          className={cn(
+                            "flex h-5 w-5 items-center justify-center rounded-full text-[11px] font-bold",
+                            active ? "bg-primary-foreground/20 text-primary-foreground" : "bg-muted text-muted-foreground",
+                          )}
+                        >
+                          {item.step}
+                        </span>
+                      )}
+                    </Link>
+                  ) : (
+                    <span
+                      key={item.label}
+                      title="Coming in a later part"
+                      className="flex cursor-default items-center gap-3 rounded-xl px-4 py-2.5 text-[15px] font-medium text-muted-foreground/50"
+                    >
+                      <item.icon className="h-5 w-5" />
+                      {item.label}
+                      <span className="ml-auto rounded-md bg-muted px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide">
+                        Soon
+                      </span>
+                    </span>
+                  );
+                })}
+              </div>
+            ))}
           </nav>
         </div>
 

@@ -10,6 +10,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
+import { InfoTip } from "@/components/ui/info-tip";
+import { HELP } from "@/lib/help";
 import { api } from "@/lib/api";
 import { COUNTRIES, DEAL_TYPE_LABELS, SCOPE_LABELS } from "@/lib/deals";
 import type { ContentOwner, Deal, DealType, EpisodeScope, Exclusivity, StoredDealStatus } from "@/lib/types";
@@ -326,7 +328,7 @@ export function DealForm({ deal }: { deal: Deal | null }) {
     <form onSubmit={submit} className="space-y-6">
       <Section title="Deal" hint="Fields marked * are required.">
         <div className="space-y-2">
-          <Label htmlFor="owner">Content owner *</Label>
+          <Label htmlFor="owner">Content owner * <InfoTip text={HELP.owner} /></Label>
           <NativeSelect
             id="owner"
             required
@@ -365,7 +367,7 @@ export function DealForm({ deal }: { deal: Deal | null }) {
           <FieldError message={err.title} />
         </div>
         <div className="space-y-2 md:col-span-2">
-          <Label>Deal type *</Label>
+          <Label>Deal type * <InfoTip text={HELP.dealType} /></Label>
           <Choice value={form.deal_type} options={DEAL_TYPE_LABELS} onChange={(deal_type) => set({ deal_type })} />
         </div>
         {form.deal_type === "hybrid" && (
@@ -377,7 +379,7 @@ export function DealForm({ deal }: { deal: Deal | null }) {
         {PAYS_FEE.includes(form.deal_type) && (
           <>
             <div className="space-y-2">
-              <Label htmlFor="fee">{form.deal_type === "hybrid" ? "Minimum guarantee *" : "Licence fee *"}</Label>
+              <Label htmlFor="fee">{form.deal_type === "hybrid" ? "Minimum guarantee *" : "Licence fee *"} <InfoTip text={form.deal_type === "hybrid" ? HELP.minimumGuarantee : HELP.licenceFee} /></Label>
               <Input
                 id="fee"
                 type="number"
@@ -402,7 +404,7 @@ export function DealForm({ deal }: { deal: Deal | null }) {
         )}
         {SHARES.includes(form.deal_type) && (
           <div className="space-y-2">
-            <Label htmlFor="share">Owner&apos;s revenue share (%) *</Label>
+            <Label htmlFor="share">Owner&apos;s revenue share (%) * <InfoTip text={HELP.revenueShare} /></Label>
             <Input
               id="share"
               type="number"
@@ -418,7 +420,7 @@ export function DealForm({ deal }: { deal: Deal | null }) {
           </div>
         )}
         <div className="space-y-2">
-          <Label htmlFor="status">Status</Label>
+          <Label htmlFor="status">Status <InfoTip text={HELP.dealStatus} /></Label>
           <NativeSelect
             id="status"
             value={form.status}
@@ -433,7 +435,7 @@ export function DealForm({ deal }: { deal: Deal | null }) {
 
       <Section title="Rights" hint="What may be published, until when, and where.">
         <div className="space-y-2">
-          <Label htmlFor="start">Term start *</Label>
+          <Label htmlFor="start">Term start * <InfoTip text={HELP.term} /></Label>
           <Input id="start" type="date" required value={form.term_start} onChange={(e) => set({ term_start: e.target.value })} />
         </div>
         <div className="space-y-2">
@@ -450,7 +452,7 @@ export function DealForm({ deal }: { deal: Deal | null }) {
         </div>
 
         <div className="space-y-3 md:col-span-2">
-          <Label>Episodes *</Label>
+          <Label>Episodes * <InfoTip text={HELP.episodeScope} /></Label>
           <Choice value={form.episode_scope} options={SCOPE_LABELS} onChange={(episode_scope) => set({ episode_scope })} />
           {form.episode_scope !== "all" && (
             <div className="space-y-2">
@@ -515,7 +517,7 @@ export function DealForm({ deal }: { deal: Deal | null }) {
         </div>
 
         <div className="space-y-3 md:col-span-2">
-          <Label>Territory *</Label>
+          <Label>Territory * <InfoTip text={HELP.territory} /></Label>
           <label className="flex items-center gap-2 text-sm">
             <input
               type="checkbox"
@@ -552,7 +554,7 @@ export function DealForm({ deal }: { deal: Deal | null }) {
 
       <Section title="Slots" hint="How many channels/pages the deal allows. At least one is required; slots are created automatically.">
         <div className="space-y-2">
-          <Label htmlFor="yt">YouTube channels</Label>
+          <Label htmlFor="yt">YouTube channels <InfoTip text={HELP.slots} /></Label>
           <Input id="yt" type="number" min="0" max="100" required value={form.yt_slot_limit} onChange={(e) => set({ yt_slot_limit: e.target.value })} />
         </div>
         <div className="space-y-2">
@@ -576,7 +578,7 @@ export function DealForm({ deal }: { deal: Deal | null }) {
           <p className="text-xs text-muted-foreground">Separate with commas.</p>
         </div>
         <div className="space-y-2">
-          <Label htmlFor="exclusivity">Exclusivity</Label>
+          <Label htmlFor="exclusivity">Exclusivity <InfoTip text={HELP.exclusivity} /></Label>
           <NativeSelect
             id="exclusivity"
             value={form.exclusivity}
@@ -588,7 +590,7 @@ export function DealForm({ deal }: { deal: Deal | null }) {
           </NativeSelect>
         </div>
         <div className="space-y-2">
-          <Label htmlFor="notice">Notice period (days)</Label>
+          <Label htmlFor="notice">Notice period (days) <InfoTip text={HELP.noticePeriod} /></Label>
           <Input
             id="notice"
             type="number"

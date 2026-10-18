@@ -11,7 +11,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
+import { InfoTip } from "@/components/ui/info-tip";
 import { UserAvatar } from "@/components/user-avatar";
+import { HELP } from "@/lib/help";
 import { api } from "@/lib/api";
 import { formatDate, todayISO } from "@/lib/deals";
 import type { Employee, TeamDetail, TeamHistoryItem } from "@/lib/types";
@@ -176,7 +178,7 @@ export default function TeamPage() {
         </div>
         <div className="space-y-6">
           <section className="rounded-2xl border bg-card p-6 shadow-sm">
-            <h3 className="text-lg font-semibold">Change team lead</h3>
+            <h3 className="text-lg font-semibold">Change team lead <InfoTip text={HELP.team} /></h3>
             <p className="text-sm text-muted-foreground">Only people whose role can lead a team are listed.</p>
             <form
               className="mt-4 space-y-3"
@@ -197,7 +199,7 @@ export default function TeamPage() {
                 ))}
               </NativeSelect>
               <div className="space-y-1">
-                <Label htmlFor="lead-date">From date</Label>
+                <Label htmlFor="lead-date">From date <InfoTip text={HELP.effectiveDate} /></Label>
                 <Input id="lead-date" type="date" max={todayISO()} value={effective} onChange={(e) => setEffective(e.target.value)} />
               </div>
               <Button type="submit" className="w-full" disabled={leadId === (team.lead?.id ?? "")}>

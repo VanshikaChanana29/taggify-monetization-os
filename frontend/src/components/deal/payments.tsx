@@ -12,6 +12,8 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { InfoTip } from "@/components/ui/info-tip";
+import { HELP } from "@/lib/help";
 import { api } from "@/lib/api";
 import { DEAL_STATUS_TONES, formatDate, todayISO } from "@/lib/deals";
 import { money } from "@/lib/finance";
@@ -114,10 +116,17 @@ export function DealPayments({ deal, e, onChange }: { deal: Deal; e: DealEconomi
   return (
     <div className="space-y-6">
       <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
-        <StatCard label={feeLabel} value={money(deal.fee_amount, deal.currency)} icon={Wallet} tone="slate" />
+        <StatCard
+          label={feeLabel}
+          value={money(deal.fee_amount, deal.currency)}
+          icon={Wallet}
+          tone="slate"
+          info={deal.deal_type === "hybrid" ? HELP.minimumGuarantee : HELP.licenceFee}
+        />
         <StatCard label="Paid so far" value={money(e.paid, cur)} icon={CheckCircle2} tone="green" />
         <StatCard
           label="Still payable"
+          info={HELP.stillPayable}
           value={money(e.payable, cur)}
           icon={CalendarClock}
           tone={Number(e.payable) > 0 ? "amber" : "green"}
@@ -146,7 +155,9 @@ export function DealPayments({ deal, e, onChange }: { deal: Deal; e: DealEconomi
       <section className="overflow-hidden rounded-2xl border bg-card shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3 p-6 pb-4">
           <div>
-            <h3 className="text-lg font-semibold">Installments to {deal.owner_name}</h3>
+            <h3 className="text-lg font-semibold">
+              Installments to {deal.owner_name} <InfoTip text={HELP.installments} />
+            </h3>
             <p className="text-sm text-muted-foreground">
               Paying an installment reduces what is still payable — it never adds to the rights cost (PDF slide 11).
             </p>

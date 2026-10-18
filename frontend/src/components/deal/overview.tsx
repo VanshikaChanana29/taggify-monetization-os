@@ -4,6 +4,8 @@ import { AlertOctagon, AlertTriangle, ArrowRight, CheckCircle2, ExternalLink, In
 
 import { RightsChecker } from "@/components/deal/rights-check";
 import { daysBetween } from "@/components/deal/form-bits";
+import { InfoTip } from "@/components/ui/info-tip";
+import { HELP } from "@/lib/help";
 import { COUNTRY_NAMES, formatDate, todayISO } from "@/lib/deals";
 import { money } from "@/lib/finance";
 import type { Deal, DealEconomics, Platform } from "@/lib/types";
@@ -58,10 +60,12 @@ function SummaryCard({
   value,
   sub,
   alert,
+  info,
   onClick,
   children,
 }: {
   title: string;
+  info?: string;
   value: React.ReactNode;
   sub?: React.ReactNode;
   alert?: boolean;
@@ -78,7 +82,10 @@ function SummaryCard({
       )}
     >
       <span className="flex items-center justify-between text-sm font-medium uppercase tracking-wider text-muted-foreground">
-        {title}
+        <span>
+          {title}
+          {info && <InfoTip text={info} />}
+        </span>
         <ArrowRight className="h-4 w-4 opacity-0 transition-opacity group-hover:opacity-100" />
       </span>
       <span className="mt-2 text-2xl font-bold">{value}</span>
@@ -114,6 +121,7 @@ export function DealOverview({ deal, e, go }: { deal: Deal; e: DealEconomics | n
             value={Number(e.payable) > 0 ? `${money(e.payable, e.base_currency)} due` : "All paid"}
             sub={`Paid ${money(e.paid, e.base_currency)} of ${money(deal.fee_amount, deal.currency)}`}
             alert={overdue > 0}
+            info={HELP.installments}
             onClick={() => go("payments")}
           >
             {overdue > 0 && <span className="mt-2 text-sm font-semibold text-red-600 dark:text-red-400">{overdue} overdue</span>}
@@ -123,6 +131,7 @@ export function DealOverview({ deal, e, go }: { deal: Deal; e: DealEconomics | n
         )}
         <SummaryCard
           title="Recovery"
+          info={HELP.recovery}
           value={pct === null ? "—" : `${pct}%`}
           sub={e?.rights_cost ? `${money(e.net_contribution, e.base_currency)} of ${money(e.rights_cost, e.base_currency)} earned back` : "No rights cost"}
           onClick={() => go("profitability")}
@@ -135,12 +144,14 @@ export function DealOverview({ deal, e, go }: { deal: Deal; e: DealEconomics | n
         </SummaryCard>
         <SummaryCard
           title="Slots in use"
+          info={HELP.slots}
           value={[yt.limit && `YT ${yt.used}/${yt.limit}`, fb.limit && `FB ${fb.used}/${fb.limit}`].filter(Boolean).join(" · ")}
           sub={`${yt.active + fb.active} active · ${yt.pending + fb.pending} pending whitelist`}
           onClick={() => go("slots")}
         />
         <SummaryCard
           title="Episodes & files"
+          info={HELP.episodes}
           value={`${deal.episode_count} episode${deal.episode_count === 1 ? "" : "s"}`}
           sub={`${deal.document_count} file${deal.document_count === 1 ? "" : "s"} uploaded`}
           onClick={() => go(deal.episode_count ? "documents" : "episodes")}
@@ -173,7 +184,9 @@ export function DealOverview({ deal, e, go }: { deal: Deal; e: DealEconomics | n
 
       <div className="grid gap-6 xl:grid-cols-2">
         <section className="rounded-2xl border bg-card p-6 shadow-sm">
-          <h3 className="text-lg font-semibold">Contract terms</h3>
+          <h3 className="text-lg font-semibold">
+            Contract terms <InfoTip text="From the signed agreement. Edit them with Edit deal." />
+          </h3>
           <dl className="mt-3 text-sm">
             <Row label="Territory">{deal.is_worldwide ? "Worldwide" : deal.territories.map((t) => COUNTRY_NAMES[t] ?? t).join(", ")}</Row>
             <Row label="Languages">{deal.languages.length ? deal.languages.join(", ") : "—"}</Row>

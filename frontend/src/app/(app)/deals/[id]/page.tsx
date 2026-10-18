@@ -16,16 +16,21 @@ import { Notice } from "@/components/notice";
 import { Pill } from "@/components/pill";
 import { Button } from "@/components/ui/button";
 import { Tabs } from "@/components/ui/tabs";
+import { InfoTip } from "@/components/ui/info-tip";
+import { HELP } from "@/lib/help";
 import { api } from "@/lib/api";
 import { DEAL_STATUS_LABELS, DEAL_STATUS_TONES, DEAL_TYPE_LABELS, dealValue, episodeSummary, formatDate } from "@/lib/deals";
 import type { Deal, DealEconomics } from "@/lib/types";
 
 const TABS: DealTab[] = ["overview", "slots", "payments", "profitability", "episodes", "documents", "history"];
 
-function Fact({ label, value, sub }: { label: string; value: React.ReactNode; sub?: string }) {
+function Fact({ label, value, sub, info }: { label: string; value: React.ReactNode; sub?: string; info?: string }) {
   return (
     <div>
-      <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">{label}</p>
+      <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+        {label}
+        {info && <InfoTip text={info} />}
+      </p>
       <p className="mt-1 text-lg font-bold">{value}</p>
       {sub && <p className="text-xs text-muted-foreground">{sub}</p>}
     </div>
@@ -96,10 +101,10 @@ function DealDetail() {
           </Button>
         </div>
         <div className="mt-6 grid gap-5 border-t pt-5 sm:grid-cols-2 lg:grid-cols-5">
-          <Fact label={deal.deal_type === "hybrid" ? "Guarantee + share" : "Licence value"} value={dealValue(deal)} />
-          <Fact label="Episodes" value={episodeSummary(deal.episode_scope, deal.episode_ranges)} />
+          <Fact label={deal.deal_type === "hybrid" ? "Guarantee + share" : "Licence value"} value={dealValue(deal)} info={HELP.dealType} />
+          <Fact label="Episodes" value={episodeSummary(deal.episode_scope, deal.episode_ranges)} info={HELP.episodeScope} />
           <Fact label="Term" value={`${deal.term_start.slice(0, 4)}–${deal.term_end.slice(0, 4)}`} sub={`${formatDate(deal.term_start)} → ${formatDate(deal.term_end)}`} />
-          <Fact label="YouTube slots" value={deal.yt_slot_limit ? `${deal.yt_slots_used} / ${deal.yt_slot_limit}` : "None"} sub={deal.yt_slot_limit ? "in use" : undefined} />
+          <Fact info={HELP.slots} label="YouTube slots" value={deal.yt_slot_limit ? `${deal.yt_slots_used} / ${deal.yt_slot_limit}` : "None"} sub={deal.yt_slot_limit ? "in use" : undefined} />
           <Fact label="Facebook slots" value={deal.fb_slot_limit ? `${deal.fb_slots_used} / ${deal.fb_slot_limit}` : "None"} sub={deal.fb_slot_limit ? "in use" : undefined} />
         </div>
       </div>

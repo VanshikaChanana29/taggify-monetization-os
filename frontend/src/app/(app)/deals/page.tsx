@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { api } from "@/lib/api";
+import { HELP } from "@/lib/help";
 import {
   DEAL_STATUS_LABELS,
   DEAL_STATUS_TONES,
@@ -124,15 +125,39 @@ function DealsPage() {
       />
 
       <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Active deals" value={summary?.active_deals ?? "—"} icon={Handshake} />
-        <StatCard label="Licence value (active)" value={value || "—"} icon={IndianRupee} tone="slate" />
+        <StatCard
+          label="Active deals"
+          value={summary?.active_deals ?? "—"}
+          icon={Handshake}
+          info={HELP.dealStatus}
+          active={filters.status === "active"}
+          onClick={() => update({ status: filters.status === "active" ? "" : "active" })}
+        />
+        <StatCard
+          label="Licence value (active)"
+          value={value || "—"}
+          icon={IndianRupee}
+          tone="slate"
+          info={HELP.licenceFee}
+          onClick={() => update({ status: "active", type: "fixed_fee" })}
+        />
         <StatCard
           label="Slots in use"
           value={summary ? `${summary.slots_used} / ${summary.slots_total}` : "—"}
           icon={Tv}
           tone="green"
+          info={HELP.slots}
+          href="/channels?slot=assigned"
         />
-        <StatCard label="Expiring in 90 days" value={summary?.expiring_soon ?? "—"} icon={AlarmClock} tone="amber" />
+        <StatCard
+          label="Expiring in 90 days"
+          value={summary?.expiring_soon ?? "—"}
+          icon={AlarmClock}
+          tone="amber"
+          info="Active deals whose licence ends in the next 90 days — decide on renewal before the notice period runs out."
+          active={filters.status === "expiring"}
+          onClick={() => update({ status: filters.status === "expiring" ? "" : "expiring" })}
+        />
       </div>
 
       {error && <Notice kind="error">{error}</Notice>}

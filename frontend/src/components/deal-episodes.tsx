@@ -10,6 +10,8 @@ import { Dialog, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { InfoTip } from "@/components/ui/info-tip";
+import { HELP } from "@/lib/help";
 import { api } from "@/lib/api";
 import { formatDate } from "@/lib/deals";
 import type { Episode, EpisodeScope, Page } from "@/lib/types";
@@ -144,7 +146,9 @@ export function DealEpisodes({ dealId, scope, onChange }: { dealId: string; scop
     <section className="overflow-hidden rounded-2xl border bg-card shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-3 p-6 pb-4">
         <div>
-          <h3 className="text-lg font-semibold">Episodes</h3>
+          <h3 className="text-lg font-semibold">
+            Episodes <InfoTip text={HELP.episodes} />
+          </h3>
           <p className="text-sm text-muted-foreground">
             Title and details of each licensed episode (PDF slide 4, step 03). Only episodes inside the licence can be added.
           </p>

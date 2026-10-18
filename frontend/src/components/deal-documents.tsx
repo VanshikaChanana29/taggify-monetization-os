@@ -11,6 +11,8 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogFooter } from "@/components/ui/dialog";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { InfoTip } from "@/components/ui/info-tip";
+import { HELP } from "@/lib/help";
 import { api } from "@/lib/api";
 import { formatDateTime } from "@/lib/format";
 import type { DealDocument, DocumentKind } from "@/lib/types";
@@ -86,7 +88,9 @@ export function DealDocuments({ dealId, onChange }: { dealId: string; onChange: 
     <section className="overflow-hidden rounded-2xl border bg-card shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3 p-6 pb-4">
         <div>
-          <h3 className="text-lg font-semibold">Documents</h3>
+          <h3 className="text-lg font-semibold">
+            Documents <InfoTip text={HELP.documents} />
+          </h3>
           <p className="text-sm text-muted-foreground">Signed contract, annexures and rights evidence for this deal.</p>
         </div>
         <Button

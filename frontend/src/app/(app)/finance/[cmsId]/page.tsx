@@ -13,6 +13,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { InfoTip } from "@/components/ui/info-tip";
+import { HELP } from "@/lib/help";
 import { api } from "@/lib/api";
 import { formatDate, todayISO } from "@/lib/deals";
 import { money, shiftMonth, thisMonth } from "@/lib/finance";
@@ -173,7 +175,7 @@ function CmsMonthPage() {
       {hasCms && (
         <div className="grid gap-6 xl:grid-cols-3">
           <section className="rounded-2xl border bg-card p-6 shadow-sm">
-            <h3 className="text-lg font-semibold">CMS statement</h3>
+            <h3 className="text-lg font-semibold">CMS statement <InfoTip text={HELP.statement} /></h3>
             <p className="text-sm text-muted-foreground">What {s.cms_name} reported, to check against our numbers.</p>
             {s.variance !== null && (
               <p className={cn("mt-3 text-sm font-semibold", Number(s.variance) === 0 ? "text-emerald-600" : "text-amber-600")}>
@@ -223,7 +225,7 @@ function CmsMonthPage() {
           </section>
 
           <section className="rounded-2xl border bg-card p-6 shadow-sm">
-            <h3 className="text-lg font-semibold">Cash received</h3>
+            <h3 className="text-lg font-semibold">Cash received <InfoTip text={HELP.receiptCurrency} /></h3>
             <p className="text-sm text-muted-foreground">
               What the CMS paid, in the currency it paid (USD, AED…), and what the bank credited in {base}.
             </p>
@@ -293,7 +295,7 @@ function CmsMonthPage() {
                 </div>
                 {payCurrency !== base && (
                   <div className="col-span-2 space-y-1">
-                    <Label htmlFor="rc-base">Bank credited ({base}) *</Label>
+                    <Label htmlFor="rc-base">Bank credited ({base}) * <InfoTip text={HELP.fxDifference} /></Label>
                     <Input
                       id="rc-base"
                       type="number"
@@ -319,7 +321,7 @@ function CmsMonthPage() {
           </section>
 
           <section className="rounded-2xl border bg-card p-6 shadow-sm">
-            <h3 className="text-lg font-semibold">Adjustments</h3>
+            <h3 className="text-lg font-semibold">Adjustments <InfoTip text={HELP.adjustment} /></h3>
             <p className="text-sm text-muted-foreground">Tax withheld, disputes, revisions. Negative reduces what the CMS owes.</p>
             <ul className="mt-4 space-y-2 text-sm">
               {data.adjustments.map((a) => (

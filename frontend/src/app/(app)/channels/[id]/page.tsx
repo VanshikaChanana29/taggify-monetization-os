@@ -14,6 +14,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { InfoTip } from "@/components/ui/info-tip";
+import { HELP } from "@/lib/help";
 import { api } from "@/lib/api";
 import { SLOT_STATUS_LABELS, SLOT_STATUS_TONES, formatDate, todayISO } from "@/lib/deals";
 import { PLATFORM_LABELS, PLATFORM_TONES, canManage } from "@/lib/people";
@@ -162,7 +164,7 @@ export default function ChannelDetailPage() {
         <div className="space-y-6 xl:col-span-2">
           <section className="overflow-hidden rounded-2xl border bg-card shadow-sm">
             <div className="p-6 pb-4">
-              <h3 className="text-lg font-semibold">Deal slots</h3>
+              <h3 className="text-lg font-semibold">Deal slots <InfoTip text={HELP.slots} /></h3>
               <p className="text-sm text-muted-foreground">Every slot this channel has held. Assign or replace from the deal page.</p>
             </div>
             <Table>
@@ -221,7 +223,7 @@ export default function ChannelDetailPage() {
 
         <div className="space-y-6">
           <section className="rounded-2xl border bg-card p-6 shadow-sm">
-            <h3 className="text-lg font-semibold">Manager</h3>
+            <h3 className="text-lg font-semibold">Manager <InfoTip text={HELP.manager} /></h3>
             <p className="text-sm text-muted-foreground">
               Only people whose role can manage {PLATFORM_LABELS[channel.platform]} {channel.platform === "youtube" ? "channels" : "pages"} are listed (
               <Link href="/settings/roles" className="text-primary hover:underline">
@@ -242,7 +244,7 @@ export default function ChannelDetailPage() {
                 </NativeSelect>
               </div>
               <div className="space-y-1">
-                <Label htmlFor="mgr-date">From date</Label>
+                <Label htmlFor="mgr-date">From date <InfoTip text={HELP.effectiveDate} /></Label>
                 <Input id="mgr-date" type="date" max={todayISO()} value={effective} onChange={(e) => setEffective(e.target.value)} />
               </div>
               <Button type="submit" className="w-full" disabled={managerId === (channel.manager?.id ?? "")}>

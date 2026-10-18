@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { api } from "@/lib/api";
+import { HELP } from "@/lib/help";
 import { PLATFORM_LABELS, PLATFORM_TONES } from "@/lib/people";
 import type { ChannelListItem, ChannelsSummary, CmsPartner, DealListItem, Employee, Page } from "@/lib/types";
 import type { SortState } from "@/lib/use-client-table";
@@ -33,7 +34,7 @@ function ChannelsPage() {
   const [people, setPeople] = useState<Employee[]>([]);
   const [filters, setFilters] = useState<Filters>(() => ({
     ...NO_FILTERS,
-    manager: urlParams.get("managed") === "no" ? "none" : "",
+    manager: urlParams.get("managed") === "no" ? "none" : urlParams.get("managed") === "yes" ? "any" : "",
     slot: urlParams.get("slot") ?? "",
     status: urlParams.get("status") ?? "",
   }));
@@ -76,6 +77,7 @@ function ChannelsPage() {
     if (filters.cms) params.set("cms_partner_id", filters.cms);
     if (filters.deal) params.set("deal_id", filters.deal);
     if (filters.manager === "none") params.set("managed", "no");
+    else if (filters.manager === "any") params.set("managed", "yes");
     else if (filters.manager) params.set("manager_id", filters.manager);
     if (filters.slot) params.set("slot", filters.slot);
     if (filters.status) params.set("status", filters.status);
@@ -116,10 +118,40 @@ function ChannelsPage() {
       />
 
       <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Active channels" value={summary?.active_channels ?? "—"} icon={Tv} />
-        <StatCard label="Holding a deal slot" value={summary?.in_slots ?? "—"} icon={Link2} tone="green" />
-        <StatCard label="Without a slot" value={summary?.without_slot ?? "—"} icon={Unlink} tone="amber" />
-        <StatCard label="Without a manager" value={summary?.without_manager ?? "—"} icon={UserX} tone="amber" />
+        <StatCard
+          label="Active channels"
+          value={summary?.active_channels ?? "—"}
+          icon={Tv}
+          active={filters.status === "active" && !filters.slot && !filters.manager}
+          onClick={() => update({ ...NO_FILTERS, status: "active" })}
+        />
+        <StatCard
+          label="Holding a deal slot"
+          value={summary?.in_slots ?? "—"}
+          icon={Link2}
+          tone="green"
+          info={HELP.slots}
+          active={filters.slot === "assigned"}
+          onClick={() => update({ slot: filters.slot === "assigned" ? "" : "assigned" })}
+        />
+        <StatCard
+          label="Without a slot"
+          value={summary?.without_slot ?? "—"}
+          icon={Unlink}
+          tone="amber"
+          info="Channels that are not in any deal's slot yet — their content is not licensed for monetisation."
+          active={filters.slot === "unassigned"}
+          onClick={() => update({ slot: filters.slot === "unassigned" ? "" : "unassigned" })}
+        />
+        <StatCard
+          label="Without a manager"
+          value={summary?.without_manager ?? "—"}
+          icon={UserX}
+          tone="amber"
+          info={HELP.manager}
+          active={filters.manager === "none"}
+          onClick={() => update({ manager: filters.manager === "none" ? "" : "none", status: "active" })}
+        />
       </div>
 
       {error && <Notice kind="error">{error}</Notice>}
@@ -164,6 +196,7 @@ function ChannelsPage() {
         <NativeSelect aria-label="Filter by manager" className="w-44" value={filters.manager} onChange={(e) => update({ manager: e.target.value })}>
           <option value="">All managers</option>
           <option value="none">No manager</option>
+          <option value="any">Has a manager</option>
           {people.map((p) => (
             <option key={p.id} value={p.id}>
               {p.full_name}

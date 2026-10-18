@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
+import { InfoTip } from "@/components/ui/info-tip";
+import { HELP } from "@/lib/help";
 import { api } from "@/lib/api";
 import { todayISO } from "@/lib/deals";
 import { PLATFORM_LABELS } from "@/lib/people";
@@ -105,7 +107,7 @@ export function SlotAssignPanel({
               )}
             </div>
             <div className="space-y-1">
-              <Label htmlFor={`st-${slot.id}`}>Status</Label>
+              <Label htmlFor={`st-${slot.id}`}>Status <InfoTip text={HELP.slotStatus} /></Label>
               <NativeSelect id={`st-${slot.id}`} value={status} onChange={(e) => setStatus(e.target.value)}>
                 <option value="pending_whitelist">Pending whitelist</option>
                 <option value="reserved">Reserved</option>
@@ -115,7 +117,7 @@ export function SlotAssignPanel({
           </>
         )}
         <div className="space-y-1">
-          <Label htmlFor={`dt-${slot.id}`}>{action === "unassign" ? "Removed on" : "From date"}</Label>
+          <Label htmlFor={`dt-${slot.id}`}>{action === "unassign" ? "Removed on" : "From date"} <InfoTip text={HELP.effectiveDate} /></Label>
           <Input id={`dt-${slot.id}`} type="date" max={todayISO()} value={effective} onChange={(e) => setEffective(e.target.value)} />
         </div>
         <div className={action === "unassign" ? "space-y-1 md:col-span-3" : "space-y-1 md:col-span-4"}>

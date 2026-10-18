@@ -27,6 +27,7 @@ import { TrendChart } from "@/components/trend-chart";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { api } from "@/lib/api";
+import { HELP } from "@/lib/help";
 import { DEAL_STATUS_LABELS, DEAL_STATUS_TONES } from "@/lib/deals";
 import { compactInr, formatMonth, money, shiftMonth } from "@/lib/finance";
 import { PLATFORM_LABELS, PLATFORM_TONES } from "@/lib/people";
@@ -205,6 +206,7 @@ function CompanyView({ data }: { data: Dashboard }) {
           value={fmt(data.current.gross)}
           icon={Coins}
           tone="slate"
+          info={HELP.dashGross}
           href={`/finance?month=${m}`}
           hint={change(data.current.gross, data.previous.gross, prev)}
         />
@@ -212,6 +214,7 @@ function CompanyView({ data }: { data: Dashboard }) {
           label="Net after CMS"
           value={fmt(data.current.net)}
           icon={Landmark}
+          info={HELP.dashNet}
           href={`/finance?month=${m}`}
           hint={<span>CMS fee {fmt(data.current.fee)}</span>}
         />
@@ -220,6 +223,7 @@ function CompanyView({ data }: { data: Dashboard }) {
           value={fmt(data.current.received)}
           icon={Banknote}
           tone="green"
+          info={HELP.dashCash}
           href={`/finance?month=${m}`}
           hint={<span>Outstanding this month {fmt(data.current.outstanding)}</span>}
         />
@@ -228,6 +232,7 @@ function CompanyView({ data }: { data: Dashboard }) {
           value={recovery === null ? "—" : `${recovery}%`}
           icon={TrendingUp}
           tone="amber"
+          info={HELP.dashRecovery}
           href="/deals"
           hint={
             recovery === null ? (

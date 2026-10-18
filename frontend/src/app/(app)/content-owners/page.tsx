@@ -21,6 +21,7 @@ import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { api } from "@/lib/api";
+import { HELP } from "@/lib/help";
 import { OWNER_TYPE_LABELS } from "@/lib/deals";
 import type { ContentOwner, OwnerType } from "@/lib/types";
 import { timeValue, useClientTable } from "@/lib/use-client-table";
@@ -122,12 +123,24 @@ export default function ContentOwnersPage() {
       />
 
       <div className="grid gap-5 md:grid-cols-2">
-        <StatCard label="Content owners" value={owners.filter((o) => o.is_active).length} icon={Building} />
+        <StatCard
+          label="Content owners"
+          value={owners.filter((o) => o.is_active).length}
+          icon={Building}
+          info={HELP.owner}
+          active={!typeFilter && statusFilter === "active"}
+          onClick={() => {
+            setTypeFilter("");
+            setStatusFilter("active");
+          }}
+        />
         <StatCard
           label="Deals with them"
           value={owners.reduce((sum, o) => sum + o.deal_count, 0)}
           icon={Users}
           tone="green"
+          info={HELP.dealType}
+          href="/deals"
         />
       </div>
 

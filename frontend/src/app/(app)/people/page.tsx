@@ -17,6 +17,7 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { UserAvatar } from "@/components/user-avatar";
 import { api } from "@/lib/api";
+import { HELP } from "@/lib/help";
 import { formatMoney } from "@/lib/deals";
 import type { ChannelsSummary, Employee, RoleWithCount, Team } from "@/lib/types";
 import { useClientTable } from "@/lib/use-client-table";
@@ -86,10 +87,35 @@ export default function PeoplePage() {
       <PeopleTabs />
 
       <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Active people" value={active.length} icon={Users} />
-        <StatCard label="Teams" value={teams.filter((t) => t.is_active).length} icon={Crown} tone="amber" />
-        <StatCard label="Channels managed" value={active.reduce((n, p) => n + p.channel_count, 0)} icon={Tv} tone="green" />
-        <StatCard label="Channels without manager" value={summary?.without_manager ?? "—"} icon={Tv} tone="amber" />
+        <StatCard
+          label="Active people"
+          value={active.length}
+          icon={Users}
+          info="Your team members. They do not log in — founders keep their records here."
+          active={status === "active" && !role && !team}
+          onClick={() => {
+            setStatus("active");
+            setRole("");
+            setTeam("");
+          }}
+        />
+        <StatCard label="Teams" value={teams.filter((t) => t.is_active).length} icon={Crown} tone="amber" info={HELP.team} href="/people/teams" />
+        <StatCard
+          label="Channels managed"
+          value={active.reduce((n, p) => n + p.channel_count, 0)}
+          icon={Tv}
+          tone="green"
+          info={HELP.manager}
+          href="/channels?managed=yes&status=active"
+        />
+        <StatCard
+          label="Channels without manager"
+          value={summary?.without_manager ?? "—"}
+          icon={Tv}
+          tone="amber"
+          info="Nobody earns an incentive on these channels and nobody is accountable for them."
+          href="/channels?managed=no&status=active"
+        />
       </div>
 
       {error && <Notice kind="error">{error}</Notice>}

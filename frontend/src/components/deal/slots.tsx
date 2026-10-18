@@ -13,6 +13,8 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogFooter } from "@/components/ui/dialog";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { InfoTip } from "@/components/ui/info-tip";
+import { HELP } from "@/lib/help";
 import { api } from "@/lib/api";
 import { SLOT_STATUS_LABELS, SLOT_STATUS_TONES, formatDate } from "@/lib/deals";
 import type { Deal, Slot, SlotHistoryItem, SlotStatus } from "@/lib/types";
@@ -94,6 +96,7 @@ function SlotTable({
       <div className="flex flex-wrap items-baseline justify-between gap-2 p-6 pb-4">
         <h3 className="text-lg font-semibold">
           {title} <span className="text-base font-normal text-muted-foreground">· {used} of {slots.length} in use</span>
+          <InfoTip text={HELP.slotStatus} />
         </h3>
         <p className="text-sm text-muted-foreground">
           {active} active · {pending} pending whitelist · {slots.length - used} empty

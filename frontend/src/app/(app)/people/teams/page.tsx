@@ -17,6 +17,7 @@ import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { api } from "@/lib/api";
+import { HELP } from "@/lib/help";
 import type { Employee, Team } from "@/lib/types";
 import { useClientTable } from "@/lib/use-client-table";
 
@@ -91,9 +92,23 @@ export default function TeamsPage() {
       <PeopleTabs />
 
       <div className="grid gap-5 md:grid-cols-3">
-        <StatCard label="Active teams" value={teams.filter((t) => t.is_active).length} icon={UsersRound} />
-        <StatCard label="People in teams" value={teams.reduce((n, t) => n + t.member_count, 0)} icon={Users} tone="green" />
-        <StatCard label="Channels handled by teams" value={teams.reduce((n, t) => n + t.channel_count, 0)} icon={Tv} tone="slate" />
+        <StatCard
+          label="Active teams"
+          value={teams.filter((t) => t.is_active).length}
+          icon={UsersRound}
+          info={HELP.team}
+          active={status === "active"}
+          onClick={() => setStatus("active")}
+        />
+        <StatCard label="People in teams" value={teams.reduce((n, t) => n + t.member_count, 0)} icon={Users} tone="green" href="/people" />
+        <StatCard
+          label="Channels handled by teams"
+          value={teams.reduce((n, t) => n + t.channel_count, 0)}
+          icon={Tv}
+          tone="slate"
+          info="Channels managed by someone who is in a team — the team lead earns a % on them."
+          href="/channels?managed=yes&status=active"
+        />
       </div>
 
       {error && <Notice kind="error">{error}</Notice>}

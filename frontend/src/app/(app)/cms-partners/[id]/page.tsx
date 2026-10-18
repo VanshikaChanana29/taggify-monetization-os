@@ -11,6 +11,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
+import { InfoTip } from "@/components/ui/info-tip";
+import { HELP } from "@/lib/help";
 import { api } from "@/lib/api";
 import { formatMonth, money, thisMonth } from "@/lib/finance";
 import { PLATFORM_LABELS, PLATFORM_TONES } from "@/lib/people";
@@ -111,14 +113,14 @@ export default function CmsDetailPage() {
 
       {adding && (
         <form onSubmit={save} className="space-y-5 rounded-2xl border bg-card p-6 shadow-sm">
-          <h3 className="text-lg font-semibold">New fee tiers</h3>
+          <h3 className="text-lg font-semibold">New fee tiers <InfoTip text={HELP.feeTiers} /></h3>
           <div className="grid gap-4 md:grid-cols-3">
             <div className="space-y-1">
               <Label htmlFor="fs-month">Applies from (month) *</Label>
               <Input id="fs-month" type="month" required value={form.month} onChange={(e) => setForm({ ...form, month: e.target.value })} />
             </div>
             <div className="space-y-1">
-              <Label htmlFor="fs-type">How tiers work *</Label>
+              <Label htmlFor="fs-type">How tiers work * <InfoTip text={HELP.tierType} /></Label>
               <NativeSelect id="fs-type" value={form.tier_type} onChange={(e) => setForm({ ...form, tier_type: e.target.value as "whole" | "marginal" })}>
                 <option value="whole">Whole revenue — the reached tier&apos;s rate applies to everything</option>
                 <option value="marginal">Marginal — each band at its own rate (like tax slabs)</option>
@@ -179,7 +181,7 @@ export default function CmsDetailPage() {
       )}
 
       <section className="space-y-4">
-        <h3 className="text-lg font-semibold">Fee tiers over time</h3>
+        <h3 className="text-lg font-semibold">Fee tiers over time <InfoTip text={HELP.feeTiers} /></h3>
         {schedules.map((s, idx) => (
           <div key={s.id} className="rounded-2xl border bg-card p-5 shadow-sm">
             <div className="flex flex-wrap items-center justify-between gap-2">

@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
+import { InfoTip } from "@/components/ui/info-tip";
+import { HELP } from "@/lib/help";
 import { api } from "@/lib/api";
 import { COUNTRY_NAMES, formatDate, todayISO } from "@/lib/deals";
 import type { Deal, Platform, RightsResult } from "@/lib/types";
@@ -48,7 +50,9 @@ export function RightsChecker({ deal }: { deal: Deal }) {
     <section className="rounded-2xl border bg-card p-6 shadow-sm">
       <div className="flex items-center gap-2">
         <ShieldCheck className="h-5 w-5 text-primary" />
-        <h3 className="text-lg font-semibold">Rights check</h3>
+        <h3 className="text-lg font-semibold">
+          Rights check <InfoTip text={HELP.rightsCheck} />
+        </h3>
       </div>
       <p className="text-sm text-muted-foreground">
         Can this episode be published on this channel, on this date? Checks episode, term, territory and that the channel holds an
