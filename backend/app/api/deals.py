@@ -28,6 +28,7 @@ from app.schemas.deals import (
     DealListItem,
     DealOut,
     DealsSummary,
+    DealType,
     EffectiveStatus,
     EpisodeRange,
     RightsCheckIn,
@@ -271,7 +272,7 @@ def list_deals(
     q: str | None = None,
     owner_id: uuid.UUID | None = None,
     status_: Annotated[StatusFilter | None, Query(alias="status")] = None,
-    deal_type: Literal["fixed_fee", "revenue_share", "hybrid", "owned"] | None = None,
+    deal_type: DealType | None = None,
     sort: SortKey = "term_end",
     direction: Literal["asc", "desc"] = "asc",
 ) -> Page[DealListItem]:

@@ -5,13 +5,15 @@
 export const HELP = {
   // ---- Owners & deals --------------------------------------------------------------------
   owner:
-    "Who the content comes from. Licensor = a big rights holder like Sony; Vendor = another studio or supplier; Owned = Taggify's own content.",
+    "Who the content comes from. Licensor = a big rights holder like Sony; Vendor = another studio or supplier; Brand / partner = a brand whose content we run in a partnership; Owned = Taggify's own content.",
   dealType:
-    "How Taggify pays for the content. Fixed fee: one licence fee (Sony ₹50L). Revenue share: the owner gets a % of what the content earns. Minimum guarantee + share: an advance that is recouped against the owner's share. Owned IP: no fee.",
+    "How Taggify pays for the content. Fixed fee: one licence fee (Sony ₹50L). Revenue share: the owner gets a % of what the content earns. Minimum guarantee + share: an advance that is recouped against the owner's share. Partnership: no fee — what is left after the CMS fee is split with the partner (e.g. 50/50). Owned IP: no fee.",
   licenceFee: "The total price of the licence, e.g. ₹50,00,000 for Kapil Sharma. Pay it in installments under the Payments tab.",
   minimumGuarantee:
     "Paid to the owner up front and recouped against their revenue share — only the share above it is paid extra.",
   revenueShare: "The owner's % of the gross revenue their content earns.",
+  partnerShare:
+    "The partner's % of what the content earns after the CMS fee. Example: $10,000 earned − $1,500 CMS fee = $8,500; at 50% the partner gets $4,250 and we keep $4,250. Our team's incentives come out of our part.",
   dealStatus: "Draft = not signed yet. Active = signed and in force (it shows as Upcoming or Expired by its dates). Terminated = ended early.",
   term: "The dates the licence is valid. Nothing may be published before the start or after the end.",
   episodeScope:

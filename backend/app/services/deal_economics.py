@@ -6,6 +6,9 @@ several deals). From that gross we take the CMS fee (at the CMS's effective rate
 month), the incentives paid on it, and the deal's operating expenses:
 
     net contribution = gross − CMS fee − incentives − expenses (− owner share)
+
+A partnership has no rights cost: the partner gets their % of what is left after the CMS
+fee, and our incentives and expenses come out of our part.
     recovery %       = net contribution ÷ rights cost
 
 Installments only change what is still payable in cash — never the rights cost.
@@ -182,7 +185,10 @@ def deal_economics(db: Session, org: Organization, deal: ContentDeal) -> Economi
             )
         )
     )
-    if deal.deal_type in ("revenue_share", "hybrid") and deal.revenue_share_pct is not None:
+    if deal.deal_type == "partnership" and deal.revenue_share_pct is not None:
+        result.royalty = money((result.gross - result.cms_fee) * deal.revenue_share_pct / 100)
+        result.owner_share = result.royalty
+    elif deal.deal_type in ("revenue_share", "hybrid") and deal.revenue_share_pct is not None:
         result.royalty = money(result.gross * deal.revenue_share_pct / 100)
         # Hybrid: the minimum guarantee is an advance on the owner's share, so only the
         # share above it is an extra cost.

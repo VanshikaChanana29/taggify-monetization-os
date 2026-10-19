@@ -295,6 +295,20 @@ def test_revenue_share_owner_cut(founder, setup):
     assert r.status_code == 409
 
 
+def test_partnership_splits_after_cms_fee(founder, setup):
+    d = make_deal(founder, setup["channel"], deal_type="partnership", revenue_share_pct="50")
+    assert (d["fee_amount"], d["revenue_share_pct"]) == (None, "50.00")
+    revenue(founder, [(day(2), 1000)])
+    e = founder.get(f"/api/deals/{d['id']}/economics").json()
+    # 80000 gross − 16000 CMS fee = 64000, split 50/50; incentives come out of our half.
+    assert (e["rights_cost"], e["recovery_pct"], e["owner_share"]) == (None, None, "32000.00")
+    assert e["net_contribution"] == "30800.00"  # 80000 − 16000 − 1200 − 32000
+    r = founder.post(
+        f"/api/deals/{d['id']}/installments", json={"due_date": str(LAST), "amount": "1"}
+    )
+    assert r.status_code == 409
+
+
 def test_payouts_isolated(make_founder, login, setup, founder):
     make_founder("b@sociodoor.in", org_slug="sociodoor")
     s = login("b@sociodoor.in")

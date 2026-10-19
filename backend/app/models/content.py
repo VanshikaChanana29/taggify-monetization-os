@@ -17,9 +17,10 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, OrgScopedMixin, TimestampMixin, UUIDPrimaryKeyMixin
 
-OWNER_TYPES = ("licensor", "vendor", "owned")
+OWNER_TYPES = ("licensor", "vendor", "brand", "owned")
 # hybrid = a minimum guarantee paid up front, recouped against a revenue share.
-DEAL_TYPES = ("fixed_fee", "revenue_share", "hybrid", "owned")
+# partnership = no fee; what is left after the CMS fee is split with the partner (e.g. 50/50).
+DEAL_TYPES = ("fixed_fee", "revenue_share", "hybrid", "partnership", "owned")
 EXCLUSIVITY = ("exclusive", "non_exclusive")
 DEAL_STATUSES = ("draft", "active", "terminated")
 EPISODE_SCOPES = ("all", "ranges", "seasons")

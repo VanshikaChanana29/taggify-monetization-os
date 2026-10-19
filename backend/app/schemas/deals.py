@@ -5,8 +5,8 @@ from typing import Literal, Self
 
 from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 
-OwnerType = Literal["licensor", "vendor", "owned"]
-DealType = Literal["fixed_fee", "revenue_share", "hybrid", "owned"]
+OwnerType = Literal["licensor", "vendor", "brand", "owned"]
+DealType = Literal["fixed_fee", "revenue_share", "hybrid", "partnership", "owned"]
 Exclusivity = Literal["exclusive", "non_exclusive"]
 StoredStatus = Literal["draft", "active", "terminated"]
 EffectiveStatus = Literal["draft", "upcoming", "active", "expired", "terminated"]
@@ -140,6 +140,10 @@ class DealIn(BaseModel):
         elif self.deal_type == "revenue_share":
             if self.revenue_share_pct is None:
                 raise ValueError("A revenue-share deal needs a share percentage")
+            self.fee_amount = self.currency = None
+        elif self.deal_type == "partnership":
+            if self.revenue_share_pct is None:
+                raise ValueError("A partnership needs the partner's share percentage")
             self.fee_amount = self.currency = None
         else:
             self.fee_amount = self.currency = self.revenue_share_pct = None

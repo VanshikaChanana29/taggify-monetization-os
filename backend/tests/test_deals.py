@@ -97,6 +97,7 @@ def test_create_fixed_fee_deal_generates_slots(founder):
         ({"fee_amount": None}, "licence fee and currency"),
         ({"currency": None}, "licence fee and currency"),
         ({"deal_type": "revenue_share", "revenue_share_pct": None}, "share percentage"),
+        ({"deal_type": "partnership", "revenue_share_pct": None}, "share percentage"),
         ({"episode_ranges": []}, "at least one episode range"),
         (
             {"episode_scope": "seasons", "episode_ranges": [{"from_episode": 1, "to_episode": 5}]},

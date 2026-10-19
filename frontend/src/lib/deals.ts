@@ -11,6 +11,7 @@ import type {
 export const OWNER_TYPE_LABELS: Record<OwnerType, string> = {
   licensor: "Licensor",
   vendor: "Vendor",
+  brand: "Brand / partner",
   owned: "Owned / partner IP",
 };
 
@@ -18,6 +19,7 @@ export const DEAL_TYPE_LABELS: Record<DealType, string> = {
   fixed_fee: "Fixed fee",
   revenue_share: "Revenue share",
   hybrid: "Minimum guarantee + share",
+  partnership: "Partnership (split after CMS fee)",
   owned: "Owned IP",
 };
 
@@ -102,10 +104,14 @@ export function formatMoney(amount: string | number | null, currency: string | n
   }).format(Number(amount));
 }
 
-/** "₹50,00,000", "40% revenue share" or "Owned IP". */
+/** "₹50,00,000", "40% revenue share", "50% to partner / 50% to us, after CMS fee" or "Owned IP". */
 export function dealValue(deal: Pick<DealListItem, "deal_type" | "fee_amount" | "currency" | "revenue_share_pct">): string {
   if (deal.deal_type === "fixed_fee") return formatMoney(deal.fee_amount, deal.currency);
   if (deal.deal_type === "revenue_share") return `${Number(deal.revenue_share_pct)}% revenue share`;
+  if (deal.deal_type === "partnership") {
+    const pct = Number(deal.revenue_share_pct);
+    return `${pct}% to partner / ${100 - pct}% to us, after CMS fee`;
+  }
   if (deal.deal_type === "hybrid") {
     return `${formatMoney(deal.fee_amount, deal.currency)} MG + ${Number(deal.revenue_share_pct)}%`;
   }

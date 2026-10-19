@@ -34,7 +34,16 @@ export function DealProfitability({ deal, e, onChange }: { deal: Deal; e: DealEc
     { label: "CMS commission", value: money(e.cms_fee, cur), minus: true, hint: "At each CMS's rate for the month" },
     { label: "Incentives", value: money(e.incentives, cur), minus: true, hint: "Managers and team leads, on gross" },
     { label: "Operating expenses", value: money(e.expenses, cur), minus: true },
-    ...(deal.deal_type === "revenue_share"
+    ...(deal.deal_type === "partnership"
+      ? [
+          {
+            label: `Partner's share (${Number(deal.revenue_share_pct)}%)`,
+            value: money(e.owner_share, cur),
+            minus: true,
+            hint: "Of gross minus CMS commission",
+          },
+        ]
+      : deal.deal_type === "revenue_share"
       ? [{ label: "Owner's revenue share", value: money(e.owner_share, cur), minus: true }]
       : deal.deal_type === "hybrid"
         ? [
@@ -82,7 +91,11 @@ export function DealProfitability({ deal, e, onChange }: { deal: Deal; e: DealEc
             Economic recovery <InfoTip text={HELP.recovery} />
           </p>
           {pct === null ? (
-            <p className="mt-3 text-muted-foreground">No rights cost on this deal, so there is nothing to recover.</p>
+            <p className="mt-3 text-muted-foreground">
+              {deal.deal_type === "partnership"
+                ? `A partnership has no rights cost. The partner gets ${Number(deal.revenue_share_pct)}% of what is left after the CMS fee; our part is the net contribution.`
+                : "No rights cost on this deal, so there is nothing to recover."}
+            </p>
           ) : (
             <>
               <p className="mt-3 text-5xl font-bold text-emerald-700 dark:text-emerald-400">{pct}%</p>

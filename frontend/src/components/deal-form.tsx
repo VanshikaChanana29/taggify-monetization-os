@@ -46,7 +46,7 @@ type Form = {
 };
 
 const PAYS_FEE: DealType[] = ["fixed_fee", "hybrid"];
-const SHARES: DealType[] = ["revenue_share", "hybrid"];
+const SHARES: DealType[] = ["revenue_share", "hybrid", "partnership"];
 
 const EMPTY_RANGE: RangeRow = { season: "", from: "", to: "" };
 
@@ -368,12 +368,24 @@ export function DealForm({ deal }: { deal: Deal | null }) {
         </div>
         <div className="space-y-2 md:col-span-2">
           <Label>Deal type * <InfoTip text={HELP.dealType} /></Label>
-          <Choice value={form.deal_type} options={DEAL_TYPE_LABELS} onChange={(deal_type) => set({ deal_type })} />
+          <Choice value={form.deal_type} options={DEAL_TYPE_LABELS} onChange={(deal_type) =>
+              set({
+                deal_type,
+                ...(deal_type === "partnership" && !form.revenue_share_pct ? { revenue_share_pct: "50" } : {}),
+              })
+            }
+          />
         </div>
         {form.deal_type === "hybrid" && (
           <p className="text-sm text-muted-foreground md:col-span-2">
             Taggify pays the owner a minimum guarantee up front; the owner&apos;s revenue share is recouped against it, and only
             the share above the guarantee is paid extra.
+          </p>
+        )}
+        {form.deal_type === "partnership" && (
+          <p className="text-sm text-muted-foreground md:col-span-2">
+            No fee is paid. Each month, what the content earns minus the CMS fee is split with the partner — e.g. 50/50.
+            Our team&apos;s incentives and expenses come out of our part.
           </p>
         )}
         {PAYS_FEE.includes(form.deal_type) && (
@@ -404,7 +416,10 @@ export function DealForm({ deal }: { deal: Deal | null }) {
         )}
         {SHARES.includes(form.deal_type) && (
           <div className="space-y-2">
-            <Label htmlFor="share">Owner&apos;s revenue share (%) * <InfoTip text={HELP.revenueShare} /></Label>
+            <Label htmlFor="share">
+              {form.deal_type === "partnership" ? "Partner's share after CMS fee (%) *" : "Owner's revenue share (%) *"}{" "}
+              <InfoTip text={form.deal_type === "partnership" ? HELP.partnerShare : HELP.revenueShare} />
+            </Label>
             <Input
               id="share"
               type="number"

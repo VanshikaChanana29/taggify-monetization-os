@@ -101,7 +101,7 @@ function DealDetail() {
           </Button>
         </div>
         <div className="mt-6 grid gap-5 border-t pt-5 sm:grid-cols-2 lg:grid-cols-5">
-          <Fact label={deal.deal_type === "hybrid" ? "Guarantee + share" : "Licence value"} value={dealValue(deal)} info={HELP.dealType} />
+          <Fact label={deal.deal_type === "hybrid" ? "Guarantee + share" : deal.deal_type === "partnership" ? "Revenue split" : "Licence value"} value={dealValue(deal)} info={HELP.dealType} />
           <Fact label="Episodes" value={episodeSummary(deal.episode_scope, deal.episode_ranges)} info={HELP.episodeScope} />
           <Fact label="Term" value={`${deal.term_start.slice(0, 4)}–${deal.term_end.slice(0, 4)}`} sub={`${formatDate(deal.term_start)} → ${formatDate(deal.term_end)}`} />
           <Fact info={HELP.slots} label="YouTube slots" value={deal.yt_slot_limit ? `${deal.yt_slots_used} / ${deal.yt_slot_limit}` : "None"} sub={deal.yt_slot_limit ? "in use" : undefined} />

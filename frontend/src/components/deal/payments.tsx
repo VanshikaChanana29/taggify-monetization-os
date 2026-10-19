@@ -46,7 +46,7 @@ export function DealPayments({ deal, e, onChange }: { deal: Deal; e: DealEconomi
   if (deal.deal_type !== "fixed_fee" && deal.deal_type !== "hybrid") {
     return (
       <Notice kind="info">
-        This is a {deal.deal_type === "owned" ? "company-owned" : "revenue-share"} deal, so there is no licence fee to pay in
+        This is a {deal.deal_type === "owned" ? "company-owned" : deal.deal_type === "partnership" ? "partnership" : "revenue-share"} deal, so there is no licence fee to pay in
         installments. The owner&apos;s share is shown under Profitability.
       </Notice>
     );

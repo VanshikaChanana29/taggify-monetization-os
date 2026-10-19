@@ -72,8 +72,8 @@ export type AdminUser = {
 
 // ---- Part 2: content owners and deals ---------------------------------------------------
 
-export type OwnerType = "licensor" | "vendor" | "owned";
-export type DealType = "fixed_fee" | "revenue_share" | "hybrid" | "owned";
+export type OwnerType = "licensor" | "vendor" | "brand" | "owned";
+export type DealType = "fixed_fee" | "revenue_share" | "hybrid" | "partnership" | "owned";
 export type Exclusivity = "exclusive" | "non_exclusive";
 export type StoredDealStatus = "draft" | "active" | "terminated";
 export type DealStatus = StoredDealStatus | "upcoming" | "expired";
