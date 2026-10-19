@@ -5,14 +5,15 @@ from sqlalchemy import func, select
 
 from app.api.deps import Auth, client_ip
 from app.core.database import DbSession
-from app.models import Channel, CmsPartner
+from app.models import Channel, CmsPartner, RevenueFact
 from app.schemas.channels import CmsIn, CmsOut
 from app.services.audit import record_audit
+from app.services.month_close import latest_closed
 
 # Few CMS partners per company: returned whole, filtered/paginated in the browser.
 router = APIRouter(prefix="/cms-partners", tags=["cms partners"])
 
-TRACKED = ("name", "platform", "notes", "is_active")
+TRACKED = ("name", "platform", "notes", "is_active", "fee_after_tax")
 
 
 def _counts(db: DbSession, organization_id: uuid.UUID) -> dict[uuid.UUID, int]:
@@ -32,9 +33,15 @@ def _out(cms: CmsPartner, count: int) -> CmsOut:
         platform=cms.platform,  # type: ignore[arg-type]
         notes=cms.notes,
         is_active=cms.is_active,
+        fee_after_tax=cms.fee_after_tax,
+        has_sheet_mapping=bool(cms.sheet_mapping),
         channel_count=count,
         created_at=cms.created_at,
     )
+
+
+def _next(month):
+    return month.replace(year=month.year + (month.month == 12), month=month.month % 12 + 1)
 
 
 def _unique(db: DbSession, ctx: Auth, name: str, exclude: uuid.UUID | None = None) -> None:
@@ -97,6 +104,19 @@ def update_cms(
             status.HTTP_409_CONFLICT, "Cannot change the platform while channels use this CMS"
         )
     new = body.model_dump()
+    if new["fee_after_tax"] != cms.fee_after_tax:
+        # It re-prices every month of this CMS, so closed months must not have its revenue.
+        latest = latest_closed(db, ctx.organization)
+        if latest is not None and db.scalar(
+            select(RevenueFact.id)
+            .where(RevenueFact.cms_partner_id == cms.id, RevenueFact.day < _next(latest))
+            .limit(1)
+        ):
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                f"Months up to {latest:%B %Y} are closed and have this CMS's revenue; changing "
+                "when its fee is charged would change them. Reopen those months first.",
+            )
     changes = {f: [getattr(cms, f), new[f]] for f in TRACKED if getattr(cms, f) != new[f]}
     for f in TRACKED:
         setattr(cms, f, new[f])

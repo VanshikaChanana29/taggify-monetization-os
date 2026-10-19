@@ -255,7 +255,13 @@ def test_deal_economics(founder, setup):
         "4940000.00",
     )
     assert e["by_month"] == [
-        {"month": MONTH, "gross": "80000.00", "cms_fee": "16000.00", "incentives": "1200.00"}
+        {
+            "month": MONTH,
+            "gross": "80000.00",
+            "tax": "0.00",
+            "cms_fee": "16000.00",
+            "incentives": "1200.00",
+        }
     ]
 
 

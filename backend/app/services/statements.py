@@ -122,6 +122,8 @@ class ReconLine:
     external_id: str | None
     our_gross: Decimal | None
     their_gross: Decimal | None
+    our_tax: Decimal | None
+    their_tax: Decimal | None
     our_fee: Decimal | None
     their_fee: Decimal | None
     our_net: Decimal | None
@@ -146,6 +148,8 @@ def reconcile(
                     None,
                     o.gross,
                     None,
+                    o.tax,
+                    None,
                     o.fee_share,
                     None,
                     o.net_share,
@@ -168,6 +172,8 @@ def reconcile(
                 t.external_id,
                 o.gross,
                 t.gross_amount,
+                o.tax,
+                t.tax_amount,
                 o.fee_share,
                 t.fee_amount,
                 o.net_share,
@@ -186,6 +192,8 @@ def reconcile(
                     None,
                     t.gross_amount,
                     None,
+                    t.tax_amount,
+                    None,
                     t.fee_amount,
                     None,
                     t.net_amount,
@@ -201,6 +209,8 @@ def reconcile(
                     t.external_id,
                     None,
                     t.gross_amount,
+                    None,
+                    t.tax_amount,
                     None,
                     t.fee_amount,
                     None,

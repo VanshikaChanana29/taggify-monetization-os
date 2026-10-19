@@ -56,6 +56,8 @@ class RevenueFact(UUIDPrimaryKeyMixin, OrgScopedMixin, TimestampMixin, Base):
     )
     day: Mapped[date] = mapped_column(Date, index=True)
     gross_amount: Mapped[Decimal] = mapped_column(Numeric(18, 2))
+    # Tax the CMS withheld on this revenue (e.g. US tax), as its sheet reports it.
+    tax_amount: Mapped[Decimal | None] = mapped_column(Numeric(18, 2))
     currency: Mapped[str] = mapped_column(String(3))
     views: Mapped[int | None] = mapped_column(BigInteger)
     state: Mapped[str] = mapped_column(String(20), default="provisional")  # provisional / final
@@ -111,6 +113,7 @@ class CmsStatement(UUIDPrimaryKeyMixin, OrgScopedMixin, TimestampMixin, Base):
     month: Mapped[date] = mapped_column(Date)
     currency: Mapped[str] = mapped_column(String(3))
     gross_amount: Mapped[Decimal] = mapped_column(Numeric(18, 2))
+    tax_amount: Mapped[Decimal | None] = mapped_column(Numeric(18, 2))
     fee_amount: Mapped[Decimal] = mapped_column(Numeric(18, 2))
     net_amount: Mapped[Decimal] = mapped_column(Numeric(18, 2))
     reference: Mapped[str | None] = mapped_column(String(200))
@@ -147,6 +150,7 @@ class CmsStatementLine(UUIDPrimaryKeyMixin, Base):
         ForeignKey("channels.id", ondelete="SET NULL"), index=True
     )
     gross_amount: Mapped[Decimal] = mapped_column(Numeric(18, 2))
+    tax_amount: Mapped[Decimal | None] = mapped_column(Numeric(18, 2))
     fee_amount: Mapped[Decimal] = mapped_column(Numeric(18, 2))
     net_amount: Mapped[Decimal] = mapped_column(Numeric(18, 2))
 

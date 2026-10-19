@@ -197,6 +197,8 @@ export type CmsPartner = {
   platform: Platform;
   notes: string | null;
   is_active: boolean;
+  fee_after_tax: boolean;
+  has_sheet_mapping: boolean;
   channel_count: number;
   created_at: string;
 };
@@ -369,11 +371,13 @@ export type CmsMonth = {
   cms_name: string;
   currency: string | null;
   gross: string;
+  tax: string;
   fee: string | null;
   net: string | null;
   fee_rule: string | null;
   fx_rate: string | null;
   gross_base: string | null;
+  tax_base: string | null;
   fee_base: string | null;
   net_base: string | null;
   statement_net: string | null;
@@ -404,6 +408,7 @@ export type Statement = {
   id: string;
   currency: string;
   gross_amount: string;
+  tax_amount: string | null;
   fee_amount: string;
   net_amount: string;
   reference: string | null;
@@ -424,6 +429,8 @@ export type ReconLine = {
   external_id: string | null;
   our_gross: string | null;
   their_gross: string | null;
+  our_tax: string | null;
+  their_tax: string | null;
   our_fee: string | null;
   their_fee: string | null;
   our_net: string | null;
@@ -450,6 +457,7 @@ export type CmsMonthDetail = {
     platform: Platform;
     deals: string[];
     gross: string;
+    tax: string;
     fee_share: string | null;
     net_share: string | null;
     views: number | null;
@@ -517,6 +525,7 @@ export type DealEconomics = {
   deal_type: DealType;
   rights_cost: string | null;
   gross: string;
+  tax: string;
   cms_fee: string;
   incentives: string;
   expenses: string;
@@ -530,7 +539,7 @@ export type DealEconomics = {
   payable: string;
   next_due_date: string | null;
   next_due_amount: string | null;
-  by_month: { month: string; gross: string; cms_fee: string; incentives: string }[];
+  by_month: { month: string; gross: string; tax: string; cms_fee: string; incentives: string }[];
   warnings: string[];
   installments: Installment[];
   expense_items: DealExpense[];
@@ -609,4 +618,49 @@ export type GroupDashboard = {
   companies: (Totals & { organization_id: string; name: string; base_currency: string; closed: boolean; current: boolean })[];
   total: Totals | null;
   currency: string | null;
+};
+
+export type SheetRole = { key: string; label: string; required: boolean; hint: string };
+
+export type SheetLine = {
+  line: number;
+  external_id: string;
+  channel_name: string | null;
+  channel_id: string | null;
+  gross: string;
+  tax: string;
+  fee: string | null;
+  net: string | null;
+  net_local: string | null;
+};
+
+export type SheetPreview = {
+  file_name: string;
+  headers: string[];
+  roles: SheetRole[];
+  mapping: Record<string, string>;
+  mapping_source: "saved" | "guessed" | "chosen";
+  problems: string[];
+  currency: string;
+  base_currency: string;
+  sheet_rate: string | null;
+  company_rate: string | null;
+  lines: number;
+  skipped: number;
+  matched: number;
+  totals: { gross: string; tax: string; fee: string | null; net: string | null; net_local: string | null };
+  gross_base: string | null;
+  sample: SheetLine[];
+  unknown: SheetLine[];
+  errors: { line: number; message: string }[];
+  replaces: number;
+};
+
+export type SheetImport = {
+  revenue_import: RevenueImport;
+  statement: Statement | null;
+  lines_imported: number;
+  unknown: SheetLine[];
+  errors: { line: number; message: string }[];
+  warnings: string[];
 };

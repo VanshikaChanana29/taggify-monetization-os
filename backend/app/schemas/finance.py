@@ -120,11 +120,13 @@ class CmsMonthOut(BaseModel):
     cms_name: str
     currency: str | None
     gross: Decimal
+    tax: Decimal = Decimal("0.00")
     fee: Decimal | None
     net: Decimal | None
     fee_rule: str | None
     fx_rate: Decimal | None
     gross_base: Decimal | None
+    tax_base: Decimal | None = None
     fee_base: Decimal | None
     net_base: Decimal | None
     statement_net: Decimal | None
@@ -157,6 +159,7 @@ class ChannelLineOut(BaseModel):
     platform: str
     deals: list[str]
     gross: Decimal
+    tax: Decimal = Decimal("0.00")
     fee_share: Decimal | None
     net_share: Decimal | None
     views: int | None
@@ -166,6 +169,7 @@ class StatementOut(BaseModel):
     id: uuid.UUID
     currency: str
     gross_amount: Decimal
+    tax_amount: Decimal | None = None
     fee_amount: Decimal
     net_amount: Decimal
     reference: str | None
@@ -189,6 +193,8 @@ class ReconLineOut(BaseModel):
     external_id: str | None
     our_gross: Decimal | None
     their_gross: Decimal | None
+    our_tax: Decimal | None = None
+    their_tax: Decimal | None = None
     our_fee: Decimal | None
     their_fee: Decimal | None
     our_net: Decimal | None
@@ -282,3 +288,67 @@ class AdjustmentIn(_MonthField):
         if value == 0:
             raise ValueError("Amount cannot be zero")
         return value
+
+
+# ---- CMS sheet upload ------------------------------------------------------------------------
+
+
+class SheetRoleOut(BaseModel):
+    key: str
+    label: str
+    required: bool
+    hint: str
+
+
+class SheetLineOut(BaseModel):
+    line: int
+    external_id: str
+    channel_name: str | None
+    channel_id: uuid.UUID | None
+    gross: Decimal
+    tax: Decimal
+    fee: Decimal | None
+    net: Decimal | None
+    net_local: Decimal | None
+
+
+class SheetTotals(BaseModel):
+    gross: Decimal
+    tax: Decimal
+    fee: Decimal | None
+    net: Decimal | None
+    net_local: Decimal | None
+
+
+class SheetPreviewOut(BaseModel):
+    file_name: str
+    headers: list[str]
+    roles: list[SheetRoleOut]
+    mapping: dict[str, str]
+    # "saved" = this CMS's mapping from an earlier upload; "guessed" = read from the headers.
+    mapping_source: Literal["saved", "guessed", "chosen"]
+    problems: list[str]
+    currency: str
+    base_currency: str
+    sheet_rate: Decimal | None
+    company_rate: Decimal | None
+    lines: int
+    skipped: int
+    matched: int
+    totals: SheetTotals
+    # Gross at the company's monthly rate (what our own numbers will use).
+    gross_base: Decimal | None
+    sample: list[SheetLineOut]
+    unknown: list[SheetLineOut]
+    errors: list[dict[str, Any]]
+    # Months already holding revenue for these channels, which this upload would replace.
+    replaces: int
+
+
+class SheetImportOut(BaseModel):
+    revenue_import: RevenueImportOut
+    statement: StatementOut | None
+    lines_imported: int
+    unknown: list[SheetLineOut]
+    errors: list[dict[str, Any]]
+    warnings: list[str]

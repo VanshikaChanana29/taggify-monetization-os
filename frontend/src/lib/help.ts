@@ -49,7 +49,9 @@ export const HELP = {
     "Whole: the reached slab's rate applies to the whole month ($25,000 × 15% = $3,750). Marginal: each band at its own rate, like tax slabs ($20,000 × 20% + $5,000 × 15% = $4,750).",
   grossRevenue: "What the platforms reported the channels earned, before anything is deducted.",
   cmsCommission: "The CMS's fee, from its fee tiers, on the month's total gross.",
-  netReceivable: "Gross − CMS commission: what the CMS should pay Taggify for the month.",
+  netReceivable: "Gross − tax withheld − CMS commission: what the CMS should pay Taggify for the month.",
+  taxWithheld:
+    "Tax the CMS deducted before paying, e.g. 15% US tax on US earnings — taken as-is from the CMS's sheet. If the CMS charges its fee after this tax, tick that on the CMS partner.",
   cashReceived: "Money that actually reached the bank from the CMS. Not the same as what YouTube reported.",
   outstanding: "Net receivable − cash received ± adjustments: what the CMS still owes. (PDF slide 10)",
   statement: "The CMS's own monthly statement. Enter its numbers here to spot differences with ours.",

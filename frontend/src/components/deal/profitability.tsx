@@ -31,6 +31,9 @@ export function DealProfitability({ deal, e, onChange }: { deal: Deal; e: DealEc
   const pct = e.recovery_pct === null ? null : Number(e.recovery_pct);
   const lines: Line[] = [
     { label: "Gross revenue earned", value: money(e.gross, cur), hint: "Only days a channel held this deal's slot" },
+    ...(Number(e.tax) > 0
+      ? [{ label: "Tax withheld", value: money(e.tax, cur), minus: true, hint: "As the CMS's sheet reports it, e.g. US tax" }]
+      : []),
     { label: "CMS commission", value: money(e.cms_fee, cur), minus: true, hint: "At each CMS's rate for the month" },
     { label: "Incentives", value: money(e.incentives, cur), minus: true, hint: "Managers and team leads, on gross" },
     { label: "Operating expenses", value: money(e.expenses, cur), minus: true },
@@ -40,7 +43,7 @@ export function DealProfitability({ deal, e, onChange }: { deal: Deal; e: DealEc
             label: `Partner's share (${Number(deal.revenue_share_pct)}%)`,
             value: money(e.owner_share, cur),
             minus: true,
-            hint: "Of gross minus CMS commission",
+            hint: "Of gross minus tax and CMS commission",
           },
         ]
       : deal.deal_type === "revenue_share"

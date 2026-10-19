@@ -144,6 +144,7 @@ class ExpenseOut(BaseModel):
 class EconomicsMonth(BaseModel):
     month: str
     gross: Decimal
+    tax: Decimal = Decimal("0.00")
     cms_fee: Decimal
     incentives: Decimal
 
@@ -153,6 +154,7 @@ class EconomicsOut(BaseModel):
     deal_type: str
     rights_cost: Decimal | None
     gross: Decimal
+    tax: Decimal = Decimal("0.00")
     cms_fee: Decimal
     incentives: Decimal
     expenses: Decimal

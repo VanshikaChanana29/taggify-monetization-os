@@ -88,6 +88,7 @@ function CmsMonthPage() {
   const cur = s.currency ?? "USD";
   const base = data.base_currency;
   const hasCms = cmsId !== "none";
+  const hasTax = Number(s.tax) > 0;
   const payCurrencies = Array.from(new Set([cur, "USD", "AED", base]));
   const payCurrency = receipt.currency || payCurrencies[0];
   const preview =
@@ -141,6 +142,9 @@ function CmsMonthPage() {
         <MoneyFlow
           steps={[
             { label: "Gross", value: money(s.gross, cur), info: HELP.grossRevenue, sub: "All its channels together" },
+            ...(hasTax
+              ? [{ label: "Tax withheld", value: money(s.tax, cur), op: "−", tone: "minus" as const, info: HELP.taxWithheld }]
+              : []),
             { label: "CMS fee", value: s.fee === null ? "—" : money(s.fee, cur), op: "−", tone: "minus", info: HELP.feeTiers },
             {
               label: "Net due",
@@ -190,7 +194,8 @@ function CmsMonthPage() {
           <div className="p-6 pb-4">
             <h3 className="text-lg font-semibold">Channels under {s.cms_name}</h3>
             <p className="text-sm text-muted-foreground">
-              The fee is worked out on all of them together, then shared out by each channel&apos;s gross (PDF slide 9).
+              The fee is worked out on all of them together, then shared out by each channel&apos;s gross
+              {hasTax ? " after tax" : ""} (PDF slide 9).
             </p>
           </div>
           <Table>
@@ -200,6 +205,7 @@ function CmsMonthPage() {
                 <TableHead>Content deal</TableHead>
                 <TableHead className="text-right">Views</TableHead>
                 <TableHead className="text-right">Gross</TableHead>
+                {hasTax && <TableHead className="text-right">Tax</TableHead>}
                 <TableHead className="text-right">Fee share</TableHead>
                 <TableHead className="text-right">Net</TableHead>
               </TableRow>
@@ -215,11 +221,12 @@ function CmsMonthPage() {
                   <TableCell className="text-muted-foreground">{c.deals.join(", ") || "—"}</TableCell>
                   <TableCell className="text-right">{c.views?.toLocaleString("en-IN") ?? "—"}</TableCell>
                   <TableCell className="text-right font-semibold">{money(c.gross, cur)}</TableCell>
+                  {hasTax && <TableCell className="text-right">{money(c.tax, cur)}</TableCell>}
                   <TableCell className="text-right">{c.fee_share === null ? "—" : money(c.fee_share, cur)}</TableCell>
                   <TableCell className="text-right">{c.net_share === null ? "—" : money(c.net_share, cur)}</TableCell>
                 </TableRow>
               ))}
-              {data.channels.length === 0 && <EmptyRow colSpan={6}>No revenue imported for this CMS in {formatMonth(month)}.</EmptyRow>}
+              {data.channels.length === 0 && <EmptyRow colSpan={hasTax ? 7 : 6}>No revenue imported for this CMS in {formatMonth(month)}.</EmptyRow>}
             </TableBody>
             {data.channels.length > 0 && (
               <tfoot>
@@ -228,6 +235,7 @@ function CmsMonthPage() {
                   <TableCell>{data.channels.length} channel(s)</TableCell>
                   <TableCell />
                   <TableCell className="text-right">{money(s.gross, cur)}</TableCell>
+                  {hasTax && <TableCell className="text-right">{money(s.tax, cur)}</TableCell>}
                   <TableCell className="text-right">{s.fee === null ? "—" : money(s.fee, cur)}</TableCell>
                   <TableCell className="text-right">{s.net === null ? "—" : money(s.net, cur)}</TableCell>
                 </TableRow>

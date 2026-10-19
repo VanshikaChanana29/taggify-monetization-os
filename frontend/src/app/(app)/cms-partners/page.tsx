@@ -27,8 +27,8 @@ const SORT_BY = {
   channels: (c: CmsPartner) => c.channel_count,
 };
 
-type Form = { name: string; platform: Platform | ""; notes: string; is_active: boolean };
-const EMPTY: Form = { name: "", platform: "", notes: "", is_active: true };
+type Form = { name: string; platform: Platform | ""; notes: string; is_active: boolean; fee_after_tax: boolean };
+const EMPTY: Form = { name: "", platform: "", notes: "", is_active: true, fee_after_tax: false };
 
 export default function CmsPartnersPage() {
   const organization = useOrganization();
@@ -51,7 +51,7 @@ export default function CmsPartnersPage() {
     setError(null);
     setNotice(null);
     setEditing(row ? row.id : "new");
-    setForm(row ? { name: row.name, platform: row.platform, notes: row.notes ?? "", is_active: row.is_active } : EMPTY);
+    setForm(row ? { name: row.name, platform: row.platform, notes: row.notes ?? "", is_active: row.is_active, fee_after_tax: row.fee_after_tax } : EMPTY);
   }
 
   async function save(event: React.FormEvent) {
@@ -132,6 +132,20 @@ export default function CmsPartnersPage() {
             <Label htmlFor="notes">Notes</Label>
             <Input id="notes" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
           </div>
+          <label className="flex items-start gap-2 text-sm md:col-span-2">
+            <input
+              type="checkbox"
+              className="mt-0.5 h-4 w-4 accent-[hsl(var(--primary))]"
+              checked={form.fee_after_tax}
+              onChange={(e) => setForm({ ...form, fee_after_tax: e.target.checked })}
+            />
+            <span>
+              Fee is charged after tax
+              <span className="block text-xs text-muted-foreground">
+                Tick if this CMS first deducts tax (e.g. 15% US tax) and then takes its fee on what is left.
+              </span>
+            </span>
+          </label>
           {editing !== "new" && (
             <label className="flex items-center gap-2 text-sm md:col-span-2">
               <input type="checkbox" className="h-4 w-4 accent-[hsl(var(--primary))]" checked={form.is_active} onChange={(e) => setForm({ ...form, is_active: e.target.checked })} />
@@ -175,6 +189,7 @@ export default function CmsPartnersPage() {
                     {r.name}
                   </a>
                   {r.notes && <p className="text-xs text-muted-foreground">{r.notes}</p>}
+                  {r.fee_after_tax && <p className="text-xs text-muted-foreground">Fee after tax</p>}
                 </TableCell>
                 <TableCell>
                   <Pill tone={PLATFORM_TONES[r.platform]}>{PLATFORM_LABELS[r.platform]}</Pill>

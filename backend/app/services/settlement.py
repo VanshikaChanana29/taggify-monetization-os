@@ -1,4 +1,8 @@
-"""Month-level CMS settlement: gross → CMS fee → net receivable → cash → outstanding.
+"""Month-level CMS settlement: gross → tax withheld → CMS fee → net receivable → cash →
+outstanding.
+
+Tax is whatever the CMS's sheet says it withheld (e.g. US tax). A CMS charges its fee on the
+gross, or on what is left after that tax when the CMS partner is set up that way.
 
 PDF slide 9 (fee across all of a CMS's channels), slide 10 (net receivable − receipts ±
 adjustments = outstanding) and slide 16 steps 2–6. Everything is computed from the
@@ -40,11 +44,13 @@ class CmsMonth:
     cms_name: str
     currency: str | None
     gross: Decimal = Decimal("0.00")
+    tax: Decimal = Decimal("0.00")
     fee: Decimal | None = None
     net: Decimal | None = None
     fee_rule: str | None = None
     fx_rate: Decimal | None = None
     gross_base: Decimal | None = None
+    tax_base: Decimal | None = None
     fee_base: Decimal | None = None
     net_base: Decimal | None = None
     statement_net: Decimal | None = None
@@ -71,13 +77,14 @@ def fx_rate(db: Session, org: Organization, month: date, currency: str) -> Decim
 
 
 def _gross_by_channel(db: Session, org: Organization, month: date, cms_id: uuid.UUID | None):
-    """{(channel_id, currency): (gross, views)} for the month."""
+    """{(channel_id, currency): (gross, views, tax)} for the month."""
     stmt = (
         select(
             RevenueFact.channel_id,
             RevenueFact.currency,
             func.sum(RevenueFact.gross_amount),
             func.sum(RevenueFact.views),
+            func.sum(RevenueFact.tax_amount),
         )
         .where(
             RevenueFact.organization_id == org.id,
@@ -89,7 +96,7 @@ def _gross_by_channel(db: Session, org: Organization, month: date, cms_id: uuid.
     stmt = stmt.where(
         RevenueFact.cms_partner_id == cms_id if cms_id else RevenueFact.cms_partner_id.is_(None)
     )
-    return {(c, cur): (g or Decimal(0), v) for c, cur, g, v in db.execute(stmt)}
+    return {(c, cur): (g or Decimal(0), v, t or Decimal(0)) for c, cur, g, v, t in db.execute(stmt)}
 
 
 def receipt_value(db: Session, org: Organization, receipt: BankReceipt) -> Decimal | None:
@@ -116,18 +123,22 @@ def cms_month(db: Session, org: Organization, cms: CmsPartner | None, month: dat
             f"Revenue in {', '.join(other)} is left out: this CMS settles in {currency}."
         )
     result.gross = money(
-        sum((g for (_, cur), (g, _) in rows.items() if cur == currency), Decimal(0))
+        sum((g for (_, cur), (g, _, _) in rows.items() if cur == currency), Decimal(0))
+    )
+    result.tax = money(
+        sum((t for (_, cur), (_, _, t) in rows.items() if cur == currency), Decimal(0))
     )
 
     if cms:
         if schedule is None:
             result.warnings.append("No fee schedule for this month — add one on the CMS partner.")
         else:
-            result.fee = fee_for(result.gross, schedule)
-            result.net = result.gross - result.fee
+            fee_on = result.gross - result.tax if cms.fee_after_tax else result.gross
+            result.fee = fee_for(fee_on, schedule)
+            result.net = result.gross - result.tax - result.fee
             result.fee_rule = f"{schedule.tier_type} tiers from {schedule.effective_from:%d %b %Y}"
     else:
-        result.fee, result.net = Decimal("0.00"), result.gross
+        result.fee, result.net = Decimal("0.00"), result.gross - result.tax
 
     if currency:
         result.fx_rate = fx_rate(db, org, month, currency)
@@ -135,9 +146,10 @@ def cms_month(db: Session, org: Organization, cms: CmsPartner | None, month: dat
             result.warnings.append(f"No {currency}→{org.base_currency} rate for this month.")
         else:
             result.gross_base = money(result.gross * result.fx_rate)
+            result.tax_base = money(result.tax * result.fx_rate)
             if result.fee is not None:
                 result.fee_base = money(result.fee * result.fx_rate)
-                result.net_base = result.gross_base - result.fee_base
+                result.net_base = result.gross_base - result.tax_base - result.fee_base
 
     if cms:
         statement = db.scalar(
@@ -220,6 +232,7 @@ class ChannelLine:
     platform: str
     deals: list[str]
     gross: Decimal
+    tax: Decimal
     fee_share: Decimal | None
     net_share: Decimal | None
     views: int | None
@@ -230,9 +243,12 @@ def channel_lines(
 ) -> list[ChannelLine]:
     """Slide 9 table: each channel's gross and its share of the CMS fee."""
     rows = _gross_by_channel(db, org, month, cms.id if cms else None)
-    gross = {c: g for (c, cur), (g, _) in rows.items() if cur == summary.currency}
-    views = {c: v for (c, cur), (_, v) in rows.items() if cur == summary.currency}
-    fee_shares = allocate(summary.fee, gross) if summary.fee is not None else {}
+    gross = {c: g for (c, cur), (g, _, _) in rows.items() if cur == summary.currency}
+    views = {c: v for (c, cur), (_, v, _) in rows.items() if cur == summary.currency}
+    tax = {c: money(t) for (c, cur), (_, _, t) in rows.items() if cur == summary.currency}
+    # Each channel carries the fee in proportion to what the fee was charged on.
+    fee_on = {c: g - tax[c] for c, g in gross.items()} if cms and cms.fee_after_tax else gross
+    fee_shares = allocate(summary.fee, fee_on) if summary.fee is not None else {}
     channels = {
         c.id: c
         for c in db.scalars(select(Channel).where(Channel.id.in_(list(gross) or [uuid.uuid4()])))
@@ -258,8 +274,9 @@ def channel_lines(
             platform=channels[c].platform,
             deals=sorted(deals.get(c, [])),
             gross=money(g),
+            tax=tax[c],
             fee_share=fee_shares.get(c),
-            net_share=money(g) - fee_shares[c] if c in fee_shares else None,
+            net_share=money(g) - tax[c] - fee_shares[c] if c in fee_shares else None,
             views=views.get(c),
         )
         for c, g in gross.items()

@@ -21,6 +21,8 @@ class CmsIn(BaseModel):
     platform: Platform
     notes: str | None = Field(default=None, max_length=5000)
     is_active: bool = True
+    # The CMS takes its commission after the tax it withholds (e.g. US tax).
+    fee_after_tax: bool = False
 
     @field_validator("name")
     @classmethod
@@ -41,6 +43,8 @@ class CmsOut(BaseModel):
     platform: Platform
     notes: str | None
     is_active: bool
+    fee_after_tax: bool = False
+    has_sheet_mapping: bool = False
     channel_count: int
     created_at: datetime
 

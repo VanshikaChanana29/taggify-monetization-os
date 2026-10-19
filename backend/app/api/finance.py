@@ -539,6 +539,7 @@ def _statement_out(db: Session, st: CmsStatement) -> StatementOut:
         id=st.id,
         currency=st.currency,
         gross_amount=st.gross_amount,
+        tax_amount=st.tax_amount,
         fee_amount=st.fee_amount,
         net_amount=st.net_amount,
         reference=st.reference,

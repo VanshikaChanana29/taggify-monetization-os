@@ -2,13 +2,13 @@
 
 Gross revenue is attributed to a deal day by day: a channel's revenue on a day belongs
 to the deal whose slot the channel held that day (split evenly if it held slots in
-several deals). From that gross we take the CMS fee (at the CMS's effective rate for the
-month), the incentives paid on it, and the deal's operating expenses:
+several deals). From that gross we take the tax the CMS withheld, the CMS fee (at the CMS's
+effective rate for the month), the incentives paid on it, and the deal's operating expenses:
 
-    net contribution = gross − CMS fee − incentives − expenses (− owner share)
+    net contribution = gross − tax − CMS fee − incentives − expenses (− owner share)
 
-A partnership has no rights cost: the partner gets their % of what is left after the CMS
-fee, and our incentives and expenses come out of our part.
+A partnership has no rights cost: the partner gets their % of what is left after tax and
+the CMS fee, and our incentives and expenses come out of our part.
     recovery %       = net contribution ÷ rights cost
 
 Installments only change what is still payable in cash — never the rights cost.
@@ -42,6 +42,7 @@ from app.services.settlement import cms_month, fx_rate
 class MonthRow:
     month: str
     gross: Decimal = Decimal(0)
+    tax: Decimal = Decimal(0)
     cms_fee: Decimal = Decimal(0)
     incentives: Decimal = Decimal(0)
 
@@ -52,6 +53,7 @@ class Economics:
     deal_type: str
     rights_cost: Decimal | None
     gross: Decimal = Decimal(0)
+    tax: Decimal = Decimal(0)
     cms_fee: Decimal = Decimal(0)
     incentives: Decimal = Decimal(0)
     expenses: Decimal = Decimal(0)
@@ -114,7 +116,8 @@ def deal_economics(db: Session, org: Organization, deal: ContentDeal) -> Economi
         else []
     )
     timeline = Timeline(db, org)
-    cms_cache: dict[tuple, Decimal | None] = {}
+    # (CMS, month) → (fee as a share of what it is charged on, charged after tax?)
+    cms_cache: dict[tuple, tuple[Decimal, bool] | None] = {}
     fx_cache: dict[tuple, Decimal | None] = {}
     months: dict[str, MonthRow] = {}
     fx_missing: set[str] = set()
@@ -139,22 +142,25 @@ def deal_economics(db: Session, org: Organization, deal: ContentDeal) -> Economi
             fx_missing.add(f"{f.currency} {month:%b %Y}")
             continue
         gross_base = f.gross_amount * share * rate
+        tax_base = (f.tax_amount or Decimal(0)) * share * rate
 
-        fee_rate = Decimal(0)
+        fee_base = Decimal(0)
         if f.cms_partner_id:
             ck = (f.cms_partner_id, month)
             if ck not in cms_cache:
-                summary = cms_month(db, org, db.get(CmsPartner, f.cms_partner_id), month)
+                cms = db.get(CmsPartner, f.cms_partner_id)
+                summary = cms_month(db, org, cms, month)
+                fee_on = summary.gross - summary.tax if cms.fee_after_tax else summary.gross
                 cms_cache[ck] = (
-                    summary.fee / summary.gross
-                    if summary.fee is not None and summary.gross
+                    (summary.fee / fee_on, cms.fee_after_tax)
+                    if summary.fee is not None and fee_on
                     else None
                 )
             if cms_cache[ck] is None:
                 fee_missing.add(f"{month:%b %Y}")
             else:
-                fee_rate = cms_cache[ck]
-        fee_base = gross_base * fee_rate
+                fee_rate, after_tax = cms_cache[ck]
+                fee_base = (gross_base - tax_base if after_tax else gross_base) * fee_rate
 
         incentive_base = Decimal(0)
         for employee_id, kind in timeline.earners(f.channel_id, f.day):
@@ -164,16 +170,19 @@ def deal_economics(db: Session, org: Organization, deal: ContentDeal) -> Economi
 
         row = months.setdefault(f"{month:%Y-%m}", MonthRow(f"{month:%Y-%m}"))
         row.gross += gross_base
+        row.tax += tax_base
         row.cms_fee += fee_base
         row.incentives += incentive_base
 
     for row in months.values():
-        row.gross, row.cms_fee, row.incentives = (
+        row.gross, row.tax, row.cms_fee, row.incentives = (
             money(row.gross),
+            money(row.tax),
             money(row.cms_fee),
             money(row.incentives),
         )
         result.gross += row.gross
+        result.tax += row.tax
         result.cms_fee += row.cms_fee
         result.incentives += row.incentives
     result.by_month = sorted(months.values(), key=lambda r: r.month)
@@ -186,7 +195,8 @@ def deal_economics(db: Session, org: Organization, deal: ContentDeal) -> Economi
         )
     )
     if deal.deal_type == "partnership" and deal.revenue_share_pct is not None:
-        result.royalty = money((result.gross - result.cms_fee) * deal.revenue_share_pct / 100)
+        after_cms = result.gross - result.tax - result.cms_fee
+        result.royalty = money(after_cms * deal.revenue_share_pct / 100)
         result.owner_share = result.royalty
     elif deal.deal_type in ("revenue_share", "hybrid") and deal.revenue_share_pct is not None:
         result.royalty = money(result.gross * deal.revenue_share_pct / 100)
@@ -195,7 +205,12 @@ def deal_economics(db: Session, org: Organization, deal: ContentDeal) -> Economi
         recouped = (rights_cost or Decimal(0)) if deal.deal_type == "hybrid" else Decimal(0)
         result.owner_share = max(Decimal("0.00"), result.royalty - recouped)
     result.net_contribution = (
-        result.gross - result.cms_fee - result.incentives - result.expenses - result.owner_share
+        result.gross
+        - result.tax
+        - result.cms_fee
+        - result.incentives
+        - result.expenses
+        - result.owner_share
     )
     if rights_cost:
         result.recovery_pct = (result.net_contribution * 100 / rights_cost).quantize(Decimal("0.1"))

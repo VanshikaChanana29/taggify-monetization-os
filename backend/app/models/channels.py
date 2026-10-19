@@ -11,6 +11,7 @@ from sqlalchemy import (
     UniqueConstraint,
     text,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, OrgScopedMixin, TimestampMixin, UUIDPrimaryKeyMixin
@@ -31,6 +32,10 @@ class CmsPartner(UUIDPrimaryKeyMixin, OrgScopedMixin, TimestampMixin, Base):
     platform: Mapped[str] = mapped_column(String(20))
     notes: Mapped[str | None] = mapped_column(Text)
     is_active: Mapped[bool] = mapped_column(default=True, server_default="true")
+    # True when the CMS takes its commission after the tax it withholds (e.g. US tax).
+    fee_after_tax: Mapped[bool] = mapped_column(default=False, server_default="false")
+    # How this CMS's monthly sheet is laid out: {role: column header}, saved on first import.
+    sheet_mapping: Mapped[dict[str, str] | None] = mapped_column(JSONB)
 
 
 class Channel(UUIDPrimaryKeyMixin, OrgScopedMixin, TimestampMixin, Base):

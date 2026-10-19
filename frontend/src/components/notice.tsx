@@ -11,5 +11,5 @@ const KINDS = {
 
 /** Inline message banner. */
 export function Notice({ kind, children }: { kind: keyof typeof KINDS; children: React.ReactNode }) {
-  return <p className={cn("rounded-xl border px-4 py-3 text-sm", KINDS[kind])}>{children}</p>;
+  return <div className={cn("rounded-xl border px-4 py-3 text-sm", KINDS[kind])}>{children}</div>;
 }

@@ -197,6 +197,9 @@ export function StatementTab({
                   {(
                     [
                       ["Gross", summary.gross, statement.gross_amount],
+                      ...(Number(summary.tax) > 0 || Number(statement.tax_amount ?? 0) > 0
+                        ? [["Tax withheld", summary.tax, statement.tax_amount ?? "0"]]
+                        : []),
                       ["CMS fee", summary.fee, statement.fee_amount],
                       ["Net", summary.net, statement.net_amount],
                     ] as [string, string | null, string][]

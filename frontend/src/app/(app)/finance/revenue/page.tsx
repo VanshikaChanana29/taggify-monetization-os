@@ -1,10 +1,11 @@
 "use client";
 
-import { Download, FileUp, Upload } from "lucide-react";
+import { Download, FileSpreadsheet, FileUp, Upload } from "lucide-react";
 import Link from "next/link";
 import { Fragment, Suspense, useCallback, useEffect, useRef, useState } from "react";
 
 import { DEFAULT_PAGE_SIZE, PAGE_SIZES, EmptyRow, SortableHead, TablePagination } from "@/components/data-table";
+import { CmsSheetUpload } from "@/components/finance/cms-sheet-upload";
 import { useFinanceMonth } from "@/components/finance/finance-shell";
 import { Notice } from "@/components/notice";
 import { Pill } from "@/components/pill";
@@ -78,6 +79,7 @@ function RevenueTab() {
   const [month] = useFinanceMonth();
   const fileRef = useRef<HTMLInputElement>(null);
   const [open, setOpen] = useState(false);
+  const [sheetOpen, setSheetOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [result, setResult] = useState<RevenueImport | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -133,21 +135,28 @@ function RevenueTab() {
         <div>
           <h3 className="text-lg font-semibold">
             Revenue for {formatMonth(month)}
-            <InfoTip text="Each channel's daily earnings. Until YouTube / Meta are connected (Part 6), they come from a CSV file you upload here." />
+            <InfoTip text="Each channel's earnings. Until YouTube / Meta are connected (Part 6), upload each CMS's monthly sheet as it comes, or a daily CSV in the tool's own format." />
           </h3>
-          <p className="text-sm text-muted-foreground">One line per channel per day. Uploading the same channel and day again updates it — nothing is counted twice.</p>
+          <p className="text-sm text-muted-foreground">Uploading the same channel and month again replaces it — nothing is counted twice.</p>
         </div>
-        <Button
-          size="lg"
-          onClick={() => {
-            setResult(null);
-            setError(null);
-            setOpen(true);
-          }}
-        >
-          <Upload />
-          Import revenue file
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            size="lg"
+            onClick={() => {
+              setResult(null);
+              setError(null);
+              setOpen(true);
+            }}
+          >
+            <Upload />
+            Daily CSV
+          </Button>
+          <Button size="lg" onClick={() => setSheetOpen(true)}>
+            <FileSpreadsheet />
+            Upload CMS sheet
+          </Button>
+        </div>
       </section>
 
       <section className="overflow-hidden rounded-2xl border bg-card shadow-sm">
@@ -199,7 +208,7 @@ function RevenueTab() {
                 </TableCell>
               </TableRow>
             ))}
-            {facts && facts.total === 0 && <EmptyRow colSpan={6}>No revenue for {formatMonth(month)} yet — use “Import revenue file”.</EmptyRow>}
+            {facts && facts.total === 0 && <EmptyRow colSpan={6}>No revenue for {formatMonth(month)} yet — use “Upload CMS sheet”.</EmptyRow>}
           </TableBody>
         </Table>
         {facts && (
@@ -263,7 +272,19 @@ function RevenueTab() {
         </Table>
       </section>
 
-      <Dialog open={open} onClose={() => setOpen(false)} title="Import revenue file" description="Three steps. The file can hold any month — each line carries its own date." wide>
+      <CmsSheetUpload
+        open={sheetOpen}
+        onClose={() => setSheetOpen(false)}
+        month={month}
+        cmsList={cmsList}
+        onImported={() => {
+          loadImports();
+          loadFacts();
+          api<CmsPartner[]>("/cms-partners").then(setCmsList).catch(() => {});
+        }}
+      />
+
+      <Dialog open={open} onClose={() => setOpen(false)} title="Import a daily CSV" description="Three steps. The file can hold any month — each line carries its own date." wide>
         <ol className="space-y-5">
           <li className="flex gap-4">
             <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-bold text-primary">1</span>
