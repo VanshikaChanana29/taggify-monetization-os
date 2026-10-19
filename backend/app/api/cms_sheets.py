@@ -44,9 +44,9 @@ from app.services.cms_sheet import (
     SheetLine,
     Table,
     check_mapping,
+    detect_rate,
     guess_mapping,
     parse_sheet,
-    rate_from_headers,
     read_table,
 )
 from app.services.deals import company_today
@@ -121,7 +121,7 @@ async def _read(
         if rate <= 0:
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "The rate must be above 0")
     else:
-        rate = rate_from_headers(table.headers)
+        rate = detect_rate(table, cols)
 
     problems = check_mapping(table, cols)
     if not problems and "net_local" in cols and "net" not in cols and rate is None:
@@ -149,6 +149,7 @@ def _line(line: SheetLine) -> SheetLineOut:
         fee=line.fee,
         net=line.net,
         net_local=line.net_local,
+        rows=line.rows,
     )
 
 

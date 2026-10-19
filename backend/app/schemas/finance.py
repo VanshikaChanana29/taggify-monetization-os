@@ -310,6 +310,7 @@ class SheetLineOut(BaseModel):
     fee: Decimal | None
     net: Decimal | None
     net_local: Decimal | None
+    rows: int = 1  # sheet rows added up into this channel (e.g. Channel + Subscription)
 
 
 class SheetTotals(BaseModel):

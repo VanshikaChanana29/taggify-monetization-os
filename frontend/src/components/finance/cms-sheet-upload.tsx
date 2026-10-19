@@ -287,6 +287,7 @@ export function CmsSheetUpload({
                               <span className="font-medium">{l.channel_name ?? l.external_id}</span>
                               <span className="block font-mono text-xs text-muted-foreground">
                                 {l.external_id}
+                                {l.rows > 1 && <span className="ml-1 font-sans">· {l.rows} rows added up</span>}
                                 {!l.channel_id && <span className="ml-1 font-sans font-semibold text-amber-600">· not in the tool</span>}
                               </span>
                             </TableCell>

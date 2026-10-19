@@ -68,6 +68,7 @@ class SheetLine:
     net: Decimal | None  # what the CMS pays, in the sheet's currency
     net_local: Decimal | None
     views: int | None
+    rows: int = 1  # how many rows of the sheet were added up into this line
 
     @property
     def fee(self) -> Decimal | None:
@@ -192,73 +193,174 @@ def _amount(value: object, what: str) -> Decimal:
     return money(-amount if negative else amount)
 
 
+def _number(value: object) -> Decimal | None:
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, int | float | Decimal):
+        return Decimal(str(value))
+    text = re.sub(r"[,$₹\s%]", "", str(value))
+    try:
+        return Decimal(text) if text else None
+    except InvalidOperation:
+        return None
+
+
+def _median(values: list[Decimal]) -> Decimal:
+    ordered = sorted(values)
+    return ordered[len(ordered) // 2]
+
+
+def _ratio_to(table: Table, col: int, base: int) -> tuple[Decimal, Decimal] | None:
+    """(median of col ÷ base, relative spread) over rows where both are numbers and base > 0."""
+    ratios = []
+    for _, cells in table.rows:
+        a, b = _number(cells[col]), _number(cells[base])
+        if a is not None and b is not None and b > 0:
+            ratios.append(a / b)
+    if len(ratios) < 2:
+        return None
+    mid = _median(ratios)
+    if mid == 0:
+        return None
+    spread = _median([abs(r - mid) for r in ratios]) / abs(mid)
+    return mid, spread
+
+
+def _local_columns(table: Table, gross: str | None) -> list[str]:
+    """Columns that move with the gross at ~5–1000× it: the gross in INR (or AED…), before
+    or after the CMS's cut. Found from the values, since headers rarely say "INR"."""
+    if not gross:
+        return []
+    g = table.headers.index(gross)
+    out = []
+    for i, h in enumerate(table.headers):
+        if h == gross:
+            continue
+        r = _ratio_to(table, i, g)
+        if r and Decimal(5) <= r[0] <= Decimal(1000) and r[1] < Decimal("0.1"):
+            out.append(h)
+    return out
+
+
 def guess_mapping(table: Table) -> dict[str, str]:
-    """Best guess of which column plays which role, from header words and the values."""
+    """Best guess of which column plays which role, from the headers and the values."""
     norm = {h: _norm(h) for h in table.headers}
     taken: set[str] = set()
     mapping: dict[str, str] = {}
 
+    def take(role: str, header: str) -> None:
+        mapping[role] = header
+        taken.add(header)
+
     def pick(role: str, test) -> None:
         for h in table.headers:
             if h not in taken and test(norm[h], h):
-                mapping[role] = h
-                taken.add(h)
+                take(role, h)
                 return
 
     def has(n: str, *words: str) -> bool:
         padded = f" {n} "
         return any(f" {w} " in padded or (len(w) > 3 and w in n) for w in words)
 
+    sample = table.rows[:300]
+
     # Channel ID: the column whose values look like YouTube channel IDs, else by name.
     id_scores = {
-        h: sum(1 for _, cells in table.rows[:200] if UC_ID.search(_text(cells[i])))
+        h: sum(1 for _, cells in sample if UC_ID.search(_text(cells[i])))
         for i, h in enumerate(table.headers)
     }
     best = max(id_scores, key=lambda h: id_scores[h]) if id_scores else None
     if best and id_scores[best] > 0:
-        mapping["channel_id"] = best
-        taken.add(best)
+        take("channel_id", best)
     else:
         pick(
             "channel_id",
             lambda n, _: has(n, "channel id", "channel url", "asset id", "page id", "external id")
             or n in ("id", "url", "channel link"),
         )
-    pick("channel_name", lambda n, _: has(n, "name", "title") or n in ("channel", "channels"))
-    pick("tax", lambda n, _: has(n, "tax", "withholding", "tds"))
+
     local = ("inr", "rs", "rupee", "aed")
-    pick("views", lambda n, _: has(n, "views"))
     # Gross: a total/revenue column that is not US-only, local currency, tax or net.
     pick(
         "gross",
         lambda n, _: has(n, "gross", "total", "revenue", "earning", "earnings", "amount")
         and not has(n, "us", "u s", "usa", "tax", "net", "label", "payable", "payble", *local),
     )
-    # What the CMS pays: in local currency, prefer "label/net/share/payout" over a plain
-    # converted column; the last local-currency column is usually the final one.
-    locals_ = [h for h in table.headers if h not in taken and has(norm[h], *local)]
-    finals = [
-        h for h in locals_ if has(norm[h], "label", "net", "share", "payout", "partner", "final")
-    ]
-    if finals or locals_:
-        mapping["net_local"] = (finals or locals_)[-1]
-        taken.add(mapping["net_local"])
-    pick(
-        "net",
-        lambda n, _: has(n, "net", "label", "share", "payout", "partner revenue")
-        and not has(n, *local),
-    )
+    pick("tax", lambda n, _: has(n, "tax", "withholding", "tds"))
+
+    # What the CMS pays in local currency: the last column that tracks the gross at a
+    # local-currency scale (e.g. "Label Rev INR", "Billable by Label", "Vendor").
+    locals_ = [h for h in _local_columns(table, mapping.get("gross")) if h not in taken]
+    if not locals_:
+        locals_ = [h for h in table.headers if h not in taken and has(norm[h], *local)]
+    if locals_:
+        take("net_local", locals_[-1])
+
+    # What the CMS pays in dollars: a net-sounding column worth 30–100% of the gross.
+    g = table.headers.index(mapping["gross"]) if "gross" in mapping else None
+
+    def dollar_net(n: str, h: str) -> bool:
+        if not has(n, "net", "label", "share", "payout", "partner revenue") or has(n, *local):
+            return False
+        if g is None:
+            return True
+        r = _ratio_to(table, table.headers.index(h), g)
+        return bool(r and Decimal("0.3") <= r[0] <= 1)
+
+    pick("net", dollar_net)
+
+    pick("channel_name", lambda n, _: has(n, "name", "title") or n in ("channel", "channels"))
+    if "channel_name" not in mapping:
+        # A column of mostly different words, e.g. names under a header like "Asset Channel ID".
+        best_name, best_score = None, 0
+        for i, h in enumerate(table.headers):
+            if h in taken:
+                continue
+            words = [_text(c[i]) for _, c in sample if _text(c[i])]
+            texty = [w for w in words if _number(w) is None and not UC_ID.search(w)]
+            score = len(set(texty))
+            if len(texty) >= max(2, len(words) * 0.8) and score > best_score:
+                best_name, best_score = h, score
+        if best_name and best_score >= max(2, len(sample) // 3):
+            take("channel_name", best_name)
+    pick("views", lambda n, _: has(n, "views"))
     return mapping
 
 
-def rate_from_headers(headers: list[str]) -> Decimal | None:
-    """A rate written into a header, e.g. "INR@95.92" or "Rate 83.10"."""
-    for h in headers:
+def detect_rate(table: Table, mapping: dict[str, str]) -> Decimal | None:
+    """The rate the sheet used to turn dollars into local currency, if it shows one: in a
+    header ("INR@95.92", or just "94.25"), in a rate column ("$ Rate" = 94.26 on every row),
+    or as the steady ratio between a local-currency column and a dollar column."""
+    for h in table.headers:
         n = _norm(h)
+        if (value := _number(h)) is not None and Decimal(1) < value < Decimal(10_000):
+            return value
         if ("inr" in n or "rate" in n or "@" in h) and (m := RATE_IN_HEADER.search(h)):
             value = Decimal(m.group(1))
             if value > 1 and "%" not in h[m.end() : m.end() + 1]:
                 return value
+    for i, h in enumerate(table.headers):
+        if "rate" in _norm(h) and "%" not in h:
+            values = {v for _, c in table.rows if (v := _number(c[i])) is not None}
+            if len(values) == 1 and (v := values.pop()) > 1:
+                return v
+    gross = mapping.get("gross")
+    if gross:
+        g = table.headers.index(gross)
+        dollar_cols = [g] + [
+            i
+            for i, h in enumerate(table.headers)
+            if h != gross
+            and (r := _ratio_to(table, i, g))
+            and Decimal("0.5") <= r[0] <= 1
+            and r[1] < Decimal("0.1")
+        ]
+        for h in _local_columns(table, gross):
+            li = table.headers.index(h)
+            for d in dollar_cols:
+                r = _ratio_to(table, li, d)
+                if r and r[1] < Decimal("0.001"):
+                    return r[0].quantize(Decimal("0.0001")).normalize()
     return None
 
 
@@ -288,7 +390,8 @@ def parse_sheet(
     index = {key: table.headers.index(h) for key, h in mapping.items() if h}
     by_external = {c.external_id.strip().lower(): c for c in channels}
     result = ParsedSheet()
-    seen: set[str] = set()
+    # A channel can have several rows (e.g. "Channel" and "Subscription" revenue): they add up.
+    seen: dict[str, SheetLine] = {}
 
     for line_no, cells in table.rows:
 
@@ -303,8 +406,6 @@ def parse_sheet(
         found = UC_ID.search(raw_id)
         external_id = (found.group(0) if found else raw_id.rstrip("/").split("/")[-1])[:100]
         try:
-            if external_id.lower() in seen:
-                raise ValueError(f"Channel {external_id} appears twice in the file")
             gross = _amount(cell("gross"), "Gross")
             tax = _amount(cell("tax"), "Tax")
             if gross < 0:
@@ -324,19 +425,27 @@ def parse_sheet(
             if len(result.errors) < MAX_ISSUES:
                 result.errors.append({"line": line_no, "message": str(exc)})
             continue
-        seen.add(external_id.lower())
         name = _text(cell("channel_name")) or None
-        result.lines.append(
-            SheetLine(
-                line_no=line_no,
-                external_id=external_id,
-                channel_name=name[:200] if name else None,
-                channel=by_external.get(external_id.lower()),
-                gross=gross,
-                tax=tax,
-                net=net,
-                net_local=net_local,
-                views=views,
-            )
+        if (same := seen.get(external_id.lower())) is not None:
+            same.gross += gross
+            same.tax += tax
+            same.net = None if same.net is None or net is None else same.net + net
+            if same.net_local is not None and net_local is not None:
+                same.net_local += net_local
+            if views is not None:
+                same.views = (same.views or 0) + views
+            same.rows += 1
+            continue
+        seen[external_id.lower()] = line = SheetLine(
+            line_no=line_no,
+            external_id=external_id,
+            channel_name=name[:200] if name else None,
+            channel=by_external.get(external_id.lower()),
+            gross=gross,
+            tax=tax,
+            net=net,
+            net_local=net_local,
+            views=views,
         )
+        result.lines.append(line)
     return result

@@ -632,6 +632,7 @@ export type SheetLine = {
   fee: string | null;
   net: string | null;
   net_local: string | null;
+  rows: number;
 };
 
 export type SheetPreview = {

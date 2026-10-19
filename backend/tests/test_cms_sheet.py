@@ -2,6 +2,7 @@
 
 import io
 import json
+from decimal import Decimal
 
 from openpyxl import Workbook
 
@@ -152,3 +153,102 @@ def test_a_changed_mapping_and_its_problems(founder):  # noqa: F811
         founder, "preview", cms_s, sheet(), mapping=json.dumps(mapping), sheet_rate="100"
     ).json()
     assert p["sheet_rate"] == "100" and p["sample"][0]["net"] == "930.42"  # 93,042.40 ÷ 100
+
+
+# ---- Other CMS layouts (from real sheets, numbers shortened) ------------------------------------
+
+
+def table_of(rows) -> "object":
+    from app.services.cms_sheet import read_table
+
+    wb = Workbook()
+    for r in rows:
+        wb.active.append(r)
+    out = io.BytesIO()
+    wb.save(out)
+    return read_table(out.getvalue(), "sheet.xlsx")
+
+
+def test_layout_with_two_rows_per_channel_and_a_bare_rate_header():
+    """Giri-style: blank rows on top, the rate as a header ("94.25"), the label's INR under a
+    header without "INR", Channel + Subscription rows per channel, a mid-sheet Total."""
+    from app.services.cms_sheet import detect_rate, guess_mapping, parse_sheet
+
+    def row(service, name, cid, total, tax):
+        inr = round((total - tax) * 94.25, 2)
+        fee = round(inr * 0.11, 2)
+        return ["May-26", service, name, cid, total, tax, total - tax, total - tax, inr, 11, fee,
+                round(inr - fee, 2)]  # fmt: skip
+
+    t = table_of(
+        [
+            [],
+            [],
+            [
+                "Month",
+                "Service",
+                "Channel Name",
+                "Channel ID",
+                "Total USD",
+                "U.S Tax Deducted",
+                "Subtotal USD",
+                "Final USD",
+                94.25,
+                "Giri %",
+                "Giri Revenue",
+                "Billable by Label",
+            ],  # fmt: skip
+            row("Channel", "Desh Ka Jurm", ID_A, 249.89, 3.12),
+            row("Subscription", "Desh Ka Jurm", ID_A, 1.40, 0),
+            [None] * 10 + ["Total", 20817.12],
+            [],
+            row("Channel", "Case Khatam", ID_B, 1540.11, 17.38),
+        ]
+    )
+    m = guess_mapping(t)
+    assert m == {
+        "channel_id": "Channel ID",
+        "channel_name": "Channel Name",
+        "gross": "Total USD",
+        "tax": "U.S Tax Deducted",
+        "net_local": "Billable by Label",
+    }
+    rate = detect_rate(t, m)
+    assert rate == Decimal("94.25")
+    p = parse_sheet(t, m, [], rate)
+    assert [(x.external_id, x.rows, x.gross, x.tax) for x in p.lines] == [
+        (ID_A, 2, Decimal("251.29"), Decimal("3.12")),
+        (ID_B, 1, Decimal("1540.11"), Decimal("17.38")),
+    ]
+    # 11% of what is left after tax: (251.29 − 3.12) × 89% ≈ 220.87
+    assert p.lines[0].net == Decimal("220.88")
+    assert p.skipped == 2  # the mid-sheet Total and the blank row
+
+
+def test_layout_with_swapped_headers_and_a_rate_column():
+    """Taggify-report style: IDs under "Channel", names under "Asset Channel ID", a "$ Rate"
+    column, an 80% "Share" (not money) and the label's INR under "Vendor"."""
+    from app.services.cms_sheet import detect_rate, guess_mapping, parse_sheet
+
+    head = ["Channel", "Asset Channel ID", "Type", "Owned Views", "Revenue", "$ Rate", "Amount",
+            "Share", "Vendor"]  # fmt: skip
+    rows = [head]
+    for cid, name, rev in [(ID_A, "Kanoon Sena", 760.99), (ID_B, "Hero Kidz", 532.01),
+                           (ID_C, "Kanha Ki Leela", 396.94), (None, None, 0)]:  # fmt: skip
+        amount = round(rev * 94.26, 2)
+        rows.append([cid, name, "Video", None, rev, 94.26, amount, 0.8, round(amount * 0.8, 2)])
+    rows.append([None, None, None, "Total (INR)", 1689.94, None, 159293.75, None, 127435.0])
+    t = table_of(rows)
+    m = guess_mapping(t)
+    assert (m["channel_id"], m["channel_name"], m["gross"], m["net_local"]) == (
+        "Channel",
+        "Asset Channel ID",
+        "Revenue",
+        "Vendor",
+    )
+    assert "net" not in m  # "Share" is a percentage, not money
+    rate = detect_rate(t, m)
+    assert rate == Decimal("94.26")
+    p = parse_sheet(t, m, [], rate)
+    assert len(p.lines) == 3 and p.skipped == 2
+    assert (p.lines[0].net, p.lines[0].fee) == (Decimal("608.79"), Decimal("152.20"))  # 20%
