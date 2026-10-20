@@ -17,6 +17,7 @@ from app.api.finance import (
     _audit,
     _cms,
     _import_out,
+    _keep_file,
     _month,
     _statement_out,
 )
@@ -36,6 +37,7 @@ from app.schemas.finance import (
     SheetRoleOut,
     SheetTotals,
 )
+from app.services import file_store
 from app.services.cms_fees import money
 from app.services.cms_sheet import (
     MAX_ISSUES,
@@ -314,6 +316,7 @@ async def import_sheet(
         )
 
     statement = None
+    old_key = None
     totals = _totals(s.parsed.lines)
     if totals.net is None:
         warnings.append(
@@ -340,7 +343,10 @@ async def import_sheet(
         statement.net_amount = totals.net
         statement.source = "file"
         statement.file_name = s.file_name
-        statement.file_data = s.content
+        old_key = statement.storage_key
+        statement.file_data, statement.storage_key = _keep_file(
+            ctx, "cms-statements", s.file_name, s.content
+        )
         statement.uploaded_by_id = ctx.user.id
         statement.lines = [
             CmsStatementLine(
@@ -378,6 +384,8 @@ async def import_sheet(
         },
     )
     db.commit()
+    if statement is not None and old_key != statement.storage_key:
+        file_store.remove(old_key)
     db.refresh(record)
     return SheetImportOut(
         revenue_import=_import_out(db, record),

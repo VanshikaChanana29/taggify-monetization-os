@@ -122,6 +122,8 @@ class CmsStatement(UUIDPrimaryKeyMixin, OrgScopedMixin, TimestampMixin, Base):
     source: Mapped[str] = mapped_column(String(10), server_default="manual")
     file_name: Mapped[str | None] = mapped_column(String(255))
     file_data: Mapped[bytes | None] = mapped_column(LargeBinary, deferred=True)
+    # The uploaded file's key in Cloudflare R2 (then file_data is empty).
+    storage_key: Mapped[str | None] = mapped_column(String(300))
     uploaded_by_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL")
     )

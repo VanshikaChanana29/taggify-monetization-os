@@ -1,13 +1,6 @@
-# Render Blueprint — staging environment.
-# Render dashboard → New → Blueprint → pick this repo. Values marked `sync: false`
-# are asked for once in the dashboard (see README "Deploy on Render").
-
-databases:
-  - name: taggify-db
-    databaseName: taggify
-    user: taggify
-    region: singapore
-    plan: free # free DB expires after 30 days — switch to basic-256mb before real data
+# Render Blueprint — free setup: website + API on Render, Postgres on Neon, files in
+# Cloudflare R2. Render dashboard → New → Blueprint → pick this repo. Values marked
+# `sync: false` are asked for once in the dashboard (see README "Deploy on Render").
 
 services:
   - type: web
@@ -26,13 +19,21 @@ services:
       - key: PYTHON_VERSION
         value: 3.12.3
       - key: APP_ENV
-        value: staging
+        value: production
       - key: COOKIE_SECURE
         value: "true"
+      # Neon → project → Connection string (postgresql://…?sslmode=require)
       - key: DATABASE_URL
-        fromDatabase:
-          name: taggify-db
-          property: connectionString
+        sync: false
+      # Cloudflare R2 → bucket + an API token with Object Read & Write on that bucket
+      - key: R2_ACCOUNT_ID
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: R2_BUCKET
+        sync: false
 
   - type: web
     name: taggify-web

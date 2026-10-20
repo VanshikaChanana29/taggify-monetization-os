@@ -57,6 +57,7 @@ from app.schemas.finance import (
     Tier,
     parse_month,
 )
+from app.services import file_store
 from app.services.audit import record_audit
 from app.services.cms_fees import money
 from app.services.deals import company_today
@@ -94,6 +95,21 @@ def _cms(db: Session, ctx: AuthContext, cms_id: uuid.UUID) -> CmsPartner:
     if cms is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "CMS partner not found")
     return cms
+
+
+def _keep_file(
+    ctx: AuthContext, folder: str, file_name: str, content: bytes
+) -> tuple[bytes | None, str | None]:
+    """(bytes for the database, R2 key): the file goes to R2 when it is configured."""
+    try:
+        key = file_store.save(
+            ctx.organization.id, folder, file_name, content, file_store.content_type_for(file_name)
+        )
+    except file_store.FileStoreError as exc:
+        raise HTTPException(
+            status.HTTP_502_BAD_GATEWAY, "Could not store the file, try again"
+        ) from exc
+    return (None, key) if key else (content, None)
 
 
 def _audit(db, ctx, request, action, entity_type, entity_id, details):
@@ -517,6 +533,8 @@ def set_statement(body: StatementIn, ctx: Auth, request: Request, db: DbSession)
     statement.source = "manual"
     statement.file_name = None
     statement.file_data = None
+    statement.tax_amount = None
+    old_key, statement.storage_key = statement.storage_key, None
     statement.lines = []
     statement.uploaded_by_id = ctx.user.id
     db.flush()
@@ -530,6 +548,7 @@ def set_statement(body: StatementIn, ctx: Auth, request: Request, db: DbSession)
         {"name": f"{cms.name} {body.month}", "before": before, "net": str(body.net_amount)},
     )
     db.commit()
+    file_store.remove(old_key)
     return _statement_out(db, statement)
 
 
@@ -609,7 +628,10 @@ async def import_statement(
     statement.reference = (reference or "").strip() or statement.reference
     statement.source = "file"
     statement.file_name = (file.filename or "statement.csv").replace("\\", "/").split("/")[-1][:255]
-    statement.file_data = content
+    old_key = statement.storage_key
+    statement.file_data, statement.storage_key = _keep_file(
+        ctx, "cms-statements", statement.file_name, content
+    )
     statement.uploaded_by_id = ctx.user.id
     statement.lines = parsed.lines
     db.flush()
@@ -631,6 +653,8 @@ async def import_statement(
         },
     )
     db.commit()
+    if old_key != statement.storage_key:
+        file_store.remove(old_key)
     return StatementImportOut(
         statement=_statement_out(db, statement),
         lines_saved=len(parsed.lines),
@@ -647,13 +671,22 @@ def download_statement(statement_id: uuid.UUID, ctx: Auth, db: DbSession) -> Res
             CmsStatement.id == statement_id, CmsStatement.organization_id == ctx.organization.id
         )
     )
-    if st is None or st.file_data is None:
+    if st is None or (st.file_data is None and st.storage_key is None):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No uploaded file for this statement")
     name = st.file_name or "statement.csv"
+    if st.storage_key:
+        try:
+            content = file_store.load(st.storage_key)
+        except file_store.FileStoreError as exc:
+            raise HTTPException(
+                status.HTTP_502_BAD_GATEWAY, "Could not fetch the file, try again"
+            ) from exc
+    else:
+        content = st.file_data
     ascii_name = name.encode("ascii", "replace").decode().replace('"', "").replace("?", "_")
     return Response(
-        st.file_data,
-        media_type="text/csv",
+        content,
+        media_type=file_store.content_type_for(name),
         headers={
             "Content-Disposition": f'attachment; filename="{ascii_name}"; '
             f"filename*=UTF-8''{quote(name)}"

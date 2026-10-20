@@ -157,7 +157,7 @@ class DealEpisode(UUIDPrimaryKeyMixin, OrgScopedMixin, TimestampMixin, Base):
 class DealDocument(UUIDPrimaryKeyMixin, OrgScopedMixin, TimestampMixin, Base):
     """A file attached to a deal: signed contract, annexure, rights evidence (slide 4 step 03).
 
-    Stored in the database for now; moves to object storage with production (Part 8).
+    The file is in Cloudflare R2 under storage_key; without R2 (local dev) it is kept in `data`.
     """
 
     __tablename__ = "deal_documents"
@@ -172,4 +172,5 @@ class DealDocument(UUIDPrimaryKeyMixin, OrgScopedMixin, TimestampMixin, Base):
     uploaded_by_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL")
     )
-    data: Mapped[bytes] = mapped_column(LargeBinary, deferred=True)
+    data: Mapped[bytes | None] = mapped_column(LargeBinary, deferred=True)
+    storage_key: Mapped[str | None] = mapped_column(String(300))

@@ -20,6 +20,7 @@ from app.schemas.deal_assets import (
     EpisodeIn,
     EpisodeOut,
 )
+from app.services import file_store
 from app.services.audit import record_audit
 from app.services.episodes import TEMPLATE, import_episodes, normal_season, scope_error
 
@@ -289,45 +290,68 @@ async def upload_documents(
             f"A deal can hold up to {MAX_FILES_PER_DEAL} files; it has {have}.",
         )
     saved = []
-    for f in files:
-        name = (f.filename or "file").replace("\\", "/").split("/")[-1][:255]
-        ext = ("." + name.rsplit(".", 1)[-1].lower()) if "." in name else ""
-        if ext not in ALLOWED_EXTENSIONS:
-            raise HTTPException(
-                status.HTTP_422_UNPROCESSABLE_ENTITY,
-                f"{name}: only PDF, Word, Excel, CSV, text, email and image files are allowed",
-            )
-        data = await f.read(MAX_FILE_BYTES + 1)
-        if len(data) > MAX_FILE_BYTES:
-            raise HTTPException(
-                status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, f"{name} is larger than 15 MB"
-            )
-        if not data:
-            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"{name} is empty")
-        doc = DealDocument(
-            organization_id=ctx.organization.id,
-            deal_id=deal.id,
-            file_name=name,
-            content_type=ALLOWED_EXTENSIONS[ext],
-            size_bytes=len(data),
-            kind=kind,
-            uploaded_by_id=ctx.user.id,
-            data=data,
+    stored: list[str] = []  # R2 keys written so far, removed again if the upload fails
+    try:
+        for f in files:
+            await _save_one(db, ctx, deal, f, kind, saved, stored)
+        db.flush()
+        _audit(
+            db,
+            ctx,
+            request,
+            "document.uploaded",
+            deal,
+            {"name": ", ".join(d.file_name for d in saved), "kind": kind},
         )
-        db.add(doc)
-        saved.append(doc)
-    db.flush()
-    _audit(
-        db,
-        ctx,
-        request,
-        "document.uploaded",
-        deal,
-        {"name": ", ".join(d.file_name for d in saved), "kind": kind},
-    )
-    db.commit()
+        db.commit()
+    except BaseException:
+        db.rollback()
+        for key in stored:
+            file_store.remove(key)
+        raise
     names = {ctx.user.id: ctx.user.full_name}
     return [_document_out(d, names) for d in saved]
+
+
+async def _save_one(db, ctx: AuthContext, deal, f: UploadFile, kind, saved, stored) -> None:
+    """Check one uploaded file and add it to the deal (in R2 when configured)."""
+    name = (f.filename or "file").replace("\\", "/").split("/")[-1][:255]
+    ext = ("." + name.rsplit(".", 1)[-1].lower()) if "." in name else ""
+    if ext not in ALLOWED_EXTENSIONS:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            f"{name}: only PDF, Word, Excel, CSV, text, email and image files are allowed",
+        )
+    data = await f.read(MAX_FILE_BYTES + 1)
+    if len(data) > MAX_FILE_BYTES:
+        raise HTTPException(
+            status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, f"{name} is larger than 15 MB"
+        )
+    if not data:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"{name} is empty")
+    try:
+        key = file_store.save(
+            ctx.organization.id, "deal-documents", name, data, ALLOWED_EXTENSIONS[ext]
+        )
+    except file_store.FileStoreError as exc:
+        raise HTTPException(
+            status.HTTP_502_BAD_GATEWAY, f"{name}: could not store the file, try again"
+        ) from exc
+    if key:
+        stored.append(key)
+    doc = DealDocument(
+        organization_id=ctx.organization.id,
+        deal_id=deal.id,
+        file_name=name,
+        content_type=ALLOWED_EXTENSIONS[ext],
+        size_bytes=len(data),
+        kind=kind,
+        uploaded_by_id=ctx.user.id,
+        data=None if key else data,
+        storage_key=key,
+    )
+    db.add(doc)
+    saved.append(doc)
 
 
 def _get_document(db, ctx: AuthContext, document_id: uuid.UUID) -> DealDocument:
@@ -341,6 +365,19 @@ def _get_document(db, ctx: AuthContext, document_id: uuid.UUID) -> DealDocument:
     return doc
 
 
+def _file_bytes(key: str | None, data: bytes | None) -> bytes:
+    if not key:
+        if data is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "The file is missing")
+        return data
+    try:
+        return file_store.load(key)
+    except file_store.FileStoreError as exc:
+        raise HTTPException(
+            status.HTTP_502_BAD_GATEWAY, "Could not fetch the file, try again"
+        ) from exc
+
+
 @router.get("/documents/{document_id}/download")
 def download_document(document_id: uuid.UUID, ctx: Auth, db: DbSession) -> Response:
     doc = _get_document(db, ctx, document_id)
@@ -348,7 +385,7 @@ def download_document(document_id: uuid.UUID, ctx: Auth, db: DbSession) -> Respo
         doc.file_name.encode("ascii", "replace").decode().replace('"', "").replace("?", "_")
     )
     return Response(
-        doc.data,
+        _file_bytes(doc.storage_key, doc.data),
         media_type=doc.content_type,
         headers={
             "Content-Disposition": f'attachment; filename="{ascii_name}"; '
@@ -363,5 +400,7 @@ def delete_document(document_id: uuid.UUID, ctx: Auth, request: Request, db: DbS
     doc = _get_document(db, ctx, document_id)
     deal = _deal(db, ctx, doc.deal_id)
     _audit(db, ctx, request, "document.deleted", deal, {"name": doc.file_name})
+    key = doc.storage_key
     db.delete(doc)
     db.commit()
+    file_store.remove(key)
