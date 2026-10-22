@@ -24,6 +24,14 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // The free server sleeps when idle; after a few seconds, say why the login is slow.
+  const [slow, setSlow] = useState(false);
+
+  useEffect(() => {
+    if (!submitting) return setSlow(false);
+    const timer = setTimeout(() => setSlow(true), 5000);
+    return () => clearTimeout(timer);
+  }, [submitting]);
 
   useEffect(() => {
     // Already logged in → skip the form.
@@ -79,7 +87,7 @@ export default function LoginPage() {
             </p>
           )}
           <Button type="submit" size="lg" className="w-full" disabled={submitting}>
-            {submitting ? "Signing in…" : "Sign in"}
+            {submitting ? (slow ? "Starting the server, up to a minute…" : "Signing in…") : "Sign in"}
           </Button>
         </form>
         <DevLogins
