@@ -5,6 +5,8 @@ import type { NextConfig } from "next";
 const API_URL = process.env.API_URL ?? "http://localhost:8000";
 
 const nextConfig: NextConfig = {
+  // A self-contained server (server.js) for the single Docker service on Render.
+  output: "standalone",
   experimental: {
     // On Render's free plan the API sleeps when idle and takes about a minute to wake;
     // wait for it instead of failing after the default 30 seconds.

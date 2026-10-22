@@ -1,23 +1,21 @@
-# Render Blueprint — free setup: website + API on Render, Postgres on Neon, files in
-# Cloudflare R2. Render dashboard → New → Blueprint → pick this repo. Values marked
-# `sync: false` are asked for once in the dashboard (see README "Deploy on Render").
+# Render Blueprint — free setup, one service like Dayflow HRMS: the website and the API run
+# in one Docker container (see Dockerfile), Postgres is on Neon, files are in Cloudflare R2.
+# Render dashboard → New → Blueprint → pick this repo. Values marked `sync: false`
+# are asked for once in the dashboard (see README "Deploy").
 
 services:
   - type: web
-    name: taggify-api
-    runtime: python
+    name: taggify-monetization
+    runtime: docker
     region: singapore
     plan: free
-    rootDir: backend
     branch: main
     autoDeploy: true
-    buildCommand: pip install -r requirements.txt
-    # Migrations run on every start (preDeployCommand needs a paid plan).
-    startCommand: alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    # Migrations run on every start (deploy/start.sh), then the API, then the website.
     healthCheckPath: /api/health
     envVars:
-      - key: PYTHON_VERSION
-        value: 3.12.3
       - key: APP_ENV
         value: production
       - key: COOKIE_SECURE
@@ -34,20 +32,3 @@ services:
         sync: false
       - key: R2_BUCKET
         sync: false
-
-  - type: web
-    name: taggify-web
-    runtime: node
-    region: singapore
-    plan: free
-    rootDir: frontend
-    branch: main
-    autoDeploy: true
-    buildCommand: npm ci && npm run build
-    startCommand: npm start
-    envVars:
-      - key: NODE_VERSION
-        value: "22"
-      # The browser calls /api/* on this service; Next.js proxies it to the API.
-      - key: API_URL
-        sync: false # e.g. https://taggify-api.onrender.com

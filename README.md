@@ -140,16 +140,19 @@ for that reason: it pins v4 at the top of the tree so every platform resolves th
 
 ## Deploy (free: Render + Neon + Cloudflare R2)
 
+One Render service runs both the website and the API in one Docker container (`Dockerfile`,
+`deploy/start.sh`), so they sleep and wake together. Only the website is public; it proxies
+`/api/*` to the API on `127.0.0.1:8000` inside the container.
+
 1. **Neon** → new project (region Singapore) → copy the connection string
    (`postgresql://…neon.tech/…?sslmode=require`).
 2. **Cloudflare R2** → create a private bucket, e.g. `taggify-files` → *Manage API tokens* →
    token with **Object Read & Write** on that bucket → note the Account ID, Access Key ID and
    Secret Access Key. Do not make the bucket public: files are served only through the API.
 3. Push to GitHub `main`. Render → **New → Blueprint** → select this repo. It creates
-   `taggify-api` and `taggify-web` and asks for:
-   - `DATABASE_URL` (Neon), `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`
-   - `API_URL` on `taggify-web`: the API service URL, e.g. `https://taggify-api.onrender.com`
-4. After the first deploy, open `<api-url>/api/health` → `{"status":"ok","db":"ok"}`.
+   `taggify-monetization` and asks for `DATABASE_URL` (Neon), `R2_ACCOUNT_ID`,
+   `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` and `R2_BUCKET`.
+4. After the first deploy, open `<url>/api/health` → `{"status":"ok","db":"ok"}`.
    Migrations run on every start.
 5. Create the super admin from your laptop against Neon:
    ```powershell
@@ -158,11 +161,9 @@ for that reason: it pins v4 at the top of the tree so every platform resolves th
    .venv\Scripts\python -m app.cli create-superadmin --email you@taggify.in --name "Your Name"
    Remove-Item Env:DATABASE_URL
    ```
-   Then log in at the web URL and create companies and founders from the Admin pages.
-6. Domain: Render → `taggify-web` → *Custom domains* → `monetization.taggify.in`, then add the
-   CNAME it shows at the DNS provider. SSL is automatic.
+6. Domain: Render → `taggify-monetization` → *Custom domains* → `monetization.taggify.in`,
+   then add the CNAME it shows at the DNS provider. SSL is automatic.
 
-`API_URL` is read when the frontend is built — after changing it, redeploy the web service.
-Free web services sleep after 15 minutes idle (the first request takes ~1 minute). Neon's free
-plan holds 1 GB per project; files go to R2 (10 GB free), so the database stays small.
+The free service sleeps after 15 minutes idle; the first request then waits about a minute
+while it starts. Neon's free plan holds 1 GB per project; files go to R2 (10 GB free).
 
