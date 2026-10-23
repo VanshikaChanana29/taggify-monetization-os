@@ -42,6 +42,11 @@ export default function CmsDetailPage() {
   const [cms, setCms] = useState<CmsPartner | null>(null);
   const [schedules, setSchedules] = useState<FeeSchedule[]>([]);
   const [adding, setAdding] = useState(false);
+
+  // Arriving from "New CMS": open the fee slabs form straight away.
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("tiers") === "new") setAdding(true);
+  }, []);
   const [form, setForm] = useState({ month: thisMonth(), tier_type: "whole" as "whole" | "marginal", currency: "USD", tiers: EXAMPLE });
   const [sample, setSample] = useState("25000");
   const [error, setError] = useState<string | null>(null);

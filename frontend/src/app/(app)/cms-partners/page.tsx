@@ -1,6 +1,6 @@
 "use client";
 
-import { Pencil, Plus, Server, Tv } from "lucide-react";
+import { Layers, Pencil, Plus, Server, Tv } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
 import { EmptyRow, FilterBar, SearchInput, SortableHead, TablePagination } from "@/components/data-table";
@@ -62,6 +62,11 @@ export default function CmsPartnersPage() {
         method: editing === "new" ? "POST" : "PUT",
         json: form,
       });
+      if (editing === "new") {
+        // Next step for a new CMS is its fee slabs: open its page with that form ready.
+        window.location.assign(`/cms-partners/${saved.id}?tiers=new`);
+        return;
+      }
       setNotice(`${saved.name} saved.`);
       setEditing(null);
       load();
@@ -199,9 +204,17 @@ export default function CmsPartnersPage() {
                   <StatusPill active={r.is_active} />
                 </TableCell>
                 <TableCell className="text-right">
-                  <Button variant="outline" size="icon" aria-label={`Edit ${r.name}`} onClick={() => start(r)}>
-                    <Pencil />
-                  </Button>
+                  <div className="flex justify-end gap-2">
+                    <Button variant="outline" size="sm" asChild>
+                      <a href={`/cms-partners/${r.id}`}>
+                        <Layers />
+                        Fee slabs
+                      </a>
+                    </Button>
+                    <Button variant="outline" size="icon" aria-label={`Edit ${r.name}`} onClick={() => start(r)}>
+                      <Pencil />
+                    </Button>
+                  </div>
                 </TableCell>
               </TableRow>
             ))}
