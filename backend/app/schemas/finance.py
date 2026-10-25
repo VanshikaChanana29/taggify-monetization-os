@@ -232,6 +232,14 @@ class AdjustmentOut(BaseModel):
     created_at: datetime
 
 
+class OutstandingMonthOut(BaseModel):
+    month: str
+    net_base: Decimal | None
+    received: Decimal
+    outstanding: Decimal | None
+    days: int  # since the month ended
+
+
 class CmsMonthDetail(BaseModel):
     month: str
     base_currency: str
@@ -241,6 +249,8 @@ class CmsMonthDetail(BaseModel):
     receipts: list[ReceiptOut]
     adjustments: list[AdjustmentOut]
     reconciliation: list[ReconLineOut] = []
+    latest_statement_month: str | None = None
+    outstanding_by_month: list[OutstandingMonthOut] = []
 
 
 class StatementIn(_MonthField):

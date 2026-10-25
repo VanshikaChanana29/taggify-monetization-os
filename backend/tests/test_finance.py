@@ -310,3 +310,25 @@ def test_cms_list_shows_slabs_in_force(founder):
     assert slabs["tier_type"] == "marginal" and slabs["effective_from"] == str(LAST)
     assert [t["rate_pct"] for t in slabs["tiers"]] == [t["rate_pct"] for t in TIERS]
     assert rows["CMS B"]["slabs"] is None
+
+
+def test_cms_detail_shows_latest_statement_and_what_is_owed_by_month(founder):
+    cms_a = slide9(founder)  # comes with its fee schedule
+    founder.put("/api/fx-rates", json={"month": MONTH, "currency": "USD", "rate": "80"})
+    d = founder.get(f"/api/finance/settlements/{cms_a}?month={MONTH}").json()
+    assert d["latest_statement_month"] is None
+    assert [o["month"] for o in d["outstanding_by_month"]] == [MONTH]
+    assert d["outstanding_by_month"][0]["outstanding"] == d["summary"]["outstanding"]
+    founder.put(
+        "/api/finance/statements",
+        json={
+            "cms_partner_id": cms_a,
+            "month": MONTH,
+            "currency": "USD",
+            "gross_amount": "25000",
+            "fee_amount": "3750",
+            "net_amount": "21250",
+        },
+    )
+    d = founder.get(f"/api/finance/settlements/{cms_a}?month={MONTH}").json()
+    assert d["latest_statement_month"] == MONTH

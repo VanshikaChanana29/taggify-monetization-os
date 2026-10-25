@@ -17,7 +17,7 @@ from fastapi import (
     UploadFile,
     status,
 )
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import Auth, AuthContext, client_ip
@@ -46,6 +46,7 @@ from app.schemas.finance import (
     FinanceMonthOut,
     FxRateIn,
     FxRateOut,
+    OutstandingMonthOut,
     ReceiptIn,
     ReceiptOut,
     ReconLineOut,
@@ -60,6 +61,7 @@ from app.schemas.finance import (
 from app.services import file_store
 from app.services.audit import record_audit
 from app.services.cms_fees import money
+from app.services.dashboard import activity_months
 from app.services.deals import company_today
 from app.services.month_close import closed_months, latest_closed
 from app.services.revenue_import import TEMPLATE, import_revenue
@@ -496,9 +498,34 @@ def finance_cms_month(cms_id: str, ctx: Auth, db: DbSession, month: MonthQuery) 
     recon = []
     if statement and statement.lines and statement.currency == summary.currency:
         recon = reconcile(lines, statement.lines, {c.channel_id: c.channel_name for c in lines})
+    latest = (
+        db.scalar(select(func.max(CmsStatement.month)).where(CmsStatement.cms_partner_id == cms.id))
+        if cms
+        else None
+    )
+    # What this CMS still owes, month by month, up to the month being viewed.
+    owed: list[OutstandingMonthOut] = []
+    if cms:
+        today = company_today(ctx.organization)
+        for mm in sorted(
+            (x for x in activity_months(db, ctx.organization) if x <= m), reverse=True
+        ):
+            r = summary if mm == m else cms_month(db, ctx.organization, cms, mm)
+            if r.gross or r.received or r.outstanding:
+                owed.append(
+                    OutstandingMonthOut(
+                        month=f"{mm:%Y-%m}",
+                        net_base=r.net_base,
+                        received=r.received,
+                        outstanding=r.outstanding,
+                        days=(today - month_end(mm)).days,
+                    )
+                )
     return CmsMonthDetail(
         month=month,
         base_currency=ctx.organization.base_currency,
+        latest_statement_month=f"{latest:%Y-%m}" if latest else None,
+        outstanding_by_month=owed,
         summary=CmsMonthOut(**asdict(summary)),
         channels=[ChannelLineOut(**asdict(c)) for c in lines],
         statement=_statement_out(db, statement) if statement else None,

@@ -12,7 +12,6 @@ import {
   LayoutGrid,
   LogOut,
   MonitorPlay,
-  Server,
   ShieldCheck,
   UserCog,
   UserRound,
@@ -41,14 +40,13 @@ const COMPANY_NAV: NavGroup[] = [
     items: [
       { label: "Content owners", icon: Building, href: "/content-owners", step: 1, hint: "Sony, other vendors, your own IP" },
       { label: "Deals", icon: Handshake, href: "/deals", step: 2, hint: "Licences: episodes, term, slots, fee" },
-      { label: "CMS partners", icon: Server, href: "/cms-partners", step: 3, hint: "Who collects YouTube/Facebook money, and their fee slabs" },
-      { label: "People", icon: Users, href: "/people", step: 4, hint: "Team, roles, team leads, incentive %" },
-      { label: "Channels", icon: MonitorPlay, href: "/channels", step: 5, hint: "YouTube channels & Facebook pages, put into deal slots" },
+      { label: "People", icon: Users, href: "/people", step: 3, hint: "Team, roles, team leads, incentive %" },
+      { label: "Channels", icon: MonitorPlay, href: "/channels", step: 4, hint: "YouTube channels & Facebook pages, put into deal slots" },
     ],
   },
   {
     title: "Money",
-    items: [{ label: "CMS & Finance", icon: Landmark, href: "/finance", hint: "Revenue, CMS settlement, cash, incentives, month close" }],
+    items: [{ label: "CMS & Finance", icon: Landmark, href: "/finance", hint: "CMS partners & their slabs, revenue, settlement, cash, incentives, month close" }],
   },
   {
     title: "Operations",

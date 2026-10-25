@@ -46,7 +46,7 @@ export function stages(month: string, data: FinanceMonth, status: CloseStatus | 
       text: hasFeeGap(r) ? `Add ${r.cms_name}'s fee slabs` : `${r.cms_name} fee slabs`,
       sub: hasFeeGap(r) ? r.warnings.find((w) => !w.includes("rate")) : (r.fee_rule ?? undefined),
       done: !hasFeeGap(r),
-      href: `/cms-partners/${r.cms_id}${hasFeeGap(r) ? "?tiers=new" : ""}`,
+      href: `/finance/${r.cms_id}?${m}&tab=slabs${hasFeeGap(r) ? "&slabs=new" : ""}`,
       action: hasFeeGap(r) ? "Add slabs" : "View",
     })),
   ];

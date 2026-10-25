@@ -59,6 +59,7 @@ export function StatementTab({
   statement,
   reconciliation,
   onSaved,
+  part,
 }: {
   cmsId: string;
   month: string;
@@ -66,6 +67,8 @@ export function StatementTab({
   statement: Statement | null;
   reconciliation: ReconLine[];
   onSaved: (message: string) => void;
+  /** Show only the statement (upload, totals) or only the channel-by-channel reconciliation. */
+  part?: "statement" | "reconciliation";
 }) {
   const cur = summary.currency ?? "USD";
   const name = summary.cms_name;
@@ -106,13 +109,31 @@ export function StatementTab({
     try {
       await api("/finance/statements", {
         method: "PUT",
-        json: { cms_partner_id: cmsId, month, currency: cur, gross_amount: manual.gross, fee_amount: manual.fee, net_amount: net, reference: manual.reference || null },
+        json: {
+          cms_partner_id: cmsId,
+          month,
+          currency: cur,
+          gross_amount: manual.gross,
+          fee_amount: manual.fee,
+          net_amount: net,
+          reference: manual.reference || null,
+        },
       });
       setDialog(null);
       onSaved("Statement totals saved.");
     } catch (err) {
       const message = err instanceof Error ? err.message : "Could not save";
-      setErrors({ [fieldFor(message, [["gross", "gross"], ["fee", "fee"], ["net", "fee"]], "form")]: message });
+      setErrors({
+        [fieldFor(
+          message,
+          [
+            ["gross", "gross"],
+            ["fee", "fee"],
+            ["net", "fee"],
+          ],
+          "form",
+        )]: message,
+      });
     }
   }
 
@@ -120,125 +141,140 @@ export function StatementTab({
 
   return (
     <div className="space-y-6">
-      <section className="rounded-2xl border bg-card p-6 shadow-sm">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h3 className="text-lg font-semibold">
-              {name}&apos;s statement vs our calculation
-              <InfoTip text={HELP.statement} />
-            </h3>
-            <p className="text-sm text-muted-foreground">
-              Upload the CMS&apos;s own breakdown for {formatMonth(month)} to check every channel, or type just the totals.
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Button
-              variant="outline"
-              onClick={() => {
-                setManual(
-                  statement
-                    ? { gross: String(Number(statement.gross_amount)), fee: String(Number(statement.fee_amount)), reference: statement.reference ?? "" }
-                    : { gross: "", fee: "", reference: "" },
-                );
-                setErrors({});
-                setDialog("manual");
-              }}
-            >
-              <Pencil />
-              Type totals
-            </Button>
-            <Button
-              onClick={() => {
-                setResult(null);
-                setUploadError(null);
-                setReference(statement?.reference ?? "");
-                setDialog("upload");
-              }}
-            >
-              <Upload />
-              Upload statement file
-            </Button>
-          </div>
-        </div>
-
-        {statement ? (
-          <>
-            <p className="mt-4 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
-              <FileText className="h-4 w-4" />
-              {statement.source === "file" ? (
-                <>
-                  From file <span className="font-medium text-foreground">{statement.file_name}</span> · {statement.line_count} channel lines
-                </>
-              ) : (
-                <>Totals typed in</>
-              )}
-              <span>· version {statement.version}</span>
-              {statement.uploaded_by && <span>· {statement.uploaded_by}</span>}
-              {statement.updated_at && <span>· {formatDateTime(statement.updated_at)}</span>}
-              {statement.reference && <span>· ref {statement.reference}</span>}
-              {statement.source === "file" && (
-                <a href={`/api/finance/statements/${statement.id}/file`} className="inline-flex items-center gap-1 text-primary hover:underline">
-                  <Download className="h-3.5 w-3.5" />
-                  Download original
-                </a>
-              )}
-            </p>
-            <div className="mt-4 overflow-hidden rounded-xl border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Totals</TableHead>
-                    <TableHead className="text-right">Our calculation</TableHead>
-                    <TableHead className="text-right">Their statement</TableHead>
-                    <TableHead className="text-right">Difference</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {(
-                    [
-                      ["Gross", summary.gross, statement.gross_amount],
-                      ...(Number(summary.tax) > 0 || Number(statement.tax_amount ?? 0) > 0
-                        ? [["Tax withheld", summary.tax, statement.tax_amount ?? "0"]]
-                        : []),
-                      ["CMS fee", summary.fee, statement.fee_amount],
-                      ["Net", summary.net, statement.net_amount],
-                    ] as [string, string | null, string][]
-                  ).map(([label, ours, theirs]) => {
-                    const diff = ours === null ? null : Number(theirs) - Number(ours);
-                    return (
-                      <TableRow key={label} className={label === "Net" ? "font-semibold" : ""}>
-                        <TableCell>{label}</TableCell>
-                        <TableCell className="text-right">{ours === null ? "—" : money(ours, cur)}</TableCell>
-                        <TableCell className="text-right">{money(theirs, statement.currency)}</TableCell>
-                        <TableCell className={cn("text-right", diff ? "text-amber-600" : "text-emerald-600")}>
-                          {diff === null ? "—" : diff === 0 ? "✓ same" : money(diff, cur)}
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
+      {part !== "reconciliation" && (
+        <section className="rounded-2xl border bg-card p-6 shadow-sm">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h3 className="text-lg font-semibold">
+                {name}&apos;s statement vs our calculation
+                <InfoTip text={HELP.statement} />
+              </h3>
+              <p className="text-sm text-muted-foreground">
+                Upload the CMS&apos;s own breakdown for {formatMonth(month)} to check every channel, or type just the totals.
+              </p>
             </div>
-            <div className="mt-4">
-              {Number(summary.variance ?? 0) === 0 ? (
-                <Notice kind="success">The statement total matches our numbers.</Notice>
-              ) : (
-                <Notice kind="warning">
-                  {name} says the net is {money(summary.variance, cur)} different.
-                  {reconciliation.length > 0 ? " The channel lines below show where." : " Upload their file to see which channel causes it."} If it is a
-                  chargeback, tax or a late revision, record it under Adjustments so the outstanding balance is right.
-                </Notice>
-              )}
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setManual(
+                    statement
+                      ? {
+                          gross: String(Number(statement.gross_amount)),
+                          fee: String(Number(statement.fee_amount)),
+                          reference: statement.reference ?? "",
+                        }
+                      : { gross: "", fee: "", reference: "" },
+                  );
+                  setErrors({});
+                  setDialog("manual");
+                }}
+              >
+                <Pencil />
+                Type totals
+              </Button>
+              <Button
+                onClick={() => {
+                  setResult(null);
+                  setUploadError(null);
+                  setReference(statement?.reference ?? "");
+                  setDialog("upload");
+                }}
+              >
+                <Upload />
+                Upload statement file
+              </Button>
             </div>
-          </>
-        ) : (
-          <p className="mt-5 rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">
-            No statement yet. When {name} sends its {formatMonth(month)} statement, upload its file (best — every channel is checked) or type its totals.
-          </p>
-        )}
-      </section>
+          </div>
 
-      {statement?.source === "file" && (
+          {statement ? (
+            <>
+              <p className="mt-4 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
+                <FileText className="h-4 w-4" />
+                {statement.source === "file" ? (
+                  <>
+                    From file <span className="font-medium text-foreground">{statement.file_name}</span> · {statement.line_count} channel lines
+                  </>
+                ) : (
+                  <>Totals typed in</>
+                )}
+                <span>· version {statement.version}</span>
+                {statement.uploaded_by && <span>· {statement.uploaded_by}</span>}
+                {statement.updated_at && <span>· {formatDateTime(statement.updated_at)}</span>}
+                {statement.reference && <span>· ref {statement.reference}</span>}
+                {statement.source === "file" && (
+                  <a href={`/api/finance/statements/${statement.id}/file`} className="inline-flex items-center gap-1 text-primary hover:underline">
+                    <Download className="h-3.5 w-3.5" />
+                    Download original
+                  </a>
+                )}
+              </p>
+              <div className="mt-4 overflow-hidden rounded-xl border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Totals</TableHead>
+                      <TableHead className="text-right">Our calculation</TableHead>
+                      <TableHead className="text-right">Their statement</TableHead>
+                      <TableHead className="text-right">Difference</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {(
+                      [
+                        ["Gross", summary.gross, statement.gross_amount],
+                        ...(Number(summary.tax) > 0 || Number(statement.tax_amount ?? 0) > 0
+                          ? [["Tax withheld", summary.tax, statement.tax_amount ?? "0"]]
+                          : []),
+                        ["CMS fee", summary.fee, statement.fee_amount],
+                        ["Net", summary.net, statement.net_amount],
+                      ] as [string, string | null, string][]
+                    ).map(([label, ours, theirs]) => {
+                      const diff = ours === null ? null : Number(theirs) - Number(ours);
+                      return (
+                        <TableRow key={label} className={label === "Net" ? "font-semibold" : ""}>
+                          <TableCell>{label}</TableCell>
+                          <TableCell className="text-right">{ours === null ? "—" : money(ours, cur)}</TableCell>
+                          <TableCell className="text-right">{money(theirs, statement.currency)}</TableCell>
+                          <TableCell className={cn("text-right", diff ? "text-amber-600" : "text-emerald-600")}>
+                            {diff === null ? "—" : diff === 0 ? "✓ same" : money(diff, cur)}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+              <div className="mt-4">
+                {Number(summary.variance ?? 0) === 0 ? (
+                  <Notice kind="success">The statement total matches our numbers.</Notice>
+                ) : (
+                  <Notice kind="warning">
+                    {name} says the net is {money(summary.variance, cur)} different.
+                    {reconciliation.length > 0 ? " The channel lines below show where." : " Upload their file to see which channel causes it."} If it
+                    is a chargeback, tax or a late revision, record it under Adjustments so the outstanding balance is right.
+                  </Notice>
+                )}
+              </div>
+            </>
+          ) : (
+            <p className="mt-5 rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">
+              No statement yet. When {name} sends its {formatMonth(month)} statement, upload its file (best — every channel is checked) or type its
+              totals.
+            </p>
+          )}
+        </section>
+      )}
+
+      {part === "reconciliation" && statement?.source !== "file" && (
+        <section className="rounded-2xl border border-dashed bg-card p-8 text-center text-sm text-muted-foreground">
+          {statement
+            ? `${name}'s ${formatMonth(month)} totals were typed in, so there are no channel lines to compare. Upload their file under Statements to check every channel.`
+            : `No statement for ${formatMonth(month)} yet. Upload ${name}'s file under Statements and every channel is compared here.`}
+        </section>
+      )}
+
+      {part !== "statement" && statement?.source === "file" && (
         <section className="overflow-hidden rounded-2xl border bg-card shadow-sm">
           <div className="flex flex-wrap items-end justify-between gap-3 p-6 pb-4">
             <div>
@@ -296,7 +332,13 @@ export function StatementTab({
         </section>
       )}
 
-      <Dialog open={dialog === "upload"} onClose={() => setDialog(null)} title={`Upload ${name}'s statement`} description={`For ${formatMonth(month)}, in ${cur}. A new upload replaces the previous one (kept in History).`} wide>
+      <Dialog
+        open={dialog === "upload"}
+        onClose={() => setDialog(null)}
+        title={`Upload ${name}'s statement`}
+        description={`For ${formatMonth(month)}, in ${cur}. A new upload replaces the previous one (kept in History).`}
+        wide
+      >
         <ol className="space-y-5">
           <li className="flex gap-4">
             <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-bold text-primary">1</span>
@@ -334,7 +376,13 @@ export function StatementTab({
           <li className="flex gap-4">
             <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-bold text-primary">3</span>
             <div className="flex-1 space-y-3">
-              <input ref={fileRef} type="file" accept=".csv,text/csv" className="hidden" onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} />
+              <input
+                ref={fileRef}
+                type="file"
+                accept=".csv,text/csv"
+                className="hidden"
+                onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])}
+              />
               <button
                 type="button"
                 disabled={busy}
@@ -369,7 +417,8 @@ export function StatementTab({
                     <ul className="max-h-40 space-y-1 overflow-auto rounded-xl border p-3 text-sm">
                       {result.errors.map((e, i) => (
                         <li key={i}>
-                          <span className="font-mono text-muted-foreground">Line {e.line}:</span> <span className="text-red-600 dark:text-red-400">{e.message}</span>
+                          <span className="font-mono text-muted-foreground">Line {e.line}:</span>{" "}
+                          <span className="text-red-600 dark:text-red-400">{e.message}</span>
                         </li>
                       ))}
                     </ul>
@@ -392,18 +441,44 @@ export function StatementTab({
         </DialogFooter>
       </Dialog>
 
-      <Dialog open={dialog === "manual"} onClose={() => setDialog(null)} title={`${name} statement totals · ${formatMonth(month)}`} description="Use this when the CMS only sent totals. Typed totals replace any uploaded file.">
+      <Dialog
+        open={dialog === "manual"}
+        onClose={() => setDialog(null)}
+        title={`${name} statement totals · ${formatMonth(month)}`}
+        description="Use this when the CMS only sent totals. Typed totals replace any uploaded file."
+      >
         <form className="grid gap-4 sm:grid-cols-2" onSubmit={saveManual}>
           <Field id="st-gross" label={`Gross on their statement (${cur}) *`} error={errors.gross}>
-            <Input id="st-gross" type="number" step="0.01" min="0" required className={errors.gross ? INVALID : undefined} value={manual.gross} onChange={(e) => setManual({ ...manual, gross: e.target.value })} />
+            <Input
+              id="st-gross"
+              type="number"
+              step="0.01"
+              min="0"
+              required
+              className={errors.gross ? INVALID : undefined}
+              value={manual.gross}
+              onChange={(e) => setManual({ ...manual, gross: e.target.value })}
+            />
           </Field>
           <Field id="st-fee" label={`Their fee (${cur}) *`} error={errors.fee}>
-            <Input id="st-fee" type="number" step="0.01" min="0" required className={errors.fee ? INVALID : undefined} value={manual.fee} onChange={(e) => setManual({ ...manual, fee: e.target.value })} />
+            <Input
+              id="st-fee"
+              type="number"
+              step="0.01"
+              min="0"
+              required
+              className={errors.fee ? INVALID : undefined}
+              value={manual.fee}
+              onChange={(e) => setManual({ ...manual, fee: e.target.value })}
+            />
           </Field>
           <div className="rounded-xl bg-muted/50 p-3 text-sm sm:col-span-2">
             Net on their statement: <span className="font-semibold">{net ? money(net, cur) : "—"}</span>
             {net && summary.net !== null && (
-              <span className="text-muted-foreground"> · ours {money(summary.net, cur)} · difference {money(Number(net) - Number(summary.net), cur)}</span>
+              <span className="text-muted-foreground">
+                {" "}
+                · ours {money(summary.net, cur)} · difference {money(Number(net) - Number(summary.net), cur)}
+              </span>
             )}
           </div>
           <Field id="st-ref" label="Statement number / reference" className="sm:col-span-2">

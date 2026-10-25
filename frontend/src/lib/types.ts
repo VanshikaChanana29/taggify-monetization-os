@@ -482,6 +482,9 @@ export type CmsMonthDetail = {
     notes: string | null;
   }[];
   adjustments: { id: string; amount: string; reason: string; created_at: string }[];
+  latest_statement_month?: string | null;
+  /** What this CMS still owes, month by month (newest first), up to the month viewed. */
+  outstanding_by_month?: { month: string; net_base: string | null; received: string; outstanding: string | null; days: number }[];
 };
 
 // ---- Part 4B: incentives, deal economics, month close --------------------------------------

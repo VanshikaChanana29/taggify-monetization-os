@@ -8,10 +8,11 @@ import { PageHeader } from "@/components/page-header";
 import { Tabs } from "@/components/ui/tabs";
 import { shiftMonth, thisMonth } from "@/lib/finance";
 
-type FinanceTab = "overview" | "revenue" | "fx" | "incentives" | "close";
+type FinanceTab = "overview" | "partners" | "revenue" | "fx" | "incentives" | "close";
 
 const TABS: { key: FinanceTab; label: string; path: string }[] = [
   { key: "overview", label: "Overview", path: "/finance" },
+  { key: "partners", label: "CMS partners", path: "/finance/partners" },
   { key: "revenue", label: "Revenue", path: "/finance/revenue" },
   { key: "fx", label: "FX rates", path: "/finance/fx" },
   { key: "incentives", label: "Incentives", path: "/finance/incentives" },
@@ -37,7 +38,9 @@ export function useFinanceMonth(): [string, (month: string) => void] {
 
 function tabFor(pathname: string): FinanceTab {
   const match = TABS.find((t) => t.path !== "/finance" && pathname.startsWith(t.path));
-  return match?.key ?? "overview"; // /finance and /finance/<cms> both sit under Overview
+  if (match) return match.key;
+  // /finance/<cms id> is one CMS's page, under CMS partners.
+  return pathname === "/finance" ? "overview" : "partners";
 }
 
 export function FinanceShell({ children }: { children: React.ReactNode }) {
@@ -51,7 +54,7 @@ export function FinanceShell({ children }: { children: React.ReactNode }) {
       <PageHeader
         title="CMS & Finance"
         description="From what the channels earn to what reaches the bank — per CMS, per month."
-        actions={tab !== "fx" ? <MonthPicker month={month} onChange={setMonth} /> : undefined}
+        actions={tab !== "fx" && pathname !== "/finance/partners" ? <MonthPicker month={month} onChange={setMonth} /> : undefined}
       />
       <Tabs
         value={tab}
