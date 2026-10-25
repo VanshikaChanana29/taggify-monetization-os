@@ -2,26 +2,19 @@
 
 import { useEffect, useState } from "react";
 
-import { DEFAULT_PAGE_SIZE, PAGE_SIZES, EmptyRow, FilterBar, SortableHead, TablePagination } from "@/components/data-table";
+import { DEFAULT_PAGE_SIZE, PAGE_SIZES, EmptyRow, SortableHead, TablePagination } from "@/components/data-table";
 import { Notice } from "@/components/notice";
 import { PageHeader } from "@/components/page-header";
 import { useOrganization } from "@/components/session-provider";
 import { Tag } from "@/components/status-pill";
 import { Input } from "@/components/ui/input";
-import { NativeSelect } from "@/components/ui/native-select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { UserAvatar } from "@/components/user-avatar";
 import { api } from "@/lib/api";
 import { formatDateTime } from "@/lib/format";
 import type { AuditActor, AuditLog, Page } from "@/lib/types";
 import type { SortState } from "@/lib/use-client-table";
+import { ListFilters } from "@/components/list-filters";
 
 const ACTION_LABELS: Record<string, string> = {
   "auth.login": "Logged in",
@@ -195,7 +188,9 @@ export default function ActivityPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    api<AuditActor[]>("/audit-logs/actors").then(setActors).catch(() => {});
+    api<AuditActor[]>("/audit-logs/actors")
+      .then(setActors)
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -225,40 +220,25 @@ export default function ActivityPage() {
     setPage(1);
   }
 
-  const filtered = JSON.stringify(filters) !== JSON.stringify(NO_FILTERS);
-
   return (
     <div className="space-y-8">
       <PageHeader title="Activity" description={`Who did what in ${organization.name}.`} />
       {error && <Notice kind="error">{error}</Notice>}
 
-      <FilterBar active={filtered} onClear={() => updateFilters(NO_FILTERS)}>
-        <NativeSelect
-          aria-label="Filter by type"
-          className="w-56"
-          value={filters.group}
-          onChange={(e) => updateFilters({ group: e.target.value })}
-        >
-          <option value="">All activity</option>
-          {Object.entries(ACTION_GROUPS).map(([key, group]) => (
-            <option key={key} value={key}>
-              {group.label}
-            </option>
-          ))}
-        </NativeSelect>
-        <NativeSelect
-          aria-label="Filter by person"
-          className="w-48"
-          value={filters.userId}
-          onChange={(e) => updateFilters({ userId: e.target.value })}
-        >
-          <option value="">Everyone</option>
-          {actors.map((a) => (
-            <option key={a.id} value={a.id}>
-              {a.name}
-            </option>
-          ))}
-        </NativeSelect>
+      <ListFilters
+        fields={[
+          {
+            key: "group",
+            label: "Type",
+            options: [["", "All activity"], ...Object.entries(ACTION_GROUPS).map(([key, g]): [string, string] => [key, g.label])],
+          },
+          { key: "userId", label: "Person", options: [["", "Everyone"], ...actors.map((a): [string, string] => [a.id, a.name])] },
+        ]}
+        values={{ group: filters.group, userId: filters.userId }}
+        onChange={(key, value) => updateFilters({ [key]: value })}
+        onClear={() => updateFilters(NO_FILTERS)}
+        noun="entries"
+      >
         <label className="flex items-center gap-2 text-sm text-muted-foreground">
           From
           <Input
@@ -279,12 +259,13 @@ export default function ActivityPage() {
             onChange={(e) => updateFilters({ to: e.target.value })}
           />
         </label>
-      </FilterBar>
+      </ListFilters>
 
       <div className="overflow-hidden rounded-2xl border bg-card shadow-sm">
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="w-14">S.No.</TableHead>
               <SortableHead
                 label="When"
                 sortKey="when"
@@ -301,11 +282,10 @@ export default function ActivityPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {data?.items.map((log) => (
+            {data?.items.map((log, idx) => (
               <TableRow key={log.id}>
-                <TableCell className="whitespace-nowrap text-muted-foreground">
-                  {formatDateTime(log.created_at)}
-                </TableCell>
+                <TableCell className="w-14 tabular-nums text-muted-foreground">{(page - 1) * pageSize + idx + 1}</TableCell>
+                <TableCell className="whitespace-nowrap text-muted-foreground">{formatDateTime(log.created_at)}</TableCell>
                 <TableCell>
                   <div className="flex items-center gap-3">
                     <UserAvatar name={log.user_name ?? "System"} className="h-8 w-8 text-xs" />
@@ -313,21 +293,13 @@ export default function ActivityPage() {
                   </div>
                 </TableCell>
                 <TableCell>
-                  {WARNING_ACTIONS.has(log.action) ? (
-                    <Tag>{ACTION_LABELS[log.action] ?? log.action}</Tag>
-                  ) : (
-                    (ACTION_LABELS[log.action] ?? log.action)
-                  )}
+                  {WARNING_ACTIONS.has(log.action) ? <Tag>{ACTION_LABELS[log.action] ?? log.action}</Tag> : (ACTION_LABELS[log.action] ?? log.action)}
                 </TableCell>
                 <TableCell className="text-muted-foreground">{describe(log)}</TableCell>
-                <TableCell className="font-mono text-xs text-muted-foreground">
-                  {log.ip ?? "—"}
-                </TableCell>
+                <TableCell className="font-mono text-xs text-muted-foreground">{log.ip ?? "—"}</TableCell>
               </TableRow>
             ))}
-            {data && data.total === 0 && (
-              <EmptyRow colSpan={5}>No activity matches these filters.</EmptyRow>
-            )}
+            {data && data.total === 0 && <EmptyRow colSpan={6}>No activity matches these filters.</EmptyRow>}
           </TableBody>
         </Table>
         {data && (

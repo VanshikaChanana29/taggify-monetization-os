@@ -6,6 +6,9 @@ os.environ["DATABASE_URL"] = os.environ.get(
     "TEST_DATABASE_URL", "postgresql://taggify:taggify_dev@localhost:5432/taggify_test"
 )
 os.environ["COOKIE_SECURE"] = "false"
+# YouTube tokens are encrypted; tests use a fixed throwaway key and sync secret.
+os.environ["TOKEN_ENCRYPTION_KEY"] = "vbgGyM3Sx9wVxQ6m4C0h3jzKqk7m2V5o0RkV6nqU5yE="
+os.environ["SYNC_SECRET"] = "test-sync-secret"
 
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402

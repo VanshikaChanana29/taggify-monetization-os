@@ -3,25 +3,19 @@
 import { UserCheck, Users } from "lucide-react";
 import { useEffect, useState } from "react";
 
-import {
-  EmptyRow,
-  FilterBar,
-  SearchInput,
-  SortableHead,
-  TablePagination,
-} from "@/components/data-table";
+import { EmptyRow, SortableHead, TablePagination } from "@/components/data-table";
 import { Notice } from "@/components/notice";
 import { PageHeader } from "@/components/page-header";
 import { useOrganization, useSession } from "@/components/session-provider";
 import { StatCard } from "@/components/stat-card";
 import { StatusPill } from "@/components/status-pill";
-import { NativeSelect } from "@/components/ui/native-select";
-import { Table, TableBody, TableCell, TableHeader, TableRow } from "@/components/ui/table";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { UserAvatar } from "@/components/user-avatar";
 import { api } from "@/lib/api";
 import { formatDateTime } from "@/lib/format";
 import type { Member } from "@/lib/types";
 import { timeValue, useClientTable } from "@/lib/use-client-table";
+import { ListFilters } from "@/components/list-filters";
 
 const SORT_BY = {
   name: (m: Member) => m.full_name,
@@ -48,9 +42,7 @@ export default function UsersPage() {
 
   const q = query.trim().toLowerCase();
   const filtered = members.filter(
-    (m) =>
-      (!q || m.full_name.toLowerCase().includes(q) || m.email.includes(q)) &&
-      (!status || (status === "active") === m.is_active),
+    (m) => (!q || m.full_name.toLowerCase().includes(q) || m.email.includes(q)) && (!status || (status === "active") === m.is_active),
   );
   const table = useClientTable({
     rows: filtered,
@@ -61,70 +53,60 @@ export default function UsersPage() {
 
   return (
     <div className="space-y-8">
-      <PageHeader
-        title="Founders"
-        description={`Who can log in to ${organization.name}. Users are added and removed by the super admin.`}
-      />
+      <PageHeader title="Founders" description={`Who can log in to ${organization.name}. Users are added and removed by the super admin.`} />
 
       <div className="grid gap-5 md:grid-cols-2">
         <StatCard label="Total founders" value={members.length} icon={Users} info="Only founders log in. Ask the super admin to add or remove one." />
-        <StatCard
-          label="Active"
-          value={members.filter((m) => m.is_active).length}
-          icon={UserCheck}
-          tone="green"
-        />
+        <StatCard label="Active" value={members.filter((m) => m.is_active).length} icon={UserCheck} tone="green" />
       </div>
 
       {error && <Notice kind="error">{error}</Notice>}
 
-      <FilterBar
-        active={Boolean(q || status)}
+      <ListFilters
+        search={query}
+        onSearch={setQuery}
+        placeholder="Search name or email…"
+        fields={[
+          {
+            key: "status",
+            label: "Status",
+            options: [
+              ["", "All statuses"],
+              ["active", "Active"],
+              ["removed", "Removed"],
+            ],
+          },
+        ]}
+        values={{ status }}
+        onChange={(_, value) => setStatus(value as Status)}
         onClear={() => {
           setQuery("");
           setStatus("");
         }}
-      >
-        <SearchInput value={query} onChange={setQuery} placeholder="Search name or email…" />
-        <NativeSelect
-          aria-label="Filter by status"
-          className="w-44"
-          value={status}
-          onChange={(e) => setStatus(e.target.value as Status)}
-        >
-          <option value="">All statuses</option>
-          <option value="active">Active</option>
-          <option value="removed">Removed</option>
-        </NativeSelect>
-      </FilterBar>
+        noun="users"
+      />
 
       <div className="overflow-hidden rounded-2xl border bg-card shadow-sm">
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="w-14">S.No.</TableHead>
               <SortableHead label="Founder" sortKey="name" sort={table.sort} onSort={table.toggleSort} />
               <SortableHead label="Status" sortKey="status" sort={table.sort} onSort={table.toggleSort} />
-              <SortableHead
-                label="Last login"
-                sortKey="last_login"
-                sort={table.sort}
-                onSort={table.toggleSort}
-              />
+              <SortableHead label="Last login" sortKey="last_login" sort={table.sort} onSort={table.toggleSort} />
               <SortableHead label="Added" sortKey="added" sort={table.sort} onSort={table.toggleSort} />
             </TableRow>
           </TableHeader>
           <TableBody>
-            {table.pageRows.map((m) => (
+            {table.pageRows.map((m, idx) => (
               <TableRow key={m.id}>
+                <TableCell className="w-14 tabular-nums text-muted-foreground">{(table.page - 1) * table.pageSize + idx + 1}</TableCell>
                 <TableCell>
                   <div className="flex items-center gap-4">
                     <UserAvatar name={m.full_name} seed={m.id} />
                     <div>
                       <p className="font-semibold">
-                        {m.full_name}{" "}
-                        {m.id === me.user.id && (
-                          <span className="font-normal text-muted-foreground">(you)</span>
-                        )}
+                        {m.full_name} {m.id === me.user.id && <span className="font-normal text-muted-foreground">(you)</span>}
                       </p>
                       <p className="text-muted-foreground">{m.email}</p>
                     </div>
@@ -137,7 +119,7 @@ export default function UsersPage() {
                 <TableCell>{formatDateTime(m.added_at)}</TableCell>
               </TableRow>
             ))}
-            {table.total === 0 && <EmptyRow colSpan={4}>No founders match these filters.</EmptyRow>}
+            {table.total === 0 && <EmptyRow colSpan={5}>No founders match these filters.</EmptyRow>}
           </TableBody>
         </Table>
         <TablePagination

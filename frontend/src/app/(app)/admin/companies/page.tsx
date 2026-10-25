@@ -3,13 +3,7 @@
 import { Building2, Plus, UserX, Users } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
-import {
-  EmptyRow,
-  FilterBar,
-  SearchInput,
-  SortableHead,
-  TablePagination,
-} from "@/components/data-table";
+import { EmptyRow, SortableHead, TablePagination } from "@/components/data-table";
 import { Notice } from "@/components/notice";
 import { PageHeader } from "@/components/page-header";
 import { StatCard } from "@/components/stat-card";
@@ -18,11 +12,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
-import { Table, TableBody, TableCell, TableHeader, TableRow } from "@/components/ui/table";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { api } from "@/lib/api";
 import { formatDateTime } from "@/lib/format";
 import type { AdminOrganization } from "@/lib/types";
 import { timeValue, useClientTable } from "@/lib/use-client-table";
+import { Dialog, DialogFooter } from "@/components/ui/dialog";
+import { ListFilters } from "@/components/list-filters";
 
 const SORT_BY = {
   name: (c: AdminOrganization) => c.name,
@@ -83,9 +79,7 @@ export default function CompaniesPage() {
   const totalFounders = companies.reduce((sum, c) => sum + c.active_users, 0);
   const q = query.trim().toLowerCase();
   const filtered = companies.filter(
-    (c) =>
-      (!q || c.name.toLowerCase().includes(q) || c.slug.includes(q)) &&
-      (!currencyFilter || c.base_currency === currencyFilter),
+    (c) => (!q || c.name.toLowerCase().includes(q) || c.slug.includes(q)) && (!currencyFilter || c.base_currency === currencyFilter),
   );
   const table = useClientTable({
     rows: filtered,
@@ -108,7 +102,12 @@ export default function CompaniesPage() {
       />
 
       <div className="grid gap-5 md:grid-cols-3">
-        <StatCard label="Companies" value={companies.length} icon={Building2} info="Each company's data is separate; founders only see the companies they are given." />
+        <StatCard
+          label="Companies"
+          value={companies.length}
+          icon={Building2}
+          info="Each company's data is separate; founders only see the companies they are given."
+        />
         <StatCard label="Active founders" value={totalFounders} icon={Users} tone="green" href="/admin/users" />
         <StatCard
           label="Without founders"
@@ -123,11 +122,8 @@ export default function CompaniesPage() {
       {error && <Notice kind="error">{error}</Notice>}
       {notice && <Notice kind="success">{notice}</Notice>}
 
-      {showForm && (
-        <form
-          onSubmit={onSubmit}
-          className="grid gap-4 rounded-2xl border bg-card p-6 shadow-sm md:grid-cols-4 md:items-end"
-        >
+      <Dialog open={Boolean(showForm)} onClose={() => setShowForm(false)} wide title={"New company"}>
+        <form onSubmit={onSubmit} className="grid gap-4 md:grid-cols-4">
           <div className="space-y-2 md:col-span-2">
             <Label htmlFor="name">Company name</Label>
             <Input
@@ -157,73 +153,64 @@ export default function CompaniesPage() {
           </div>
           <div className="space-y-2">
             <Label htmlFor="currency">Base currency</Label>
-            <NativeSelect
-              id="currency"
-              value={currency}
-              onChange={(e) => setCurrency(e.target.value)}
-            >
+            <NativeSelect id="currency" value={currency} onChange={(e) => setCurrency(e.target.value)}>
               <option value="INR">INR — Indian Rupee</option>
               <option value="USD">USD — US Dollar</option>
             </NativeSelect>
           </div>
-          <div className="flex gap-3 md:col-span-4">
-            <Button type="submit">Create company</Button>
-            <Button type="button" variant="outline" onClick={() => setShowForm(false)}>
-              Cancel
-            </Button>
+          <div className="md:col-span-4">
+            {error && <Notice kind="error">{error}</Notice>}
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setShowForm(false)}>
+                Cancel
+              </Button>
+              <Button type="submit">Create company</Button>
+            </DialogFooter>
           </div>
         </form>
-      )}
+      </Dialog>
 
-      <FilterBar
-        active={Boolean(q || currencyFilter)}
+      <ListFilters
+        search={query}
+        onSearch={setQuery}
+        placeholder="Search name or slug…"
+        fields={[
+          {
+            key: "currency",
+            label: "Currency",
+            options: [
+              ["", "All currencies"],
+              ["INR", "INR"],
+              ["USD", "USD"],
+            ],
+          },
+        ]}
+        values={{ currency: currencyFilter }}
+        onChange={(_, value) => setCurrencyFilter(value)}
         onClear={() => {
           setQuery("");
           setCurrencyFilter("");
         }}
-      >
-        <SearchInput value={query} onChange={setQuery} placeholder="Search name or slug…" />
-        <NativeSelect
-          aria-label="Filter by currency"
-          className="w-44"
-          value={currencyFilter}
-          onChange={(e) => setCurrencyFilter(e.target.value)}
-        >
-          <option value="">All currencies</option>
-          <option value="INR">INR</option>
-          <option value="USD">USD</option>
-        </NativeSelect>
-      </FilterBar>
+        total={table.total}
+        noun="companies"
+      />
 
       <div className="overflow-hidden rounded-2xl border bg-card shadow-sm">
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="w-14">S.No.</TableHead>
               <SortableHead label="Company" sortKey="name" sort={table.sort} onSort={table.toggleSort} />
               <SortableHead label="Slug" sortKey="slug" sort={table.sort} onSort={table.toggleSort} />
-              <SortableHead
-                label="Currency"
-                sortKey="currency"
-                sort={table.sort}
-                onSort={table.toggleSort}
-              />
-              <SortableHead
-                label="Active founders"
-                sortKey="founders"
-                sort={table.sort}
-                onSort={table.toggleSort}
-              />
-              <SortableHead
-                label="Created"
-                sortKey="created"
-                sort={table.sort}
-                onSort={table.toggleSort}
-              />
+              <SortableHead label="Currency" sortKey="currency" sort={table.sort} onSort={table.toggleSort} />
+              <SortableHead label="Active founders" sortKey="founders" sort={table.sort} onSort={table.toggleSort} />
+              <SortableHead label="Created" sortKey="created" sort={table.sort} onSort={table.toggleSort} />
             </TableRow>
           </TableHeader>
           <TableBody>
-            {table.pageRows.map((c) => (
+            {table.pageRows.map((c, idx) => (
               <TableRow key={c.id}>
+                <TableCell className="w-14 tabular-nums text-muted-foreground">{(table.page - 1) * table.pageSize + idx + 1}</TableCell>
                 <TableCell>
                   <div className="flex items-center gap-4">
                     <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-orange-50 text-orange-500 dark:bg-orange-500/10">
@@ -237,16 +224,12 @@ export default function CompaniesPage() {
                   <Tag>{c.base_currency}</Tag>
                 </TableCell>
                 <TableCell className="font-semibold">{c.active_users}</TableCell>
-                <TableCell className="text-muted-foreground">
-                  {formatDateTime(c.created_at)}
-                </TableCell>
+                <TableCell className="text-muted-foreground">{formatDateTime(c.created_at)}</TableCell>
               </TableRow>
             ))}
             {table.total === 0 && (
-              <EmptyRow colSpan={5}>
-                {companies.length === 0
-                  ? "No companies yet — create the first one."
-                  : "No companies match these filters."}
+              <EmptyRow colSpan={6}>
+                {companies.length === 0 ? "No companies yet — create the first one." : "No companies match these filters."}
               </EmptyRow>
             )}
           </TableBody>

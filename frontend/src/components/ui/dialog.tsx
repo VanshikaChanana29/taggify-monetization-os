@@ -16,6 +16,7 @@ export function Dialog({
   description,
   children,
   wide = false,
+  side = false,
 }: {
   open: boolean;
   onClose: () => void;
@@ -23,6 +24,8 @@ export function Dialog({
   description?: React.ReactNode;
   children: React.ReactNode;
   wide?: boolean;
+  /** Slide-in panel on the right edge (filters) instead of a centred box. */
+  side?: boolean;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
 
@@ -45,12 +48,15 @@ export function Dialog({
         if (e.target === ref.current) onClose();
       }}
       className={cn(
-        "m-auto max-h-[calc(100vh-32px)] w-[calc(100vw-32px)] overflow-y-auto rounded-2xl border bg-card p-0 text-foreground shadow-2xl backdrop:bg-black/50 backdrop:backdrop-blur-[1px]",
-        wide ? "max-w-3xl" : "max-w-lg",
+        "overflow-y-auto border bg-card p-0 text-foreground shadow-2xl backdrop:bg-black/50 backdrop:backdrop-blur-[1px]",
+        side
+          ? // "!" so a parent's spacing (e.g. space-y-8 on the page) cannot move the panel
+            "!my-0 !ml-auto !mr-0 h-full max-h-full overflow-hidden w-[min(32rem,100vw)] max-w-none rounded-none rounded-l-2xl"
+          : cn("!m-auto max-h-[calc(100vh-32px)] w-[calc(100vw-32px)] rounded-2xl", wide ? "max-w-3xl" : "max-w-lg"),
       )}
     >
       {open && (
-        <div className="p-6">
+        <div className={side ? "flex h-full flex-col p-6" : "p-6"}>
           <div className="mb-5 flex items-start justify-between gap-4">
             <div>
               <h2 className="text-lg font-semibold">{title}</h2>
@@ -73,5 +79,6 @@ export function Dialog({
 }
 
 export function DialogFooter({ children }: { children: React.ReactNode }) {
-  return <div className="mt-6 flex flex-wrap justify-end gap-2 border-t pt-4">{children}</div>;
+  // Same in every popup: a light band at the bottom, actions on the right (Cancel, then the main action).
+  return <div className="-mx-6 -mb-6 mt-6 flex flex-wrap justify-end gap-3 rounded-b-2xl border-t bg-muted/30 px-6 py-4">{children}</div>;
 }

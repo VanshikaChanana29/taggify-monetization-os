@@ -17,6 +17,7 @@ import { HELP } from "@/lib/help";
 import { api } from "@/lib/api";
 import { formatDate, todayISO } from "@/lib/deals";
 import type { Employee, TeamDetail, TeamHistoryItem } from "@/lib/types";
+import { PageLoader } from "@/components/loader";
 
 function InfoCard({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -83,7 +84,7 @@ export default function TeamPage() {
     }
   }
 
-  if (!team) return error ? <Notice kind="error">{error}</Notice> : <p className="text-muted-foreground">Loading…</p>;
+  if (!team) return error ? <Notice kind="error">{error}</Notice> : <PageLoader />;
 
   const leaders = people.filter((p) => (p.is_active && p.role.can_lead_team) || p.id === team.lead?.id);
 

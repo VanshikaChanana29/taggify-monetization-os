@@ -17,6 +17,7 @@ import { api } from "@/lib/api";
 import { formatDate, formatMoney } from "@/lib/deals";
 import { PLATFORM_LABELS, PLATFORM_TONES, roleAbilities } from "@/lib/people";
 import type { EmployeeDetail } from "@/lib/types";
+import { PageLoader } from "@/components/loader";
 
 function InfoCard({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -45,7 +46,7 @@ export default function PersonPage() {
   }, [id]);
   useEffect(load, [load]);
 
-  if (!person) return error ? <Notice kind="error">{error}</Notice> : <p className="text-muted-foreground">Loading…</p>;
+  if (!person) return error ? <Notice kind="error">{error}</Notice> : <PageLoader />;
 
   return (
     <div className="space-y-8">

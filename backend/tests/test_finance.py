@@ -298,3 +298,15 @@ def test_finance_isolated_between_companies(make_founder, login):
     # Sociodoor cannot import onto Taggify's channels either.
     r = upload(s, f"date,channel_id,gross_revenue,currency\n{day(3)},UCK1,1,USD").json()
     assert r["rows_created"] == 0 and r["rows_failed"] == 1
+
+
+def test_cms_list_shows_slabs_in_force(founder):
+    cms_a = cms(founder, "CMS A")
+    cms(founder, "CMS B")
+    schedule(founder, cms_a, effective=str(LAST - timedelta(days=200)))
+    schedule(founder, cms_a, tier_type="marginal", effective=str(LAST))
+    rows = {c["name"]: c for c in founder.get("/api/cms-partners").json()}
+    slabs = rows["CMS A"]["slabs"]
+    assert slabs["tier_type"] == "marginal" and slabs["effective_from"] == str(LAST)
+    assert [t["rate_pct"] for t in slabs["tiers"]] == [t["rate_pct"] for t in TIERS]
+    assert rows["CMS B"]["slabs"] is None

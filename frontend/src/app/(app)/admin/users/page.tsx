@@ -3,13 +3,7 @@
 import { Crown, KeyRound, UserCheck, UserPlus, Users } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
-import {
-  EmptyRow,
-  FilterBar,
-  SearchInput,
-  SortableHead,
-  TablePagination,
-} from "@/components/data-table";
+import { EmptyRow, SortableHead, TablePagination } from "@/components/data-table";
 import { Notice } from "@/components/notice";
 import { PageHeader } from "@/components/page-header";
 import { PasswordInput } from "@/components/password-input";
@@ -20,19 +14,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { UserAvatar } from "@/components/user-avatar";
 import { api } from "@/lib/api";
 import { formatDateTime } from "@/lib/format";
 import type { AdminMembership, AdminOrganization, AdminUser } from "@/lib/types";
 import { timeValue, useClientTable } from "@/lib/use-client-table";
+import { Dialog, DialogFooter } from "@/components/ui/dialog";
+import { type FilterField, ListFilters } from "@/components/list-filters";
 
 const activeCompanies = (u: AdminUser) => u.memberships.filter((m) => m.is_active).length;
 
@@ -61,10 +50,7 @@ export default function AllUsersPage() {
   const [notice, setNotice] = useState<string | null>(null);
 
   const load = useCallback(() => {
-    Promise.all([
-      api<AdminUser[]>("/admin/users"),
-      api<AdminOrganization[]>("/admin/organizations"),
-    ])
+    Promise.all([api<AdminUser[]>("/admin/users"), api<AdminOrganization[]>("/admin/organizations")])
       .then(([u, c]) => {
         setUsers(u);
         setCompanies(c);
@@ -97,10 +83,7 @@ export default function AllUsersPage() {
 
   function toggleMembership(user: AdminUser, m: AdminMembership) {
     const action = m.is_active ? "deactivate" : "activate";
-    if (
-      m.is_active &&
-      !window.confirm(`Remove ${user.full_name}'s access to ${m.organization_name}?`)
-    ) {
+    if (m.is_active && !window.confirm(`Remove ${user.full_name}'s access to ${m.organization_name}?`)) {
       return;
     }
     run(
@@ -126,9 +109,7 @@ export default function AllUsersPage() {
   }
 
   function resetPassword(user: AdminUser) {
-    const password = window.prompt(
-      `New temporary password for ${user.full_name} (min 10 characters):`,
-    );
+    const password = window.prompt(`New temporary password for ${user.full_name} (min 10 characters):`);
     if (!password) return;
     run(
       () => api(`/admin/users/${user.id}/reset-password`, { method: "POST", json: { password } }),
@@ -150,8 +131,29 @@ export default function AllUsersPage() {
     initialSort: { key: "name", dir: "asc" },
     resetKey: [q, companyFilter, status, role].join("|"),
   });
-  const anyFilter = Boolean(q || companyFilter || status || role);
   const activeFounders = users.filter((u) => u.memberships.some((m) => m.is_active)).length;
+
+  const filterFields: FilterField[] = [
+    { key: "company", label: "Company", options: [["", "All companies"], ...companies.map((c): [string, string] => [c.id, c.name])] },
+    {
+      key: "status",
+      label: "Status",
+      options: [
+        ["", "All statuses"],
+        ["active", "Has access"],
+        ["no_access", "No access"],
+      ],
+    },
+    {
+      key: "role",
+      label: "Role",
+      options: [
+        ["", "All roles"],
+        ["founder", "Founders"],
+        ["superadmin", "Super admins"],
+      ],
+    },
+  ];
 
   return (
     <div className="space-y-8">
@@ -207,19 +209,11 @@ export default function AllUsersPage() {
       {error && <Notice kind="error">{error}</Notice>}
       {notice && <Notice kind="success">{notice}</Notice>}
 
-      {showForm && (
-        <form
-          onSubmit={createUser}
-          className="grid gap-4 rounded-2xl border bg-card p-6 shadow-sm md:grid-cols-2"
-        >
+      <Dialog open={Boolean(showForm)} onClose={() => setShowForm(false)} wide title={"New founder"}>
+        <form onSubmit={createUser} className="grid gap-4 md:grid-cols-2">
           <div className="space-y-2">
             <Label htmlFor="company">Company</Label>
-            <NativeSelect
-              id="company"
-              required
-              value={form.organization_id}
-              onChange={(e) => setForm({ ...form, organization_id: e.target.value })}
-            >
+            <NativeSelect id="company" required value={form.organization_id} onChange={(e) => setForm({ ...form, organization_id: e.target.value })}>
               <option value="">Select a company…</option>
               {companies.map((c) => (
                 <option key={c.id} value={c.id}>
@@ -230,22 +224,11 @@ export default function AllUsersPage() {
           </div>
           <div className="space-y-2">
             <Label htmlFor="full_name">Full name</Label>
-            <Input
-              id="full_name"
-              required
-              value={form.full_name}
-              onChange={(e) => setForm({ ...form, full_name: e.target.value })}
-            />
+            <Input id="full_name" required value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} />
           </div>
           <div className="space-y-2">
             <Label htmlFor="email">Email</Label>
-            <Input
-              id="email"
-              type="email"
-              required
-              value={form.email}
-              onChange={(e) => setForm({ ...form, email: e.target.value })}
-            />
+            <Input id="email" type="email" required value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
           </div>
           <div className="space-y-2">
             <Label htmlFor="password">Temporary password (min 10)</Label>
@@ -258,94 +241,61 @@ export default function AllUsersPage() {
               onChange={(e) => setForm({ ...form, password: e.target.value })}
             />
           </div>
-          <div className="flex gap-3 md:col-span-2">
-            <Button type="submit">Create founder</Button>
-            <Button type="button" variant="outline" onClick={() => setShowForm(false)}>
-              Cancel
-            </Button>
+          <div className="md:col-span-2">
+            {error && <Notice kind="error">{error}</Notice>}
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setShowForm(false)}>
+                Cancel
+              </Button>
+              <Button type="submit">Create founder</Button>
+            </DialogFooter>
           </div>
         </form>
-      )}
+      </Dialog>
 
-      <FilterBar
-        active={anyFilter}
+      <ListFilters
+        search={query}
+        onSearch={setQuery}
+        placeholder="Search name or email…"
+        fields={filterFields}
+        values={{ company: companyFilter, status, role }}
+        onChange={(key, value) =>
+          key === "company" ? setCompanyFilter(value) : key === "status" ? setStatus(value as Status) : setRole(value as Role)
+        }
         onClear={() => {
           setQuery("");
           setCompanyFilter("");
           setStatus("");
           setRole("");
         }}
-      >
-        <SearchInput value={query} onChange={setQuery} placeholder="Search name or email…" />
-        <NativeSelect
-          aria-label="Filter by company"
-          className="w-48"
-          value={companyFilter}
-          onChange={(e) => setCompanyFilter(e.target.value)}
-        >
-          <option value="">All companies</option>
-          {companies.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-        </NativeSelect>
-        <NativeSelect
-          aria-label="Filter by status"
-          className="w-44"
-          value={status}
-          onChange={(e) => setStatus(e.target.value as Status)}
-        >
-          <option value="">All statuses</option>
-          <option value="active">Has access</option>
-          <option value="no_access">No access</option>
-        </NativeSelect>
-        <NativeSelect
-          aria-label="Filter by role"
-          className="w-40"
-          value={role}
-          onChange={(e) => setRole(e.target.value as Role)}
-        >
-          <option value="">All roles</option>
-          <option value="founder">Founders</option>
-          <option value="superadmin">Super admins</option>
-        </NativeSelect>
-      </FilterBar>
+        noun="users"
+      />
 
       <div className="overflow-hidden rounded-2xl border bg-card shadow-sm">
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="w-14">S.No.</TableHead>
               <SortableHead label="User" sortKey="name" sort={table.sort} onSort={table.toggleSort} />
-              <SortableHead
-                label="Company access"
-                sortKey="access"
-                sort={table.sort}
-                onSort={table.toggleSort}
-              />
-              <SortableHead
-                label="Last login"
-                sortKey="last_login"
-                sort={table.sort}
-                onSort={table.toggleSort}
-              />
+              <SortableHead label="Company access" sortKey="access" sort={table.sort} onSort={table.toggleSort} />
+              <SortableHead label="Last login" sortKey="last_login" sort={table.sort} onSort={table.toggleSort} />
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {table.pageRows.map((u) => {
+            {table.pageRows.map((u, idx) => {
               const isMe = u.id === me.user.id;
               const memberOf = new Set(u.memberships.map((m) => m.organization_id));
               const addable = companies.filter((c) => !memberOf.has(c.id));
               return (
                 <TableRow key={u.id} className="align-top">
+                  <TableCell className="w-14 tabular-nums text-muted-foreground">{(table.page - 1) * table.pageSize + idx + 1}</TableCell>
                   <TableCell>
                     <div className="flex items-center gap-4">
                       <UserAvatar name={u.full_name} seed={u.id} />
                       <div>
                         <p className="font-semibold">
-                          {u.full_name}{" "}
-                          {isMe && <span className="font-normal text-muted-foreground">(you)</span>}
+                          {u.full_name} {isMe && <span className="font-normal text-muted-foreground">(you)</span>}
                         </p>
                         <p className="text-muted-foreground">{u.email}</p>
                         {u.is_superadmin && <Tag className="mt-1">Super admin</Tag>}
@@ -359,19 +309,13 @@ export default function AllUsersPage() {
                           <span className="min-w-24 font-medium">{m.organization_name}</span>
                           <StatusPill active={m.is_active} label={m.is_active ? "Active" : "Removed"} />
                           {!(isMe && m.is_active) && (
-                            <button
-                              type="button"
-                              className="text-sm font-medium text-primary hover:underline"
-                              onClick={() => toggleMembership(u, m)}
-                            >
+                            <button type="button" className="text-sm font-medium text-primary hover:underline" onClick={() => toggleMembership(u, m)}>
                               {m.is_active ? "Remove" : "Restore"}
                             </button>
                           )}
                         </div>
                       ))}
-                      {u.memberships.length === 0 && (
-                        <p className="text-muted-foreground">No company access</p>
-                      )}
+                      {u.memberships.length === 0 && <p className="text-muted-foreground">No company access</p>}
                       {addable.length > 0 && (
                         <NativeSelect
                           aria-label={`Add ${u.full_name} to a company`}
@@ -389,9 +333,7 @@ export default function AllUsersPage() {
                       )}
                     </div>
                   </TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {formatDateTime(u.last_login_at)}
-                  </TableCell>
+                  <TableCell className="text-muted-foreground">{formatDateTime(u.last_login_at)}</TableCell>
                   <TableCell className="text-right">
                     {!isMe && (
                       <Button
@@ -409,7 +351,7 @@ export default function AllUsersPage() {
                 </TableRow>
               );
             })}
-            {table.total === 0 && <EmptyRow colSpan={4}>No users match these filters.</EmptyRow>}
+            {table.total === 0 && <EmptyRow colSpan={5}>No users match these filters.</EmptyRow>}
           </TableBody>
         </Table>
         <TablePagination

@@ -20,6 +20,7 @@ import { formatMonth, money } from "@/lib/finance";
 import { formatDateTime } from "@/lib/format";
 import type { CmsPartner, Page, RevenueFact, RevenueImport } from "@/lib/types";
 import type { SortState } from "@/lib/use-client-table";
+import { PageLoader } from "@/components/loader";
 
 const COLUMNS: [string, string][] = [
   ["date", "Day of the earnings, e.g. 2026-09-15"],
@@ -347,7 +348,7 @@ function RevenueTab() {
 
 export default function RevenuePage() {
   return (
-    <Suspense fallback={<p className="text-muted-foreground">Loading…</p>}>
+    <Suspense fallback={<PageLoader />}>
       <RevenueTab />
     </Suspense>
   );

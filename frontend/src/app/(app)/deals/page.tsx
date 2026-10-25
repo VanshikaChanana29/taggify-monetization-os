@@ -5,29 +5,22 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 
-import { DEFAULT_PAGE_SIZE, PAGE_SIZES, EmptyRow, FilterBar, SearchInput, SortableHead, TablePagination } from "@/components/data-table";
+import { DEFAULT_PAGE_SIZE, PAGE_SIZES, EmptyRow, SortableHead, TablePagination } from "@/components/data-table";
 import { Notice } from "@/components/notice";
 import { PageHeader } from "@/components/page-header";
 import { Pill } from "@/components/pill";
 import { StatCard } from "@/components/stat-card";
 import { Button } from "@/components/ui/button";
-import { NativeSelect } from "@/components/ui/native-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { api } from "@/lib/api";
 import { HELP } from "@/lib/help";
-import {
-  DEAL_STATUS_LABELS,
-  DEAL_STATUS_TONES,
-  DEAL_TYPE_LABELS,
-  dealValue,
-  episodeSummary,
-  formatDate,
-  formatMoney,
-} from "@/lib/deals";
+import { DEAL_STATUS_LABELS, DEAL_STATUS_TONES, DEAL_TYPE_LABELS, dealValue, episodeSummary, formatDate, formatMoney } from "@/lib/deals";
 import type { ContentOwner, DealListItem, DealsSummary, Page } from "@/lib/types";
 import type { SortState } from "@/lib/use-client-table";
+import { PageLoader } from "@/components/loader";
+import { type FilterField, ListFilters } from "@/components/list-filters";
 
-type SortKey = "title" | "owner" | "term_end" | "fee";
+type SortKey = "title" | "owner" | "term_end" | "fee" | "created";
 type Filters = { q: string; owner: string; status: string; type: string };
 const NO_FILTERS: Filters = { q: "", owner: "", status: "", type: "" };
 
@@ -57,15 +50,21 @@ function DealsPage() {
   const [owners, setOwners] = useState<ContentOwner[]>([]);
   const [filters, setFilters] = useState<Filters>(() => ({ ...NO_FILTERS, status: urlParams.get("status") ?? "" }));
   const [search, setSearch] = useState("");
-  const [sort, setSort] = useState<SortState<SortKey>>({ key: "term_end", dir: "asc" });
+  // Just added a deal: say so and show it first.
+  const added = urlParams.get("added");
+  const [sort, setSort] = useState<SortState<SortKey>>(added ? { key: "created", dir: "desc" } : { key: "term_end", dir: "asc" });
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [data, setData] = useState<Page<DealListItem> | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    api<DealsSummary>("/deals/summary").then(setSummary).catch(() => {});
-    api<ContentOwner[]>("/content-owners").then(setOwners).catch(() => {});
+    api<DealsSummary>("/deals/summary")
+      .then(setSummary)
+      .catch(() => {});
+    api<ContentOwner[]>("/content-owners")
+      .then(setOwners)
+      .catch(() => {});
   }, []);
 
   // Wait until typing pauses before searching.
@@ -108,6 +107,12 @@ function DealsPage() {
   }
 
   const value = summary?.licence_value.map((v) => formatMoney(v.amount, v.currency)).join(" + ");
+
+  const filterFields: FilterField[] = [
+    { key: "owner", label: "Owner", options: [["", "All owners"], ...owners.map((o): [string, string] => [o.id, o.name])] },
+    { key: "status", label: "Status", options: [["", "All statuses"], ...STATUS_OPTIONS] },
+    { key: "type", label: "Type", options: [["", "All types"], ...Object.entries(DEAL_TYPE_LABELS)] },
+  ];
 
   return (
     <div className="space-y-8">
@@ -161,45 +166,28 @@ function DealsPage() {
       </div>
 
       {error && <Notice kind="error">{error}</Notice>}
+      {added && <Notice kind="success">{added} added. It is at the top of the list (newest first).</Notice>}
 
-      <FilterBar
-        active={Boolean(search || filters.owner || filters.status || filters.type)}
+      <ListFilters
+        search={search}
+        onSearch={setSearch}
+        placeholder="Search show or owner…"
+        fields={filterFields}
+        values={filters}
+        onChange={(key, value) => update({ [key]: value })}
         onClear={() => {
           setSearch("");
           update(NO_FILTERS);
         }}
-      >
-        <SearchInput value={search} onChange={setSearch} placeholder="Search show or owner…" />
-        <NativeSelect aria-label="Filter by owner" className="w-44" value={filters.owner} onChange={(e) => update({ owner: e.target.value })}>
-          <option value="">All owners</option>
-          {owners.map((o) => (
-            <option key={o.id} value={o.id}>
-              {o.name}
-            </option>
-          ))}
-        </NativeSelect>
-        <NativeSelect aria-label="Filter by status" className="w-52" value={filters.status} onChange={(e) => update({ status: e.target.value })}>
-          <option value="">All statuses</option>
-          {STATUS_OPTIONS.map(([v, label]) => (
-            <option key={v} value={v}>
-              {label}
-            </option>
-          ))}
-        </NativeSelect>
-        <NativeSelect aria-label="Filter by type" className="w-44" value={filters.type} onChange={(e) => update({ type: e.target.value })}>
-          <option value="">All types</option>
-          {Object.entries(DEAL_TYPE_LABELS).map(([v, label]) => (
-            <option key={v} value={v}>
-              {label}
-            </option>
-          ))}
-        </NativeSelect>
-      </FilterBar>
+        total={data?.total}
+        noun="deals"
+      />
 
       <div className="overflow-hidden rounded-2xl border bg-card shadow-sm">
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="w-14">S.No.</TableHead>
               <SortableHead label="Show" sortKey="title" sort={sort} onSort={toggleSort} />
               <SortableHead label="Owner" sortKey="owner" sort={sort} onSort={toggleSort} />
               <SortableHead label="Value" sortKey="fee" sort={sort} onSort={toggleSort} />
@@ -211,8 +199,9 @@ function DealsPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {data?.items.map((d) => (
+            {data?.items.map((d, idx) => (
               <TableRow key={d.id} className="cursor-pointer" onClick={() => router.push(`/deals/${d.id}`)}>
+                <TableCell className="w-14 tabular-nums text-muted-foreground">{(page - 1) * pageSize + idx + 1}</TableCell>
                 <TableCell>
                   <Link href={`/deals/${d.id}`} className="font-semibold hover:text-primary" onClick={(e) => e.stopPropagation()}>
                     {d.title}
@@ -221,9 +210,7 @@ function DealsPage() {
                 </TableCell>
                 <TableCell>{d.owner_name}</TableCell>
                 <TableCell className="whitespace-nowrap font-medium">{dealValue(d)}</TableCell>
-                <TableCell className="max-w-48 truncate text-muted-foreground">
-                  {episodeSummary(d.episode_scope, d.episode_ranges)}
-                </TableCell>
+                <TableCell className="max-w-48 truncate text-muted-foreground">{episodeSummary(d.episode_scope, d.episode_ranges)}</TableCell>
                 <TableCell className="whitespace-nowrap">{formatDate(d.term_end)}</TableCell>
                 <TableCell>
                   <SlotUsage used={d.yt_slots_used} limit={d.yt_slot_limit} />
@@ -237,7 +224,7 @@ function DealsPage() {
               </TableRow>
             ))}
             {data && data.total === 0 && (
-              <EmptyRow colSpan={8}>
+              <EmptyRow colSpan={9}>
                 {Object.values(filters).some(Boolean) ? "No deals match these filters." : "No deals yet — create the first one."}
               </EmptyRow>
             )}
@@ -264,7 +251,7 @@ function DealsPage() {
 
 export default function DealsPageWrapper() {
   return (
-    <Suspense fallback={<p className="text-muted-foreground">Loading…</p>}>
+    <Suspense fallback={<PageLoader />}>
       <DealsPage />
     </Suspense>
   );

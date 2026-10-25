@@ -32,3 +32,11 @@ services:
         sync: false
       - key: R2_BUCKET
         sync: false
+      # YouTube channel tokens are stored encrypted with this key. Generate once:
+      #   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+      # Never change it afterwards (saved tokens could no longer be read).
+      - key: TOKEN_ENCRYPTION_KEY
+        sync: false
+      # cron-job.org calls POST /api/internal/youtube-sync daily with header X-Sync-Secret: <this>.
+      - key: SYNC_SECRET
+        generateValue: true

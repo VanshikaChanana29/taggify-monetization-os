@@ -201,6 +201,8 @@ export type CmsPartner = {
   has_sheet_mapping: boolean;
   channel_count: number;
   created_at: string;
+  /** Fee slabs in force this month (or the next ones to start). */
+  slabs: { effective_from: string; tier_type: "whole" | "marginal"; currency: string; tiers: Tier[] } | null;
 };
 
 export type ChannelSlotRef = {
@@ -226,6 +228,10 @@ export type ChannelListItem = {
   manager: PersonRef | null;
   team_lead: PersonRef | null;
   created_at: string;
+  team?: string | null;
+  youtube_status?: YouTubeStatus;
+  subscribers?: number | null;
+  metrics?: ChannelMetrics | null;
 };
 
 export type SlotHistoryItem = {
@@ -263,6 +269,7 @@ export type ChannelsSummary = {
   in_slots: number;
   without_slot: number;
   without_manager: number;
+  youtube_not_connected: number;
 };
 
 export type Role = {
@@ -586,6 +593,7 @@ export type AttentionItem = {
 
 export type Dashboard = {
   month: string;
+  youtube_last_sync?: string | null;
   base_currency: string;
   current: Totals;
   previous: Totals;
@@ -664,4 +672,152 @@ export type SheetImport = {
   unknown: SheetLine[];
   errors: { line: number; message: string }[];
   warnings: string[];
+};
+
+// ---- YouTube connections, sync and channel performance -------------------------------------
+
+export type YouTubeStatus = "ok" | "expired" | "error" | "not_connected";
+
+export type YouTubeSyncProgress = {
+  running: boolean;
+  started_at: string | null;
+  finished_at: string | null;
+  start: string | null;
+  end: string | null;
+  total: number;
+  done: number;
+  failed: number;
+  days_saved: number;
+  errors: string[];
+};
+
+export type YouTubeConnectionRow = {
+  channel_id: string;
+  channel_name: string;
+  external_id: string;
+  cms_name: string | null;
+  status: YouTubeStatus;
+  youtube_title: string | null;
+  last_synced_at: string | null;
+  data_from: string | null;
+  data_to: string | null;
+  subscribers: number | null;
+  last_error: string | null;
+};
+
+export type YouTubeConnections = {
+  youtube_channels: number;
+  connected: number;
+  expired: number;
+  not_connected: number;
+  last_sync: string | null;
+  sync: YouTubeSyncProgress;
+  rows: YouTubeConnectionRow[];
+};
+
+export type YouTubeConnectRow = {
+  file: string;
+  result: "connected" | "updated" | "not_in_company" | "elsewhere" | "duplicate" | "unusable";
+  channel_id: string | null;
+  channel_name: string | null;
+  youtube_title: string | null;
+  tool_channel_id: string | null;
+  message: string | null;
+};
+
+export type YouTubeConnectResult = {
+  connected: number;
+  updated: number;
+  not_in_company: number;
+  unusable: number;
+  duplicates: number;
+  elsewhere: number;
+  sync_started: boolean;
+  rows: YouTubeConnectRow[];
+};
+
+export type YouTubeDay = {
+  day: string;
+  revenue: string | null;
+  currency: string | null;
+  state: string | null;
+  views: number | null;
+  watch_minutes: number | null;
+  subscribers_gained: number | null;
+  subscribers_lost: number | null;
+};
+
+export type ChannelYouTube = {
+  status: YouTubeStatus;
+  youtube_title: string | null;
+  last_synced_at: string | null;
+  data_from: string | null;
+  data_to: string | null;
+  subscribers: number | null;
+  videos: number | null;
+  last_error: string | null;
+  days: YouTubeDay[];
+};
+
+export type ChannelMetrics = {
+  revenue: string;
+  views: number;
+  rpm: string | null;
+  watch_hours: string | null;
+  subscribers_net: number | null;
+  previous_revenue: string;
+  revenue_change_pct: string | null;
+  estimate_share_pct: string;
+};
+
+export type RankedChannel = {
+  channel_id: string;
+  name: string;
+  revenue: string;
+  views: number;
+  revenue_change_pct: string | null;
+};
+
+export type DashboardChannels = {
+  month: string;
+  start: string;
+  end: string;
+  currency: string;
+  revenue: string;
+  previous_revenue: string;
+  revenue_change_pct: string | null;
+  estimate_share_pct: string;
+  views: number;
+  rpm: string | null;
+  watch_hours: string | null;
+  subscribers_net: number | null;
+  channels_with_revenue: number;
+  youtube_channels: number;
+  connected: number;
+  expired: number;
+  last_sync: string | null;
+  daily: { day: string; revenue: string; views: number }[];
+  share_by: Record<"cms" | "team" | "deal", { label: string; revenue: string; channels: number; key: string | null }[]>;
+  top: RankedChannel[];
+  rising: RankedChannel[];
+  falling: RankedChannel[];
+  rows: ChannelRankRow[];
+};
+
+export type ChannelRankRow = {
+  channel_id: string;
+  name: string;
+  platform: "youtube" | "facebook";
+  cms_name: string | null;
+  manager: string | null;
+  team: string | null;
+  revenue: string;
+  share_pct: string;
+  previous_revenue: string;
+  revenue_change_pct: string | null;
+  views: number;
+  rpm: string | null;
+  watch_hours: string | null;
+  subscribers_net: number | null;
+  youtube_status: YouTubeStatus;
 };

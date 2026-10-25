@@ -13,6 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { api } from "@/lib/api";
 import type { RoleWithCount } from "@/lib/types";
+import { Dialog, DialogFooter } from "@/components/ui/dialog";
 
 type Form = { name: string; can_manage_youtube: boolean; can_manage_facebook: boolean; can_lead_team: boolean };
 const EMPTY: Form = { name: "", can_manage_youtube: false, can_manage_facebook: false, can_lead_team: false };
@@ -45,7 +46,16 @@ export default function RolesPage() {
     setError(null);
     setNotice(null);
     setEditing(role ? role.id : "new");
-    setForm(role ? { name: role.name, can_manage_youtube: role.can_manage_youtube, can_manage_facebook: role.can_manage_facebook, can_lead_team: role.can_lead_team } : EMPTY);
+    setForm(
+      role
+        ? {
+            name: role.name,
+            can_manage_youtube: role.can_manage_youtube,
+            can_manage_facebook: role.can_manage_facebook,
+            can_lead_team: role.can_lead_team,
+          }
+        : EMPTY,
+    );
   }
 
   async function save(event: React.FormEvent) {
@@ -93,9 +103,8 @@ export default function RolesPage() {
       {error && <Notice kind="error">{error}</Notice>}
       {notice && <Notice kind="success">{notice}</Notice>}
 
-      {editing && (
+      <Dialog open={Boolean(editing)} onClose={() => setEditing(null)} title={editing === "new" ? "New role" : `Edit ${form.name}`}>
         <form onSubmit={save} className="space-y-4 rounded-2xl border bg-card p-6 shadow-sm">
-          <h3 className="text-lg font-semibold">{editing === "new" ? "New role" : `Edit ${form.name}`}</h3>
           <div className="max-w-sm space-y-2">
             <Label htmlFor="role-name">Name *</Label>
             <Input id="role-name" required autoFocus value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
@@ -116,19 +125,23 @@ export default function RolesPage() {
               </label>
             ))}
           </div>
-          <div className="flex gap-3">
-            <Button type="submit">Save</Button>
-            <Button type="button" variant="outline" onClick={() => setEditing(null)}>
-              Cancel
-            </Button>
+          <div>
+            {error && <Notice kind="error">{error}</Notice>}
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setEditing(null)}>
+                Cancel
+              </Button>
+              <Button type="submit">Save</Button>
+            </DialogFooter>
           </div>
         </form>
-      )}
+      </Dialog>
 
       <div className="overflow-hidden rounded-2xl border bg-card shadow-sm">
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="w-14">S.No.</TableHead>
               <TableHead>Role</TableHead>
               <TableHead>YouTube channels</TableHead>
               <TableHead>Facebook pages</TableHead>
@@ -138,12 +151,19 @@ export default function RolesPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {roles.map((r) => (
+            {roles.map((r, idx) => (
               <TableRow key={r.id}>
+                <TableCell className="w-14 tabular-nums text-muted-foreground">{0 + idx + 1}</TableCell>
                 <TableCell className="font-semibold">{r.name}</TableCell>
-                <TableCell><Yes on={r.can_manage_youtube} /></TableCell>
-                <TableCell><Yes on={r.can_manage_facebook} /></TableCell>
-                <TableCell><Yes on={r.can_lead_team} /></TableCell>
+                <TableCell>
+                  <Yes on={r.can_manage_youtube} />
+                </TableCell>
+                <TableCell>
+                  <Yes on={r.can_manage_facebook} />
+                </TableCell>
+                <TableCell>
+                  <Yes on={r.can_lead_team} />
+                </TableCell>
                 <TableCell className="font-semibold">{r.people_count}</TableCell>
                 <TableCell className="space-x-2 whitespace-nowrap text-right">
                   <Button variant="outline" size="icon" aria-label={`Edit ${r.name}`} onClick={() => start(r)}>
@@ -162,7 +182,7 @@ export default function RolesPage() {
                 </TableCell>
               </TableRow>
             ))}
-            {roles.length === 0 && <EmptyRow colSpan={6}>No roles yet.</EmptyRow>}
+            {roles.length === 0 && <EmptyRow colSpan={7}>No roles yet.</EmptyRow>}
           </TableBody>
         </Table>
       </div>

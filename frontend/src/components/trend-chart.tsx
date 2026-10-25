@@ -26,7 +26,17 @@ function niceMax(v: number): number {
 const shortMonth = (m: string) => formatMonth(m).split(" ")[0].slice(0, 3);
 
 /** Gross, net and cash for the last six months — one axis, three lines (PDF slide 15). */
-export function TrendChart({ points, currency }: { points: Point[]; currency: string }) {
+export function TrendChart({
+  points,
+  currency,
+  onPick,
+  note,
+}: {
+  points: Point[];
+  currency: string;
+  onPick?: (month: string) => void;
+  note?: string;
+}) {
   const ref = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(640);
   const [hover, setHover] = useState<number | null>(null);
@@ -65,7 +75,7 @@ export function TrendChart({ points, currency }: { points: Point[]; currency: st
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h3 className="text-lg font-semibold">Last six months</h3>
-          <p className="text-sm text-muted-foreground">In {currency}, converted at each month&apos;s FX rate.</p>
+          <p className="text-sm text-muted-foreground">{note ?? <>In {currency}, converted at each month&apos;s FX rate.</>}</p>
         </div>
         <div className="flex items-center gap-4">
           <ul className="flex flex-wrap gap-4 text-sm text-muted-foreground" aria-label="Legend">
@@ -76,11 +86,7 @@ export function TrendChart({ points, currency }: { points: Point[]; currency: st
               </li>
             ))}
           </ul>
-          <button
-            type="button"
-            className="text-sm font-medium text-primary hover:underline"
-            onClick={() => setAsTable((v) => !v)}
-          >
+          <button type="button" className="text-sm font-medium text-primary hover:underline" onClick={() => setAsTable((v) => !v)}>
             {asTable ? "Show chart" : "Show table"}
           </button>
         </div>
@@ -143,15 +149,7 @@ export function TrendChart({ points, currency }: { points: Point[]; currency: st
                   points={points.map((p, i) => `${x(i)},${y(Number(p[s.key]))}`).join(" ")}
                 />
                 {(hover === null ? [last] : [hover]).map((i) => (
-                  <circle
-                    key={i}
-                    cx={x(i)}
-                    cy={y(Number(points[i][s.key]))}
-                    r={4}
-                    fill={s.color}
-                    className="stroke-card"
-                    strokeWidth={2}
-                  />
+                  <circle key={i} cx={x(i)} cy={y(Number(points[i][s.key]))} r={4} fill={s.color} className="stroke-card" strokeWidth={2} />
                 ))}
               </g>
             ))}
@@ -166,6 +164,8 @@ export function TrendChart({ points, currency }: { points: Point[]; currency: st
               width={plotW + 32}
               height={plotH}
               fill="transparent"
+              className={onPick ? "cursor-pointer" : undefined}
+              onClick={() => hover !== null && onPick?.(points[hover].month)}
               onMouseMove={onMove}
               onMouseLeave={() => setHover(null)}
             />

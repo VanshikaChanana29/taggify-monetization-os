@@ -1,9 +1,10 @@
 "use client";
 
+import { bands, slabSummary } from "@/components/fee-slabs";
 import { Layers, Pencil, Plus, Server, Tv } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
-import { EmptyRow, FilterBar, SearchInput, SortableHead, TablePagination } from "@/components/data-table";
+import { EmptyRow, SortableHead, TablePagination } from "@/components/data-table";
 import { Notice } from "@/components/notice";
 import { PageHeader } from "@/components/page-header";
 import { Pill } from "@/components/pill";
@@ -20,6 +21,8 @@ import { HELP } from "@/lib/help";
 import { PLATFORM_LABELS, PLATFORM_TONES } from "@/lib/people";
 import type { CmsPartner, Platform } from "@/lib/types";
 import { useClientTable } from "@/lib/use-client-table";
+import { Dialog, DialogFooter } from "@/components/ui/dialog";
+import { ListFilters } from "@/components/list-filters";
 
 const SORT_BY = {
   name: (c: CmsPartner) => c.name,
@@ -30,6 +33,9 @@ const SORT_BY = {
 type Form = { name: string; platform: Platform | ""; notes: string; is_active: boolean; fee_after_tax: boolean };
 const EMPTY: Form = { name: "", platform: "", notes: "", is_active: true, fee_after_tax: false };
 
+const compactMoney = (v: number, cur: string) =>
+  `${cur === "INR" ? "₹" : "$"}${new Intl.NumberFormat("en-IN", { notation: "compact", maximumFractionDigits: 1 }).format(v)}`;
+
 export default function CmsPartnersPage() {
   const organization = useOrganization();
   const [rows, setRows] = useState<CmsPartner[]>([]);
@@ -39,6 +45,7 @@ export default function CmsPartnersPage() {
   const [platform, setPlatform] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [added, setAdded] = useState<CmsPartner | null>(null);
 
   const load = useCallback(() => {
     api<CmsPartner[]>("/cms-partners")
@@ -50,8 +57,11 @@ export default function CmsPartnersPage() {
   function start(row: CmsPartner | null) {
     setError(null);
     setNotice(null);
+    setAdded(null);
     setEditing(row ? row.id : "new");
-    setForm(row ? { name: row.name, platform: row.platform, notes: row.notes ?? "", is_active: row.is_active, fee_after_tax: row.fee_after_tax } : EMPTY);
+    setForm(
+      row ? { name: row.name, platform: row.platform, notes: row.notes ?? "", is_active: row.is_active, fee_after_tax: row.fee_after_tax } : EMPTY,
+    );
   }
 
   async function save(event: React.FormEvent) {
@@ -62,12 +72,9 @@ export default function CmsPartnersPage() {
         method: editing === "new" ? "POST" : "PUT",
         json: form,
       });
-      if (editing === "new") {
-        // Next step for a new CMS is its fee slabs: open its page with that form ready.
-        window.location.assign(`/cms-partners/${saved.id}?tiers=new`);
-        return;
-      }
-      setNotice(`${saved.name} saved.`);
+      // Back to the list, like every "New …"; a new CMS still needs its fee slabs, so link to them.
+      if (editing === "new") setAdded(saved);
+      else setNotice(`${saved.name} saved.`);
       setEditing(null);
       load();
     } catch (err) {
@@ -88,7 +95,7 @@ export default function CmsPartnersPage() {
     <div className="space-y-8">
       <PageHeader
         title="CMS partners"
-        description={`The CMS networks (YouTube) and business portfolios (Facebook) ${organization.name}'s channels earn through. Fee tiers come in Part 4.`}
+        description={`The CMS networks (YouTube) and business portfolios (Facebook) ${organization.name}'s channels earn through, and the fee slabs each one charges.`}
         actions={
           <Button size="lg" onClick={() => start(null)}>
             <Plus />
@@ -118,9 +125,18 @@ export default function CmsPartnersPage() {
 
       {error && <Notice kind="error">{error}</Notice>}
       {notice && <Notice kind="success">{notice}</Notice>}
+      {added && (
+        <Notice kind="success">
+          {added.name} added.{" "}
+          <a href={`/cms-partners/${added.id}?tiers=new`} className="font-semibold underline">
+            Add its fee slabs now
+          </a>
+          : a CMS without them cannot be settled.
+        </Notice>
+      )}
 
-      {editing && (
-        <form onSubmit={save} className="grid gap-4 rounded-2xl border bg-card p-6 shadow-sm md:grid-cols-2">
+      <Dialog open={Boolean(editing)} onClose={() => setEditing(null)} wide title={editing === "new" ? "New CMS partner" : `Edit ${form.name}`}>
+        <form onSubmit={save} className="grid gap-4 md:grid-cols-2">
           <div className="space-y-2">
             <Label htmlFor="name">Name *</Label>
             <Input id="name" required autoFocus value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
@@ -153,42 +169,69 @@ export default function CmsPartnersPage() {
           </label>
           {editing !== "new" && (
             <label className="flex items-center gap-2 text-sm md:col-span-2">
-              <input type="checkbox" className="h-4 w-4 accent-[hsl(var(--primary))]" checked={form.is_active} onChange={(e) => setForm({ ...form, is_active: e.target.checked })} />
+              <input
+                type="checkbox"
+                className="h-4 w-4 accent-[hsl(var(--primary))]"
+                checked={form.is_active}
+                onChange={(e) => setForm({ ...form, is_active: e.target.checked })}
+              />
               Active
             </label>
           )}
-          <div className="flex gap-3 md:col-span-2">
-            <Button type="submit">Save</Button>
-            <Button type="button" variant="outline" onClick={() => setEditing(null)}>
-              Cancel
-            </Button>
+          <div className="md:col-span-2">
+            {error && <Notice kind="error">{error}</Notice>}
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setEditing(null)}>
+                Cancel
+              </Button>
+              <Button type="submit">Save</Button>
+            </DialogFooter>
           </div>
         </form>
-      )}
+      </Dialog>
 
-      <FilterBar active={Boolean(q || platform)} onClear={() => { setQuery(""); setPlatform(""); }}>
-        <SearchInput value={query} onChange={setQuery} placeholder="Search CMS…" />
-        <NativeSelect aria-label="Filter by platform" className="w-44" value={platform} onChange={(e) => setPlatform(e.target.value)}>
-          <option value="">All platforms</option>
-          <option value="youtube">YouTube</option>
-          <option value="facebook">Facebook</option>
-        </NativeSelect>
-      </FilterBar>
+      <ListFilters
+        search={query}
+        onSearch={setQuery}
+        placeholder="Search CMS…"
+        fields={[
+          {
+            key: "platform",
+            label: "Platform",
+            options: [
+              ["", "All platforms"],
+              ["youtube", "YouTube"],
+              ["facebook", "Facebook"],
+            ],
+          },
+        ]}
+        values={{ platform }}
+        onChange={(_, value) => setPlatform(value)}
+        onClear={() => {
+          setQuery("");
+          setPlatform("");
+        }}
+        total={table.total}
+        noun="partners"
+      />
 
       <div className="overflow-hidden rounded-2xl border bg-card shadow-sm">
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="w-14">S.No.</TableHead>
               <SortableHead label="CMS" sortKey="name" sort={table.sort} onSort={table.toggleSort} />
               <SortableHead label="Platform" sortKey="platform" sort={table.sort} onSort={table.toggleSort} />
               <SortableHead label="Channels" sortKey="channels" sort={table.sort} onSort={table.toggleSort} />
+              <TableHead>Fee slabs</TableHead>
               <TableHead>Status</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {table.pageRows.map((r) => (
+            {table.pageRows.map((r, idx) => (
               <TableRow key={r.id}>
+                <TableCell className="w-14 tabular-nums text-muted-foreground">{(table.page - 1) * table.pageSize + idx + 1}</TableCell>
                 <TableCell>
                   <a href={`/cms-partners/${r.id}`} className="font-semibold hover:text-primary">
                     {r.name}
@@ -201,6 +244,26 @@ export default function CmsPartnersPage() {
                 </TableCell>
                 <TableCell className="font-semibold">{r.channel_count}</TableCell>
                 <TableCell>
+                  {r.slabs ? (
+                    <a href={`/cms-partners/${r.id}`} className="group block">
+                      <span className="font-semibold group-hover:text-primary">{slabSummary(r.slabs)}</span>
+                      <span className="block text-xs text-muted-foreground">
+                        {bands(r.slabs.tiers)
+                          .map((b, i, all) => (all.length === 1 ? "any amount" : b.to === null ? `${compactMoney(b.from, r.slabs!.currency)}+` : `≤${compactMoney(b.to, r.slabs!.currency)}`))
+                          .join(" · ")}
+                        {r.slabs.tier_type === "marginal" ? " · each part at its rate" : ""}
+                      </span>
+                    </a>
+                  ) : (
+                    <a
+                      href={`/cms-partners/${r.id}?tiers=new`}
+                      className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-800 hover:underline dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-300"
+                    >
+                      <Plus className="h-3 w-3" /> Add slabs
+                    </a>
+                  )}
+                </TableCell>
+                <TableCell>
                   <StatusPill active={r.is_active} />
                 </TableCell>
                 <TableCell className="text-right">
@@ -208,7 +271,7 @@ export default function CmsPartnersPage() {
                     <Button variant="outline" size="sm" asChild>
                       <a href={`/cms-partners/${r.id}`}>
                         <Layers />
-                        Fee slabs
+                        {r.slabs ? "Slabs" : "Add slabs"}
                       </a>
                     </Button>
                     <Button variant="outline" size="icon" aria-label={`Edit ${r.name}`} onClick={() => start(r)}>
@@ -219,11 +282,18 @@ export default function CmsPartnersPage() {
               </TableRow>
             ))}
             {table.total === 0 && (
-              <EmptyRow colSpan={5}>{rows.length ? "No CMS partners match these filters." : "No CMS partners yet — add CMS A."}</EmptyRow>
+              <EmptyRow colSpan={7}>{rows.length ? "No CMS partners match these filters." : "No CMS partners yet — add CMS A."}</EmptyRow>
             )}
           </TableBody>
         </Table>
-        <TablePagination page={table.page} pageSize={table.pageSize} total={table.total} onPageChange={table.setPage} onPageSizeChange={table.setPageSize} noun="partners" />
+        <TablePagination
+          page={table.page}
+          pageSize={table.pageSize}
+          total={table.total}
+          onPageChange={table.setPage}
+          onPageSizeChange={table.setPageSize}
+          noun="partners"
+        />
       </div>
     </div>
   );

@@ -266,7 +266,13 @@ def test_channel_filters(founder):
         alpha["manager"]["name"] == "Ananya Sharma" and alpha["team_lead"]["name"] == "Kabir Mehta"
     )
     s = founder.get("/api/channels/summary").json()
-    assert s == {"active_channels": 3, "in_slots": 1, "without_slot": 2, "without_manager": 2}
+    assert s == {
+        "active_channels": 3,
+        "in_slots": 1,
+        "without_slot": 2,
+        "without_manager": 2,
+        "youtube_not_connected": 2,  # active YouTube channels without a permission file
+    }
 
 
 # ---- People: see tests/test_people_teams.py ----------------------------------------------

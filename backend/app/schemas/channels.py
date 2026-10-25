@@ -1,5 +1,6 @@
 import uuid
 from datetime import date, datetime
+from decimal import Decimal
 from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
@@ -37,6 +38,20 @@ class CmsIn(BaseModel):
         return _blank(value)
 
 
+class CmsSlab(BaseModel):
+    from_amount: Decimal
+    rate_pct: Decimal
+
+
+class CmsSlabs(BaseModel):
+    """The fee slabs in force this month (or the next ones, if none apply yet)."""
+
+    effective_from: date
+    tier_type: Literal["whole", "marginal"]
+    currency: str
+    tiers: list[CmsSlab]
+
+
 class CmsOut(BaseModel):
     id: uuid.UUID
     name: str
@@ -47,6 +62,7 @@ class CmsOut(BaseModel):
     has_sheet_mapping: bool = False
     channel_count: int
     created_at: datetime
+    slabs: CmsSlabs | None = None
 
 
 class ChannelIn(BaseModel):
@@ -95,6 +111,19 @@ class ChannelSlotRef(BaseModel):
     since: date
 
 
+class ChannelMetricsOut(BaseModel):
+    """The channel's numbers for the chosen period (revenue in USD)."""
+
+    revenue: Decimal
+    views: int
+    rpm: Decimal | None
+    watch_hours: Decimal | None
+    subscribers_net: int | None
+    previous_revenue: Decimal
+    revenue_change_pct: Decimal | None
+    estimate_share_pct: Decimal
+
+
 class ChannelListItem(BaseModel):
     id: uuid.UUID
     platform: Platform
@@ -108,6 +137,11 @@ class ChannelListItem(BaseModel):
     manager: PersonRef | None
     team_lead: PersonRef | None
     created_at: datetime
+    # Filled by the Channels list (period numbers and YouTube connection).
+    team: str | None = None
+    youtube_status: str = "not_connected"
+    subscribers: int | None = None
+    metrics: ChannelMetricsOut | None = None
 
 
 class SlotHistoryItem(BaseModel):
@@ -155,3 +189,26 @@ class UnassignIn(BaseModel):
 class ManagerIn(BaseModel):
     employee_id: uuid.UUID | None
     effective_date: date | None = None
+
+
+class ImportLineOut(BaseModel):
+    line: int
+    external_id: str
+    name: str
+    platform: str
+    cms: str | None
+    manager: str | None
+    status: str
+    result: Literal["new", "exists", "duplicate", "error"]
+    notes: list[str]
+    channel_id: uuid.UUID | None = None
+
+
+class ImportOut(BaseModel):
+    added: int
+    exists: int
+    duplicate: int
+    errors: int
+    with_notes: int
+    missing_columns: list[str]
+    lines: list[ImportLineOut]

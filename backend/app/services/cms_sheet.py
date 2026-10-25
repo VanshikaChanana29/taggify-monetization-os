@@ -119,6 +119,12 @@ def read_table(content: bytes, file_name: str) -> Table:
             header_at = idx
             break
     if header_at is None:
+        # A one-column file (e.g. just "Channel ID"): its first text cell is the header.
+        for idx, (_, cells) in enumerate(raw[:HEADER_SCAN_ROWS]):
+            if any(isinstance(c, str) and c.strip() and not _is_number(c) for c in cells):
+                header_at = idx
+                break
+    if header_at is None:
         raise ValueError("Could not find a header row in the first 20 rows")
 
     header_cells = raw[header_at][1]

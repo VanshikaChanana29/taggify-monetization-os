@@ -1,6 +1,6 @@
 "use client";
 
-import { Plus, Trash2 } from "lucide-react";
+import { Check, Plus, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -14,6 +14,7 @@ import { InfoTip } from "@/components/ui/info-tip";
 import { HELP } from "@/lib/help";
 import { api } from "@/lib/api";
 import { COUNTRIES, DEAL_TYPE_LABELS, SCOPE_LABELS } from "@/lib/deals";
+import { money } from "@/lib/finance";
 import type { ContentOwner, Deal, DealType, EpisodeScope, Exclusivity, StoredDealStatus } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -47,6 +48,12 @@ type Form = {
 
 const PAYS_FEE: DealType[] = ["fixed_fee", "hybrid"];
 const SHARES: DealType[] = ["revenue_share", "hybrid", "partnership"];
+
+const STATUS_CHOICES: Record<StoredDealStatus, string> = {
+  active: "Active",
+  draft: "Draft (not yet signed)",
+  terminated: "Terminated",
+};
 
 const EMPTY_RANGE: RangeRow = { season: "", from: "", to: "" };
 
@@ -235,25 +242,49 @@ function FieldError({ message }: { message?: string }) {
 
 const INVALID = "border-red-400 focus-visible:ring-red-400 dark:border-red-500/60";
 
-function Section({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
+function Section({
+  id,
+  step,
+  title,
+  hint,
+  done,
+  optional,
+  children,
+}: {
+  id: string;
+  step: number;
+  title: string;
+  hint?: string;
+  done: boolean;
+  optional?: boolean;
+  children: React.ReactNode;
+}) {
   return (
-    <section className="rounded-2xl border bg-card p-6 shadow-sm">
-      <h3 className="text-lg font-semibold">{title}</h3>
-      {hint && <p className="text-sm text-muted-foreground">{hint}</p>}
-      <div className="mt-5 grid gap-4 md:grid-cols-2">{children}</div>
+    <section id={id} className="scroll-mt-24 rounded-2xl border bg-card shadow-sm">
+      <header className="flex items-start gap-4 border-b px-6 py-4">
+        <span
+          className={cn(
+            "flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-semibold",
+            done ? "bg-emerald-600 text-white" : "bg-muted text-muted-foreground",
+          )}
+          aria-hidden
+        >
+          {done ? <Check className="h-4 w-4" /> : step}
+        </span>
+        <div className="min-w-0">
+          <h3 className="text-lg font-semibold leading-8">
+            {title}
+            {optional && <span className="ml-2 text-xs font-normal text-muted-foreground">Optional</span>}
+          </h3>
+          {hint && <p className="text-sm text-muted-foreground">{hint}</p>}
+        </div>
+      </header>
+      <div className="grid gap-x-4 gap-y-5 p-6 md:grid-cols-2">{children}</div>
     </section>
   );
 }
 
-function Choice<T extends string>({
-  value,
-  options,
-  onChange,
-}: {
-  value: T;
-  options: Record<T, string>;
-  onChange: (v: T) => void;
-}) {
+function Choice<T extends string>({ value, options, onChange }: { value: T; options: Record<T, string>; onChange: (v: T) => void }) {
   return (
     <div className="flex flex-wrap gap-2 md:col-span-2">
       {(Object.keys(options) as T[]).map((key) => (
@@ -283,7 +314,9 @@ export function DealForm({ deal }: { deal: Deal | null }) {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    api<ContentOwner[]>("/content-owners").then(setOwners).catch(() => {});
+    api<ContentOwner[]>("/content-owners")
+      .then(setOwners)
+      .catch(() => {});
   }, []);
 
   // After the first submit, re-check as the founder edits so fixed fields clear right away.
@@ -292,17 +325,14 @@ export function DealForm({ deal }: { deal: Deal | null }) {
   }, [form, submitted]);
 
   const set = (change: Partial<Form>) => setForm((f) => ({ ...f, ...change }));
-  const setRange = (i: number, change: Partial<RangeRow>) =>
-    set({ ranges: form.ranges.map((r, j) => (j === i ? { ...r, ...change } : r)) });
+  const setRange = (i: number, change: Partial<RangeRow>) => set({ ranges: form.ranges.map((r, j) => (j === i ? { ...r, ...change } : r)) });
 
   const selectable = owners.filter((o) => o.is_active || o.id === deal?.owner_id);
 
   function showErrors(next: Errors) {
     setErrors(next);
     // Bring the first problem into view once it has rendered.
-    requestAnimationFrame(() =>
-      document.querySelector("[data-field-error]")?.scrollIntoView({ behavior: "smooth", block: "center" }),
-    );
+    requestAnimationFrame(() => document.querySelector("[data-field-error]")?.scrollIntoView({ behavior: "smooth", block: "center" }));
   }
 
   async function submit(event: React.FormEvent) {
@@ -317,380 +347,508 @@ export function DealForm({ deal }: { deal: Deal | null }) {
         method: deal ? "PUT" : "POST",
         json: toPayload(form),
       });
-      router.push(`/deals/${saved.id}`);
+      // A new deal goes back to the list (like every other "New …"); an edit returns to the deal.
+      router.push(deal ? `/deals/${saved.id}` : `/deals?added=${encodeURIComponent(saved.title)}`);
     } catch (err) {
       showErrors(serverErrors(err instanceof Error ? err.message : "Could not save the deal"));
       setSaving(false);
     }
   }
 
+  const owner = owners.find((o) => o.id === form.owner_id);
+  const slots = Number(form.yt_slot_limit || 0) + Number(form.fb_slot_limit || 0);
+  const done = {
+    deal:
+      Boolean(form.owner_id && form.title.trim()) &&
+      (!PAYS_FEE.includes(form.deal_type) || Number(form.fee_amount) > 0) &&
+      (!SHARES.includes(form.deal_type) || Number(form.revenue_share_pct) > 0),
+    rights:
+      Boolean(form.term_start && form.term_end) &&
+      (form.episode_scope === "all" || form.ranges.some((r) => r.from && r.to)) &&
+      (form.is_worldwide || form.territories.length > 0),
+    slots: slots > 0,
+    terms: Boolean(
+      form.languages || form.exclusivity || form.notice_period_days || form.agreement_version || form.renewal_terms || form.clip_restrictions,
+    ),
+    docs: Boolean(form.contract_url || form.notes),
+  };
+  const steps: [keyof typeof done, string][] = [
+    ["deal", "Deal"],
+    ["rights", "Rights"],
+    ["slots", "Slots"],
+    ["terms", "Contract terms"],
+    ["docs", "Documents & notes"],
+  ];
+  const fmtDate = (d: string) =>
+    d ? new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", year: "numeric" }).format(new Date(d)) : "—";
+
   return (
-    <form onSubmit={submit} className="space-y-6">
-      <Section title="Deal" hint="Fields marked * are required.">
-        <div className="space-y-2">
-          <Label htmlFor="owner">Content owner * <InfoTip text={HELP.owner} /></Label>
-          <NativeSelect
-            id="owner"
-            required
-            className={err.owner_id ? INVALID : undefined}
-            value={form.owner_id}
-            onChange={(e) => set({ owner_id: e.target.value })}
-          >
-            <option value="">Select an owner…</option>
-            {selectable.map((o) => (
-              <option key={o.id} value={o.id}>
-                {o.name}
-              </option>
-            ))}
-          </NativeSelect>
-          {owners.length === 0 && (
-            <p className="text-xs text-muted-foreground">
-              No owners yet —{" "}
-              <Link href="/content-owners" className="text-primary hover:underline">
-                add one first
-              </Link>
-              .
+    <form onSubmit={submit} className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_18rem]">
+      <div className="min-w-0 space-y-6">
+        <Section
+          id="deal"
+          step={1}
+          done={done.deal}
+          title="Deal"
+          hint="Who it is with, what kind of deal, and what it costs. Fields marked * are required."
+        >
+          <div className="space-y-2">
+            <Label htmlFor="owner">
+              Content owner * <InfoTip text={HELP.owner} />
+            </Label>
+            <NativeSelect
+              id="owner"
+              required
+              className={err.owner_id ? INVALID : undefined}
+              value={form.owner_id}
+              onChange={(e) => set({ owner_id: e.target.value })}
+            >
+              <option value="">Select an owner…</option>
+              {selectable.map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.name}
+                </option>
+              ))}
+            </NativeSelect>
+            {owners.length === 0 && (
+              <p className="text-xs text-muted-foreground">
+                No owners yet —{" "}
+                <Link href="/content-owners" className="text-primary hover:underline">
+                  add one first
+                </Link>
+                .
+              </p>
+            )}
+            <FieldError message={err.owner_id} />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="title">Show / title *</Label>
+            <Input
+              id="title"
+              required
+              maxLength={200}
+              className={err.title ? INVALID : undefined}
+              value={form.title}
+              onChange={(e) => set({ title: e.target.value })}
+            />
+            <FieldError message={err.title} />
+          </div>
+          <div className="space-y-2 md:col-span-2">
+            <Label>
+              Deal type * <InfoTip text={HELP.dealType} />
+            </Label>
+            <Choice
+              value={form.deal_type}
+              options={DEAL_TYPE_LABELS}
+              onChange={(deal_type) =>
+                set({
+                  deal_type,
+                  ...(deal_type === "partnership" && !form.revenue_share_pct ? { revenue_share_pct: "50" } : {}),
+                })
+              }
+            />
+          </div>
+          {form.deal_type === "hybrid" && (
+            <p className="text-sm text-muted-foreground md:col-span-2">
+              Taggify pays the owner a minimum guarantee up front; the owner&apos;s revenue share is recouped against it, and only the share above the
+              guarantee is paid extra.
             </p>
           )}
-          <FieldError message={err.owner_id} />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="title">Show / title *</Label>
-          <Input
-            id="title"
-            required
-            maxLength={200}
-            className={err.title ? INVALID : undefined}
-            value={form.title}
-            onChange={(e) => set({ title: e.target.value })}
-          />
-          <FieldError message={err.title} />
-        </div>
-        <div className="space-y-2 md:col-span-2">
-          <Label>Deal type * <InfoTip text={HELP.dealType} /></Label>
-          <Choice value={form.deal_type} options={DEAL_TYPE_LABELS} onChange={(deal_type) =>
-              set({
-                deal_type,
-                ...(deal_type === "partnership" && !form.revenue_share_pct ? { revenue_share_pct: "50" } : {}),
-              })
-            }
-          />
-        </div>
-        {form.deal_type === "hybrid" && (
-          <p className="text-sm text-muted-foreground md:col-span-2">
-            Taggify pays the owner a minimum guarantee up front; the owner&apos;s revenue share is recouped against it, and only
-            the share above the guarantee is paid extra.
-          </p>
-        )}
-        {form.deal_type === "partnership" && (
-          <p className="text-sm text-muted-foreground md:col-span-2">
-            No fee is paid. Each month, what the content earns minus the CMS fee is split with the partner — e.g. 50/50.
-            Our team&apos;s incentives and expenses come out of our part.
-          </p>
-        )}
-        {PAYS_FEE.includes(form.deal_type) && (
-          <>
-            <div className="space-y-2">
-              <Label htmlFor="fee">{form.deal_type === "hybrid" ? "Minimum guarantee *" : "Licence fee *"} <InfoTip text={form.deal_type === "hybrid" ? HELP.minimumGuarantee : HELP.licenceFee} /></Label>
+          {form.deal_type === "partnership" && (
+            <p className="text-sm text-muted-foreground md:col-span-2">
+              No fee is paid. Each month, what the content earns minus the CMS fee is split with the partner — e.g. 50/50. Our team&apos;s incentives
+              and expenses come out of our part.
+            </p>
+          )}
+          {PAYS_FEE.includes(form.deal_type) && (
+            <>
+              <div className="space-y-2">
+                <Label htmlFor="fee">
+                  {form.deal_type === "hybrid" ? "Minimum guarantee *" : "Licence fee *"}{" "}
+                  <InfoTip text={form.deal_type === "hybrid" ? HELP.minimumGuarantee : HELP.licenceFee} />
+                </Label>
+                <Input
+                  id="fee"
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  required
+                  className={err.fee_amount ? INVALID : undefined}
+                  value={form.fee_amount}
+                  onChange={(e) => set({ fee_amount: e.target.value })}
+                />
+                <FieldError message={err.fee_amount} />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="currency">Currency *</Label>
+                <NativeSelect id="currency" value={form.currency} onChange={(e) => set({ currency: e.target.value })}>
+                  <option value="INR">INR — Indian Rupee</option>
+                  <option value="USD">USD — US Dollar</option>
+                  <option value="AED">AED — UAE Dirham</option>
+                </NativeSelect>
+              </div>
+            </>
+          )}
+          {SHARES.includes(form.deal_type) && (
+            <div className={cn("space-y-2", !PAYS_FEE.includes(form.deal_type) && "md:col-span-2 md:max-w-[calc(50%-0.5rem)]")}>
+              <Label htmlFor="share">
+                {form.deal_type === "partnership" ? "Partner's share after CMS fee (%) *" : "Owner's revenue share (%) *"}{" "}
+                <InfoTip text={form.deal_type === "partnership" ? HELP.partnerShare : HELP.revenueShare} />
+              </Label>
               <Input
-                id="fee"
+                id="share"
                 type="number"
                 min="0.01"
+                max="100"
                 step="0.01"
                 required
-                className={err.fee_amount ? INVALID : undefined}
-                value={form.fee_amount}
-                onChange={(e) => set({ fee_amount: e.target.value })}
+                className={err.revenue_share_pct ? INVALID : undefined}
+                value={form.revenue_share_pct}
+                onChange={(e) => set({ revenue_share_pct: e.target.value })}
               />
-              <FieldError message={err.fee_amount} />
+              <FieldError message={err.revenue_share_pct} />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="currency">Currency *</Label>
-              <NativeSelect id="currency" value={form.currency} onChange={(e) => set({ currency: e.target.value })}>
-                <option value="INR">INR — Indian Rupee</option>
-                <option value="USD">USD — US Dollar</option>
-                <option value="AED">AED — UAE Dirham</option>
-              </NativeSelect>
-            </div>
-          </>
-        )}
-        {SHARES.includes(form.deal_type) && (
+          )}
+          <div className="space-y-2 md:col-span-2">
+            <Label>
+              Status <InfoTip text={HELP.dealStatus} />
+            </Label>
+            <Choice value={form.status} options={STATUS_CHOICES} onChange={(status) => set({ status })} />
+          </div>
+        </Section>
+
+        <Section id="rights" step={2} done={done.rights} title="Rights" hint="What may be published, until when, and where.">
           <div className="space-y-2">
-            <Label htmlFor="share">
-              {form.deal_type === "partnership" ? "Partner's share after CMS fee (%) *" : "Owner's revenue share (%) *"}{" "}
-              <InfoTip text={form.deal_type === "partnership" ? HELP.partnerShare : HELP.revenueShare} />
+            <Label htmlFor="start">
+              Term start * <InfoTip text={HELP.term} />
+            </Label>
+            <Input id="start" type="date" required value={form.term_start} onChange={(e) => set({ term_start: e.target.value })} />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="end">Term end *</Label>
+            <Input
+              id="end"
+              type="date"
+              required
+              className={err.term_end ? INVALID : undefined}
+              value={form.term_end}
+              onChange={(e) => set({ term_end: e.target.value })}
+            />
+            <FieldError message={err.term_end} />
+          </div>
+
+          <div className="space-y-3 md:col-span-2">
+            <Label>
+              Episodes * <InfoTip text={HELP.episodeScope} />
+            </Label>
+            <Choice value={form.episode_scope} options={SCOPE_LABELS} onChange={(episode_scope) => set({ episode_scope })} />
+            {form.episode_scope !== "all" && (
+              <div className="space-y-2">
+                {form.ranges.map((r, i) => (
+                  <div key={i} className="space-y-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      {form.episode_scope === "seasons" && (
+                        <Input
+                          aria-label="Season"
+                          className="w-28"
+                          type="number"
+                          min="1"
+                          required
+                          placeholder="Season"
+                          value={r.season}
+                          onChange={(e) => setRange(i, { season: e.target.value })}
+                        />
+                      )}
+                      <Input
+                        aria-label="From episode"
+                        className="w-32"
+                        type="number"
+                        min="1"
+                        required
+                        placeholder="From ep."
+                        value={r.from}
+                        onChange={(e) => setRange(i, { from: e.target.value })}
+                      />
+                      <span className="text-muted-foreground">to</span>
+                      <Input
+                        aria-label="To episode"
+                        className={errors.ranges[i] ? `w-32 ${INVALID}` : "w-32"}
+                        type="number"
+                        min="1"
+                        required
+                        placeholder="To ep."
+                        value={r.to}
+                        onChange={(e) => setRange(i, { to: e.target.value })}
+                      />
+                      {form.ranges.length > 1 && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          aria-label="Remove range"
+                          onClick={() => set({ ranges: form.ranges.filter((_, j) => j !== i) })}
+                        >
+                          <Trash2 />
+                        </Button>
+                      )}
+                    </div>
+                    <FieldError message={errors.ranges[i]} />
+                  </div>
+                ))}
+                <Button type="button" variant="outline" size="sm" onClick={() => set({ ranges: [...form.ranges, EMPTY_RANGE] })}>
+                  <Plus />
+                  Add range
+                </Button>
+              </div>
+            )}
+            <FieldError message={err.episodes} />
+          </div>
+
+          <div className="space-y-3 md:col-span-2">
+            <Label>
+              Territory * <InfoTip text={HELP.territory} />
+            </Label>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                className="h-4 w-4 accent-[hsl(var(--primary))]"
+                checked={form.is_worldwide}
+                onChange={(e) => set({ is_worldwide: e.target.checked })}
+              />
+              Worldwide
+            </label>
+            {!form.is_worldwide && (
+              <div className="grid grid-cols-2 gap-2 rounded-xl border p-4 sm:grid-cols-3 lg:grid-cols-4">
+                {COUNTRIES.map(([code, name]) => (
+                  <label key={code} className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 accent-[hsl(var(--primary))]"
+                      checked={form.territories.includes(code)}
+                      onChange={(e) =>
+                        set({
+                          territories: e.target.checked ? [...form.territories, code] : form.territories.filter((t) => t !== code),
+                        })
+                      }
+                    />
+                    {name} <span className="text-xs text-muted-foreground">{code}</span>
+                  </label>
+                ))}
+              </div>
+            )}
+            <FieldError message={err.territories} />
+          </div>
+        </Section>
+
+        <Section
+          id="slots"
+          step={3}
+          done={done.slots}
+          title="Slots"
+          hint="How many channels/pages the deal allows. At least one is required; slots are created automatically."
+        >
+          <div className="space-y-2">
+            <Label htmlFor="yt">
+              YouTube channels <InfoTip text={HELP.slots} />
             </Label>
             <Input
-              id="share"
+              id="yt"
               type="number"
-              min="0.01"
+              min="0"
               max="100"
-              step="0.01"
               required
-              className={err.revenue_share_pct ? INVALID : undefined}
-              value={form.revenue_share_pct}
-              onChange={(e) => set({ revenue_share_pct: e.target.value })}
+              value={form.yt_slot_limit}
+              onChange={(e) => set({ yt_slot_limit: e.target.value })}
             />
-            <FieldError message={err.revenue_share_pct} />
           </div>
-        )}
-        <div className="space-y-2">
-          <Label htmlFor="status">Status <InfoTip text={HELP.dealStatus} /></Label>
-          <NativeSelect
-            id="status"
-            value={form.status}
-            onChange={(e) => set({ status: e.target.value as StoredDealStatus })}
-          >
-            <option value="active">Active</option>
-            <option value="draft">Draft (not yet signed)</option>
-            <option value="terminated">Terminated</option>
-          </NativeSelect>
-        </div>
-      </Section>
-
-      <Section title="Rights" hint="What may be published, until when, and where.">
-        <div className="space-y-2">
-          <Label htmlFor="start">Term start * <InfoTip text={HELP.term} /></Label>
-          <Input id="start" type="date" required value={form.term_start} onChange={(e) => set({ term_start: e.target.value })} />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="end">Term end *</Label>
-          <Input
-            id="end"
-            type="date"
-            required
-            className={err.term_end ? INVALID : undefined}
-            value={form.term_end}
-            onChange={(e) => set({ term_end: e.target.value })}
-          />
-          <FieldError message={err.term_end} />
-        </div>
-
-        <div className="space-y-3 md:col-span-2">
-          <Label>Episodes * <InfoTip text={HELP.episodeScope} /></Label>
-          <Choice value={form.episode_scope} options={SCOPE_LABELS} onChange={(episode_scope) => set({ episode_scope })} />
-          {form.episode_scope !== "all" && (
-            <div className="space-y-2">
-              {form.ranges.map((r, i) => (
-                <div key={i} className="space-y-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  {form.episode_scope === "seasons" && (
-                    <Input
-                      aria-label="Season"
-                      className="w-28"
-                      type="number"
-                      min="1"
-                      required
-                      placeholder="Season"
-                      value={r.season}
-                      onChange={(e) => setRange(i, { season: e.target.value })}
-                    />
-                  )}
-                  <Input
-                    aria-label="From episode"
-                    className="w-32"
-                    type="number"
-                    min="1"
-                    required
-                    placeholder="From ep."
-                    value={r.from}
-                    onChange={(e) => setRange(i, { from: e.target.value })}
-                  />
-                  <span className="text-muted-foreground">to</span>
-                  <Input
-                    aria-label="To episode"
-                    className={errors.ranges[i] ? `w-32 ${INVALID}` : "w-32"}
-                    type="number"
-                    min="1"
-                    required
-                    placeholder="To ep."
-                    value={r.to}
-                    onChange={(e) => setRange(i, { to: e.target.value })}
-                  />
-                  {form.ranges.length > 1 && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      aria-label="Remove range"
-                      onClick={() => set({ ranges: form.ranges.filter((_, j) => j !== i) })}
-                    >
-                      <Trash2 />
-                    </Button>
-                  )}
-                </div>
-                <FieldError message={errors.ranges[i]} />
-                </div>
-              ))}
-              <Button type="button" variant="outline" size="sm" onClick={() => set({ ranges: [...form.ranges, EMPTY_RANGE] })}>
-                <Plus />
-                Add range
-              </Button>
-            </div>
-          )}
-          <FieldError message={err.episodes} />
-        </div>
-
-        <div className="space-y-3 md:col-span-2">
-          <Label>Territory * <InfoTip text={HELP.territory} /></Label>
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              className="h-4 w-4 accent-[hsl(var(--primary))]"
-              checked={form.is_worldwide}
-              onChange={(e) => set({ is_worldwide: e.target.checked })}
+          <div className="space-y-2">
+            <Label htmlFor="fb">Facebook pages</Label>
+            <Input
+              id="fb"
+              type="number"
+              min="0"
+              max="100"
+              required
+              value={form.fb_slot_limit}
+              onChange={(e) => set({ fb_slot_limit: e.target.value })}
             />
-            Worldwide
-          </label>
-          {!form.is_worldwide && (
-            <div className="grid grid-cols-2 gap-2 rounded-xl border p-4 sm:grid-cols-3 lg:grid-cols-4">
-              {COUNTRIES.map(([code, name]) => (
-                <label key={code} className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    className="h-4 w-4 accent-[hsl(var(--primary))]"
-                    checked={form.territories.includes(code)}
-                    onChange={(e) =>
-                      set({
-                        territories: e.target.checked
-                          ? [...form.territories, code]
-                          : form.territories.filter((t) => t !== code),
-                      })
-                    }
-                  />
-                  {name} <span className="text-xs text-muted-foreground">{code}</span>
-                </label>
-              ))}
-            </div>
-          )}
-          <FieldError message={err.territories} />
-        </div>
-      </Section>
+          </div>
+          <div className="md:col-span-2">
+            <FieldError message={err.slots} />
+          </div>
+        </Section>
 
-      <Section title="Slots" hint="How many channels/pages the deal allows. At least one is required; slots are created automatically.">
-        <div className="space-y-2">
-          <Label htmlFor="yt">YouTube channels <InfoTip text={HELP.slots} /></Label>
-          <Input id="yt" type="number" min="0" max="100" required value={form.yt_slot_limit} onChange={(e) => set({ yt_slot_limit: e.target.value })} />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="fb">Facebook pages</Label>
-          <Input id="fb" type="number" min="0" max="100" required value={form.fb_slot_limit} onChange={(e) => set({ fb_slot_limit: e.target.value })} />
-        </div>
-        <div className="md:col-span-2">
-          <FieldError message={err.slots} />
-        </div>
-      </Section>
+        <Section id="terms" step={4} done={done.terms} optional title="Contract terms" hint="From the signed agreement, recorded per deal.">
+          <div className="space-y-2">
+            <Label htmlFor="languages">Languages</Label>
+            <Input id="languages" placeholder="Hindi, English" value={form.languages} onChange={(e) => set({ languages: e.target.value })} />
+            <p className="text-xs text-muted-foreground">Separate with commas.</p>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="exclusivity">
+              Exclusivity <InfoTip text={HELP.exclusivity} />
+            </Label>
+            <NativeSelect id="exclusivity" value={form.exclusivity} onChange={(e) => set({ exclusivity: e.target.value as Exclusivity | "" })}>
+              <option value="">Not recorded</option>
+              <option value="exclusive">Exclusive</option>
+              <option value="non_exclusive">Non-exclusive</option>
+            </NativeSelect>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="notice">
+              Notice period (days) <InfoTip text={HELP.noticePeriod} />
+            </Label>
+            <Input
+              id="notice"
+              type="number"
+              min="0"
+              max="3650"
+              placeholder="e.g. 90"
+              className={err.notice_period_days ? INVALID : undefined}
+              value={form.notice_period_days}
+              onChange={(e) => set({ notice_period_days: e.target.value })}
+            />
+            <p className="text-xs text-muted-foreground">Days before the term ends to tell the owner about renewal.</p>
+            <FieldError message={err.notice_period_days} />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="version">Agreement version</Label>
+            <Input
+              id="version"
+              maxLength={60}
+              placeholder="e.g. v2 signed 12 Jan 2026"
+              value={form.agreement_version}
+              onChange={(e) => set({ agreement_version: e.target.value })}
+            />
+          </div>
+          <div className="space-y-2 md:col-span-2">
+            <Label htmlFor="renewal">Renewal terms</Label>
+            <textarea
+              id="renewal"
+              rows={2}
+              className="w-full rounded-xl border border-input bg-card px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              placeholder="e.g. Renews for 2 years at the same fee unless either side gives notice"
+              value={form.renewal_terms}
+              onChange={(e) => set({ renewal_terms: e.target.value })}
+            />
+          </div>
+          <div className="space-y-2 md:col-span-2">
+            <Label htmlFor="clips">Clip restrictions</Label>
+            <textarea
+              id="clips"
+              rows={2}
+              className="w-full rounded-xl border border-input bg-card px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              placeholder="e.g. Max 10 minutes per clip; no full episodes"
+              value={form.clip_restrictions}
+              onChange={(e) => set({ clip_restrictions: e.target.value })}
+            />
+          </div>
+        </Section>
 
-      <Section title="Contract terms" hint="From the signed agreement. Optional, but recorded per deal (working document §1).">
-        <div className="space-y-2">
-          <Label htmlFor="languages">Languages</Label>
-          <Input
-            id="languages"
-            placeholder="Hindi, English"
-            value={form.languages}
-            onChange={(e) => set({ languages: e.target.value })}
-          />
-          <p className="text-xs text-muted-foreground">Separate with commas.</p>
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="exclusivity">Exclusivity <InfoTip text={HELP.exclusivity} /></Label>
-          <NativeSelect
-            id="exclusivity"
-            value={form.exclusivity}
-            onChange={(e) => set({ exclusivity: e.target.value as Exclusivity | "" })}
-          >
-            <option value="">Not recorded</option>
-            <option value="exclusive">Exclusive</option>
-            <option value="non_exclusive">Non-exclusive</option>
-          </NativeSelect>
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="notice">Notice period (days) <InfoTip text={HELP.noticePeriod} /></Label>
-          <Input
-            id="notice"
-            type="number"
-            min="0"
-            max="3650"
-            placeholder="e.g. 90"
-            className={err.notice_period_days ? INVALID : undefined}
-            value={form.notice_period_days}
-            onChange={(e) => set({ notice_period_days: e.target.value })}
-          />
-          <p className="text-xs text-muted-foreground">Days before the term ends to tell the owner about renewal.</p>
-          <FieldError message={err.notice_period_days} />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="version">Agreement version</Label>
-          <Input
-            id="version"
-            maxLength={60}
-            placeholder="e.g. v2 signed 12 Jan 2026"
-            value={form.agreement_version}
-            onChange={(e) => set({ agreement_version: e.target.value })}
-          />
-        </div>
-        <div className="space-y-2 md:col-span-2">
-          <Label htmlFor="renewal">Renewal terms</Label>
-          <textarea
-            id="renewal"
-            rows={2}
-            className="w-full rounded-xl border border-input bg-card px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            placeholder="e.g. Renews for 2 years at the same fee unless either side gives notice"
-            value={form.renewal_terms}
-            onChange={(e) => set({ renewal_terms: e.target.value })}
-          />
-        </div>
-        <div className="space-y-2 md:col-span-2">
-          <Label htmlFor="clips">Clip restrictions</Label>
-          <textarea
-            id="clips"
-            rows={2}
-            className="w-full rounded-xl border border-input bg-card px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            placeholder="e.g. Max 10 minutes per clip; no full episodes"
-            value={form.clip_restrictions}
-            onChange={(e) => set({ clip_restrictions: e.target.value })}
-          />
-        </div>
-      </Section>
+        <Section
+          id="docs"
+          step={5}
+          done={done.docs}
+          optional
+          title="Documents & notes"
+          hint="Upload the signed contract and annexures on the deal page after saving."
+        >
+          <div className="space-y-2 md:col-span-2">
+            <Label htmlFor="contract">Contract link (Google Drive)</Label>
+            <Input
+              id="contract"
+              type="url"
+              placeholder="https://drive.google.com/…"
+              className={err.contract_url ? INVALID : undefined}
+              value={form.contract_url}
+              onChange={(e) => set({ contract_url: e.target.value })}
+            />
+            <FieldError message={err.contract_url} />
+          </div>
+          <div className="space-y-2 md:col-span-2">
+            <Label htmlFor="notes">Notes</Label>
+            <textarea
+              id="notes"
+              rows={3}
+              className="w-full rounded-xl border border-input bg-card px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              value={form.notes}
+              onChange={(e) => set({ notes: e.target.value })}
+            />
+          </div>
+        </Section>
 
-      <Section title="Documents & notes" hint="Optional. Upload the signed contract and annexures on the deal page after saving.">
-        <div className="space-y-2 md:col-span-2">
-          <Label htmlFor="contract">Contract link (Google Drive)</Label>
-          <Input
-            id="contract"
-            type="url"
-            placeholder="https://drive.google.com/…"
-            className={err.contract_url ? INVALID : undefined}
-            value={form.contract_url}
-            onChange={(e) => set({ contract_url: e.target.value })}
-          />
-          <FieldError message={err.contract_url} />
-        </div>
-        <div className="space-y-2 md:col-span-2">
-          <Label htmlFor="notes">Notes</Label>
-          <textarea
-            id="notes"
-            rows={3}
-            className="w-full rounded-xl border border-input bg-card px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            value={form.notes}
-            onChange={(e) => set({ notes: e.target.value })}
-          />
-        </div>
-      </Section>
+        {err.form && <Notice kind="error">{err.form}</Notice>}
 
-      {err.form && <Notice kind="error">{err.form}</Notice>}
-      {hasErrors(errors) && !err.form && (
-        <p className="text-sm text-red-600 dark:text-red-400">Please fix the highlighted fields above.</p>
-      )}
-
-      <div className="flex gap-3">
-        <Button type="submit" size="lg" disabled={saving}>
-          {saving ? "Saving…" : deal ? "Save changes" : "Create deal"}
-        </Button>
-        <Button type="button" size="lg" variant="outline" onClick={() => router.back()}>
-          Cancel
-        </Button>
+        {/* Always in reach: the same action bar as every popup, pinned to the bottom of the screen. */}
+        <div className="sticky bottom-0 z-10 -mx-1 flex flex-wrap items-center justify-end gap-3 rounded-2xl border bg-card/95 px-5 py-3 shadow-lg backdrop-blur">
+          {hasErrors(errors) && !err.form && <p className="mr-auto text-sm text-red-600 dark:text-red-400">Please fix the highlighted fields.</p>}
+          <Button type="button" variant="outline" onClick={() => router.back()}>
+            Cancel
+          </Button>
+          <Button type="submit" disabled={saving}>
+            {saving ? "Saving…" : deal ? "Save changes" : "Create deal"}
+          </Button>
+        </div>
       </div>
+
+      <aside className="space-y-4 lg:sticky lg:top-24">
+        <nav className="rounded-2xl border bg-card p-4 shadow-sm" aria-label="Form sections">
+          <p className="px-2 pb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Sections</p>
+          <ol className="space-y-1">
+            {steps.map(([key, label], i) => (
+              <li key={key}>
+                <a href={`#${key === "terms" ? "terms" : key}`} className="flex items-center gap-3 rounded-lg px-2 py-1.5 text-sm hover:bg-muted">
+                  <span
+                    className={cn(
+                      "flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold",
+                      done[key] ? "bg-emerald-600 text-white" : "bg-muted text-muted-foreground",
+                    )}
+                    aria-hidden
+                  >
+                    {done[key] ? <Check className="h-3.5 w-3.5" /> : i + 1}
+                  </span>
+                  <span className={done[key] ? "text-foreground" : "text-muted-foreground"}>{label}</span>
+                  {i >= 3 && <span className="ml-auto text-[11px] text-muted-foreground">optional</span>}
+                </a>
+              </li>
+            ))}
+          </ol>
+        </nav>
+
+        <div className="rounded-2xl border bg-card p-5 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Summary</p>
+          <p className="mt-2 text-base font-semibold leading-snug">{form.title.trim() || "Untitled deal"}</p>
+          <p className="text-sm text-muted-foreground">{owner?.name ?? "No owner chosen"}</p>
+          <dl className="mt-4 space-y-2 text-sm">
+            {(
+              [
+                ["Type", DEAL_TYPE_LABELS[form.deal_type]],
+                [
+                  form.deal_type === "hybrid" ? "Guarantee" : "Licence fee",
+                  PAYS_FEE.includes(form.deal_type) ? (form.fee_amount ? money(form.fee_amount, form.currency) : "—") : "None",
+                ],
+                ...(SHARES.includes(form.deal_type)
+                  ? [
+                      [
+                        form.deal_type === "partnership" ? "Partner share" : "Owner share",
+                        form.revenue_share_pct ? `${form.revenue_share_pct}%` : "—",
+                      ],
+                    ]
+                  : []),
+                ["Term", form.term_start || form.term_end ? `${fmtDate(form.term_start)} – ${fmtDate(form.term_end)}` : "—"],
+                ["Episodes", SCOPE_LABELS[form.episode_scope]],
+                ["Slots", slots ? `${form.yt_slot_limit || 0} YouTube · ${form.fb_slot_limit || 0} Facebook` : "—"],
+                ["Territory", form.is_worldwide ? "Worldwide" : form.territories.length ? `${form.territories.length} countries` : "—"],
+              ] as [string, string][]
+            ).map(([k, v]) => (
+              <div key={k} className="flex justify-between gap-3">
+                <dt className="text-muted-foreground">{k}</dt>
+                <dd className="text-right font-medium">{v}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+      </aside>
     </form>
   );
 }

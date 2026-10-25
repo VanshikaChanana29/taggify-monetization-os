@@ -18,6 +18,7 @@ import { api } from "@/lib/api";
 import { formatMonth, thisMonth } from "@/lib/finance";
 import { HELP } from "@/lib/help";
 import type { FxRate } from "@/lib/types";
+import { PageLoader } from "@/components/loader";
 
 function FxTab() {
   const organization = useOrganization();
@@ -176,7 +177,7 @@ function FxTab() {
 
 export default function FxPage() {
   return (
-    <Suspense fallback={<p className="text-muted-foreground">Loading…</p>}>
+    <Suspense fallback={<PageLoader />}>
       <FxTab />
     </Suspense>
   );

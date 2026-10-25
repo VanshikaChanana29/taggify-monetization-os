@@ -5,9 +5,10 @@ from sqlalchemy import func, select
 
 from app.api.deps import Auth, client_ip
 from app.core.database import DbSession
-from app.models import Channel, CmsPartner, RevenueFact
-from app.schemas.channels import CmsIn, CmsOut
+from app.models import Channel, CmsFeeSchedule, CmsPartner, RevenueFact
+from app.schemas.channels import CmsIn, CmsOut, CmsSlabs
 from app.services.audit import record_audit
+from app.services.deals import company_today
 from app.services.month_close import latest_closed
 
 # Few CMS partners per company: returned whole, filtered/paginated in the browser.
@@ -26,7 +27,30 @@ def _counts(db: DbSession, organization_id: uuid.UUID) -> dict[uuid.UUID, int]:
     )
 
 
-def _out(cms: CmsPartner, count: int) -> CmsOut:
+def _slabs(db: DbSession, ctx: Auth) -> dict[uuid.UUID, CmsSlabs]:
+    """Per CMS: the slabs in force this month; if none have started yet, the first ones to come."""
+    month = company_today(ctx.organization).replace(day=1)
+    picked: dict[uuid.UUID, CmsFeeSchedule] = {}
+    for s in db.scalars(
+        select(CmsFeeSchedule)
+        .where(CmsFeeSchedule.organization_id == ctx.organization.id)
+        .order_by(CmsFeeSchedule.effective_from)
+    ):
+        have = picked.get(s.cms_partner_id)
+        if have is None or s.effective_from <= month:
+            picked[s.cms_partner_id] = s
+    return {
+        cms_id: CmsSlabs(
+            effective_from=s.effective_from,
+            tier_type=s.tier_type,  # type: ignore[arg-type]
+            currency=s.currency,
+            tiers=s.tiers,
+        )
+        for cms_id, s in picked.items()
+    }
+
+
+def _out(cms: CmsPartner, count: int, slabs: CmsSlabs | None = None) -> CmsOut:
     return CmsOut(
         id=cms.id,
         name=cms.name,
@@ -37,6 +61,7 @@ def _out(cms: CmsPartner, count: int) -> CmsOut:
         has_sheet_mapping=bool(cms.sheet_mapping),
         channel_count=count,
         created_at=cms.created_at,
+        slabs=slabs,
     )
 
 
@@ -63,7 +88,8 @@ def list_cms(ctx: Auth, db: DbSession) -> list[CmsOut]:
         .where(CmsPartner.organization_id == ctx.organization.id)
         .order_by(CmsPartner.name)
     )
-    return [_out(c, counts.get(c.id, 0)) for c in rows]
+    slabs = _slabs(db, ctx)
+    return [_out(c, counts.get(c.id, 0), slabs.get(c.id)) for c in rows]
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)

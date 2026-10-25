@@ -3,13 +3,7 @@
 import { Building, Pencil, Plus, Users } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
-import {
-  EmptyRow,
-  FilterBar,
-  SearchInput,
-  SortableHead,
-  TablePagination,
-} from "@/components/data-table";
+import { EmptyRow, SortableHead, TablePagination } from "@/components/data-table";
 import { Notice } from "@/components/notice";
 import { PageHeader } from "@/components/page-header";
 import { useOrganization } from "@/components/session-provider";
@@ -25,6 +19,8 @@ import { HELP } from "@/lib/help";
 import { OWNER_TYPE_LABELS } from "@/lib/deals";
 import type { ContentOwner, OwnerType } from "@/lib/types";
 import { timeValue, useClientTable } from "@/lib/use-client-table";
+import { Dialog, DialogFooter } from "@/components/ui/dialog";
+import { type FilterField, ListFilters } from "@/components/list-filters";
 
 const SORT_BY = {
   name: (o: ContentOwner) => o.name,
@@ -83,11 +79,11 @@ export default function ContentOwnersPage() {
     event.preventDefault();
     setError(null);
     try {
-      const saved = await api<ContentOwner>(
-        editing === "new" ? "/content-owners" : `/content-owners/${editing}`,
-        { method: editing === "new" ? "POST" : "PUT", json: form },
-      );
-      setNotice(`${saved.name} saved.`);
+      const saved = await api<ContentOwner>(editing === "new" ? "/content-owners" : `/content-owners/${editing}`, {
+        method: editing === "new" ? "POST" : "PUT",
+        json: form,
+      });
+      setNotice(`${saved.name} ${editing === "new" ? "added" : "saved"}.`);
       setEditing(null);
       load();
     } catch (err) {
@@ -108,6 +104,19 @@ export default function ContentOwnersPage() {
     initialSort: { key: "name", dir: "asc" },
     resetKey: [q, typeFilter, statusFilter].join("|"),
   });
+
+  const filterFields: FilterField[] = [
+    { key: "type", label: "Type", options: [["", "All types"], ...Object.entries(OWNER_TYPE_LABELS)] },
+    {
+      key: "status",
+      label: "Status",
+      options: [
+        ["", "All statuses"],
+        ["active", "Active"],
+        ["inactive", "Inactive"],
+      ],
+    },
+  ];
 
   return (
     <div className="space-y-8">
@@ -147,23 +156,15 @@ export default function ContentOwnersPage() {
       {error && <Notice kind="error">{error}</Notice>}
       {notice && <Notice kind="success">{notice}</Notice>}
 
-      {editing && (
-        <form onSubmit={save} className="grid gap-4 rounded-2xl border bg-card p-6 shadow-sm md:grid-cols-2">
-          <h3 className="text-lg font-semibold md:col-span-2">
-            {editing === "new" ? "New content owner" : `Edit ${form.name}`}
-          </h3>
+      <Dialog open={Boolean(editing)} onClose={() => setEditing(null)} wide title={editing === "new" ? "New content owner" : `Edit ${form.name}`}>
+        <form onSubmit={save} className="grid gap-4 md:grid-cols-2">
           <div className="space-y-2">
             <Label htmlFor="name">Name *</Label>
             <Input id="name" required autoFocus value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
           </div>
           <div className="space-y-2">
             <Label htmlFor="type">Type *</Label>
-            <NativeSelect
-              id="type"
-              required
-              value={form.owner_type}
-              onChange={(e) => setForm({ ...form, owner_type: e.target.value as OwnerType })}
-            >
+            <NativeSelect id="type" required value={form.owner_type} onChange={(e) => setForm({ ...form, owner_type: e.target.value as OwnerType })}>
               <option value="">Select…</option>
               {Object.entries(OWNER_TYPE_LABELS).map(([value, label]) => (
                 <option key={value} value={value}>
@@ -201,43 +202,39 @@ export default function ContentOwnersPage() {
               Active (inactive owners cannot get new deals)
             </label>
           )}
-          <div className="flex gap-3 md:col-span-2">
-            <Button type="submit">Save</Button>
-            <Button type="button" variant="outline" onClick={() => setEditing(null)}>
-              Cancel
-            </Button>
+          <div className="md:col-span-2">
+            {error && <Notice kind="error">{error}</Notice>}
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setEditing(null)}>
+                Cancel
+              </Button>
+              <Button type="submit">Save</Button>
+            </DialogFooter>
           </div>
         </form>
-      )}
+      </Dialog>
 
-      <FilterBar
-        active={Boolean(q || typeFilter || statusFilter)}
+      <ListFilters
+        search={query}
+        onSearch={setQuery}
+        placeholder="Search name or contact…"
+        fields={filterFields}
+        values={{ type: typeFilter, status: statusFilter }}
+        onChange={(key, value) => (key === "type" ? setTypeFilter(value) : setStatusFilter(value))}
         onClear={() => {
           setQuery("");
           setTypeFilter("");
           setStatusFilter("");
         }}
-      >
-        <SearchInput value={query} onChange={setQuery} placeholder="Search name or contact…" />
-        <NativeSelect aria-label="Filter by type" className="w-48" value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
-          <option value="">All types</option>
-          {Object.entries(OWNER_TYPE_LABELS).map(([value, label]) => (
-            <option key={value} value={value}>
-              {label}
-            </option>
-          ))}
-        </NativeSelect>
-        <NativeSelect aria-label="Filter by status" className="w-40" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
-          <option value="">All statuses</option>
-          <option value="active">Active</option>
-          <option value="inactive">Inactive</option>
-        </NativeSelect>
-      </FilterBar>
+        total={table.total}
+        noun="owners"
+      />
 
       <div className="overflow-hidden rounded-2xl border bg-card shadow-sm">
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="w-14">S.No.</TableHead>
               <SortableHead label="Owner" sortKey="name" sort={table.sort} onSort={table.toggleSort} />
               <SortableHead label="Type" sortKey="type" sort={table.sort} onSort={table.toggleSort} />
               <TableHead>Contact</TableHead>
@@ -247,8 +244,9 @@ export default function ContentOwnersPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {table.pageRows.map((o) => (
+            {table.pageRows.map((o, idx) => (
               <TableRow key={o.id}>
+                <TableCell className="w-14 tabular-nums text-muted-foreground">{(table.page - 1) * table.pageSize + idx + 1}</TableCell>
                 <TableCell className="font-semibold">{o.name}</TableCell>
                 <TableCell>
                   <Tag>{OWNER_TYPE_LABELS[o.owner_type]}</Tag>
@@ -269,7 +267,7 @@ export default function ContentOwnersPage() {
               </TableRow>
             ))}
             {table.total === 0 && (
-              <EmptyRow colSpan={6}>
+              <EmptyRow colSpan={7}>
                 {owners.length === 0 ? "No content owners yet — add Sony or your first vendor." : "No owners match these filters."}
               </EmptyRow>
             )}

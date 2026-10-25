@@ -1,7 +1,9 @@
+import io
 import uuid
+from datetime import date, timedelta
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, HTTPException, Query, Request, status
+from fastapi import APIRouter, File, HTTPException, Query, Request, Response, UploadFile, status
 from sqlalchemy import exists, func, or_, select
 from sqlalchemy.orm import Session
 
@@ -16,12 +18,17 @@ from app.models import (
     DealSlot,
     Employee,
     SlotAssignment,
+    TeamMembership,
+    YouTubeConnection,
 )
 from app.schemas.channels import (
     ChannelDetail,
     ChannelIn,
     ChannelListItem,
+    ChannelMetricsOut,
     ChannelSlotRef,
+    ImportLineOut,
+    ImportOut,
     ManagerHistoryItem,
     ManagerIn,
     PersonRef,
@@ -29,6 +36,9 @@ from app.schemas.channels import (
 )
 from app.services.assignments import AssignmentError, open_managers, set_manager
 from app.services.audit import record_audit
+from app.services.channel_import import TEMPLATE_HEADERS, TEMPLATE_ROWS, import_channels
+from app.services.channel_performance import Metrics, period_metrics, team_names, youtube_info
+from app.services.cms_sheet import read_table
 from app.services.deals import company_today
 from app.services.month_close import MonthClosedError, ensure_open
 from app.services.teams import team_leads_for
@@ -145,6 +155,14 @@ def _check_refs(db: Session, ctx: AuthContext, body: ChannelIn, current: Channel
 
 
 SORT = {"name": Channel.name, "created": Channel.created_at, "platform": Channel.platform}
+# Sorted in Python after the period's numbers are worked out.
+METRIC_SORT = {
+    "revenue": lambda m: m.revenue,
+    "views": lambda m: m.views,
+    "rpm": lambda m: m.rpm,
+    "change": lambda m: m.revenue_change_pct,
+    "subs": lambda m: m.subscribers_net,
+}
 
 
 @router.get("")
@@ -160,10 +178,50 @@ def list_channels(
     manager_id: uuid.UUID | None = None,
     managed: Literal["yes", "no"] | None = None,
     slot: Literal["assigned", "unassigned"] | None = None,
-    sort: Literal["name", "created", "platform"] = "name",
+    team_id: uuid.UUID | None = None,
+    youtube: Literal["connected", "expired", "not_connected"] | None = None,
+    start: date | None = None,
+    end: date | None = None,
+    sort: Literal[
+        "name", "created", "platform", "revenue", "views", "rpm", "change", "subs"
+    ] = "name",
     direction: Literal["asc", "desc"] = "asc",
 ) -> Page[ChannelListItem]:
+    today = company_today(ctx.organization)
+    end = end or today - timedelta(days=1)
+    start = start or end.replace(day=1)
+    if start > end:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Start must be before end")
     stmt = select(Channel).where(Channel.organization_id == ctx.organization.id)
+    if team_id:
+        stmt = stmt.where(
+            exists(
+                select(ChannelManagerAssignment.id)
+                .join(
+                    TeamMembership,
+                    (TeamMembership.employee_id == ChannelManagerAssignment.employee_id)
+                    & TeamMembership.end_date.is_(None),
+                )
+                .where(
+                    ChannelManagerAssignment.channel_id == Channel.id,
+                    ChannelManagerAssignment.end_date.is_(None),
+                    TeamMembership.team_id == team_id,
+                )
+                .correlate(Channel)
+            )
+        )
+    if youtube:
+        conn = select(YouTubeConnection.id).where(YouTubeConnection.channel_id == Channel.id)
+        if youtube == "connected":
+            stmt = stmt.where(
+                exists(conn.where(YouTubeConnection.status == "ok").correlate(Channel))
+            )
+        elif youtube == "expired":
+            stmt = stmt.where(
+                exists(conn.where(YouTubeConnection.status != "ok").correlate(Channel))
+            )
+        else:
+            stmt = stmt.where(Channel.platform == "youtube", ~exists(conn.correlate(Channel)))
     if q and q.strip():
         pattern = f"%{q.strip()}%"
         stmt = stmt.where(or_(Channel.name.ilike(pattern), Channel.external_id.ilike(pattern)))
@@ -217,15 +275,37 @@ def list_channels(
             .correlate(Channel)
         )
         stmt = stmt.where(has_manager if managed == "yes" else ~has_manager)
-    col = SORT[sort]
-    stmt = stmt.order_by(col.asc() if direction == "asc" else col.desc(), Channel.id)
-    channels, total = paginate(db, stmt, pagination)
-    return Page(
-        items=channel_items(db, channels),
-        total=total,
-        page=pagination.page,
-        page_size=pagination.page_size,
-    )
+    metrics = period_metrics(db, ctx.organization.id, start, end)
+    if sort in METRIC_SORT:
+        # Rank every matching channel by the period's numbers, then cut the page.
+        everything = list(db.scalars(stmt.order_by(Channel.name)))
+        key = METRIC_SORT[sort]
+        value = {c.id: key(metrics.get(c.id, Metrics())) for c in everything}
+        with_value = sorted(
+            (c for c in everything if value[c.id] is not None),
+            key=lambda c: value[c.id],
+            reverse=direction == "desc",
+        )
+        # Channels without a value always go last, in name order.
+        ordered = with_value + [c for c in everything if value[c.id] is None]
+        total = len(ordered)
+        first = (pagination.page - 1) * pagination.page_size
+        channels = ordered[first : first + pagination.page_size]
+    else:
+        col = SORT[sort]
+        stmt = stmt.order_by(col.asc() if direction == "asc" else col.desc(), Channel.id)
+        channels, total = paginate(db, stmt, pagination)
+    items = channel_items(db, channels)
+    yt = youtube_info(db, ctx.organization.id)
+    teams = team_names(db, {i.manager.id for i in items if i.manager})
+    for item in items:
+        m = metrics.get(item.id)
+        info = yt.get(item.id)
+        item.metrics = ChannelMetricsOut(**m.out()) if m else None
+        item.youtube_status = info.status if info else "not_connected"
+        item.subscribers = info.subscribers if info else None
+        item.team = teams[item.manager.id][1] if item.manager and item.manager.id in teams else None
+    return Page(items=items, total=total, page=pagination.page, page_size=pagination.page_size)
 
 
 @router.get("/summary")
@@ -251,6 +331,16 @@ def channels_summary(ctx: Auth, db: DbSession) -> dict[str, int]:
         "in_slots": count(held),
         "without_slot": count(active.where(Channel.id.not_in(held))),
         "without_manager": count(active.where(Channel.id.not_in(managed))),
+        "youtube_not_connected": count(
+            active.where(
+                Channel.platform == "youtube",
+                Channel.id.not_in(
+                    select(YouTubeConnection.channel_id).where(
+                        YouTubeConnection.organization_id == org
+                    )
+                ),
+            )
+        ),
     }
 
 
@@ -273,6 +363,92 @@ def create_channel(body: ChannelIn, ctx: Auth, request: Request, db: DbSession) 
     db.commit()
     db.expire_all()
     return channel_items(db, [get_channel(db, ctx, channel.id)])[0]
+
+
+# ---- Bulk import -------------------------------------------------------------------------------
+
+MAX_IMPORT_BYTES = 5 * 1024 * 1024
+
+
+@router.get("/import/template")
+def import_template(_: Auth) -> Response:
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Channels"
+    ws.append(TEMPLATE_HEADERS)
+    for row in TEMPLATE_ROWS:
+        ws.append(row)
+    for col, width in zip("ABCDEFGH", (30, 28, 12, 18, 22, 10, 40, 30), strict=True):
+        ws.column_dimensions[col].width = width
+    buf = io.BytesIO()
+    wb.save(buf)
+    return Response(
+        buf.getvalue(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="channels-template.xlsx"'},
+    )
+
+
+async def _import(file: UploadFile, ctx: AuthContext, db: Session, commit: bool) -> ImportOut:
+    content = await file.read(MAX_IMPORT_BYTES + 1)
+    if len(content) > MAX_IMPORT_BYTES:
+        raise HTTPException(
+            status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "The file is larger than 5 MB"
+        )
+    try:
+        table = read_table(content, file.filename or "channels")
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+    result = import_channels(db, ctx.organization, table, commit=commit)
+    return ImportOut(
+        added=result.count("new"),
+        exists=result.count("exists"),
+        duplicate=result.count("duplicate"),
+        errors=result.count("error"),
+        with_notes=sum(1 for x in result.lines if x.result == "new" and x.notes),
+        missing_columns=result.missing_columns,
+        lines=[ImportLineOut(**vars(x)) for x in result.lines],
+    )
+
+
+@router.post("/import/preview")
+async def import_preview(
+    ctx: Auth, db: DbSession, file: Annotated[UploadFile, File()]
+) -> ImportOut:
+    """What would happen, line by line. Nothing is saved."""
+    out = await _import(file, ctx, db, commit=False)
+    db.rollback()
+    return out
+
+
+@router.post("/import", status_code=status.HTTP_201_CREATED)
+async def import_file(
+    request: Request, ctx: Auth, db: DbSession, file: Annotated[UploadFile, File()]
+) -> ImportOut:
+    out = await _import(file, ctx, db, commit=True)
+    if out.missing_columns:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "The file needs these columns: " + ", ".join(out.missing_columns),
+        )
+    record_audit(
+        db,
+        "channel.imported",
+        organization_id=ctx.organization.id,
+        user_id=ctx.user.id,
+        entity_type="channel",
+        entity_id=None,
+        details={
+            "file": file.filename,
+            "added": out.added,
+            "skipped": out.exists + out.duplicate + out.errors,
+        },
+        ip=client_ip(request),
+    )
+    db.commit()
+    return out
 
 
 @router.get("/{channel_id}")

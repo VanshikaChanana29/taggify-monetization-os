@@ -4,11 +4,11 @@ from dataclasses import asdict
 from decimal import Decimal
 
 from fastapi import APIRouter, HTTPException, Query, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.api.deps import Auth
 from app.core.database import DbSession
-from app.models import Membership, Organization
+from app.models import Membership, Organization, YouTubeConnection
 from app.schemas.dashboard import (
     AgingOut,
     AttentionItem,
@@ -61,6 +61,11 @@ def dashboard(ctx: Auth, db: DbSession, month: str | None = MonthParam) -> Dashb
         channels=[TopChannel(**asdict(c)) for c in d.channels],
         aging=[AgingOut(**asdict(a)) for a in d.aging],
         people=[TopPerson(**asdict(p)) for p in d.people],
+        youtube_last_sync=db.scalar(
+            select(func.max(YouTubeConnection.last_synced_at)).where(
+                YouTubeConnection.organization_id == ctx.organization.id
+            )
+        ),
     )
 
 

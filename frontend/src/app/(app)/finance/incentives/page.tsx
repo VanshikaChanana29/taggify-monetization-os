@@ -18,6 +18,7 @@ import { formatMonth, money } from "@/lib/finance";
 import { HELP } from "@/lib/help";
 import { formatDateTime } from "@/lib/format";
 import type { IncentiveRun } from "@/lib/types";
+import { PageLoader } from "@/components/loader";
 
 const STATUS: Record<IncentiveRun["status"], { label: string; tone: string; help: string }> = {
   preview: { label: "Not calculated", tone: DEAL_STATUS_TONES.expired, help: "Live preview from today's data. Calculate to save a draft." },
@@ -194,7 +195,7 @@ function IncentivesPage() {
 
 export default function IncentivesPageWrapper() {
   return (
-    <Suspense fallback={<p className="text-muted-foreground">Loading…</p>}>
+    <Suspense fallback={<PageLoader />}>
       <IncentivesPage />
     </Suspense>
   );

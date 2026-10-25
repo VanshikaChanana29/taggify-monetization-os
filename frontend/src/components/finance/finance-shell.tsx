@@ -50,7 +50,7 @@ export function FinanceShell({ children }: { children: React.ReactNode }) {
     <div className="space-y-6">
       <PageHeader
         title="CMS & Finance"
-        description="From what the platforms report to what reaches the bank — per CMS, per month (PDF slides 9, 10 and 16)."
+        description="From what the channels earn to what reaches the bank — per CMS, per month."
         actions={tab !== "fx" ? <MonthPicker month={month} onChange={setMonth} /> : undefined}
       />
       <Tabs

@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime
 from decimal import Decimal
 from typing import Literal
 
@@ -77,6 +78,8 @@ class DashboardOut(BaseModel):
     channels: list[TopChannel]
     aging: list[AgingOut]
     people: list[TopPerson]
+    # When YouTube data last came in (None when no channel is connected).
+    youtube_last_sync: datetime | None = None
 
 
 class CompanyRow(TotalsOut):

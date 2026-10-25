@@ -17,6 +17,7 @@ import { api } from "@/lib/api";
 import { compactInr, formatMonth } from "@/lib/finance";
 import { formatDateTime } from "@/lib/format";
 import type { CloseStatus, ClosedMonth } from "@/lib/types";
+import { PageLoader } from "@/components/loader";
 
 const STEPS = [
   { key: "revenue", label: "1–2 · Platform data", href: "/finance/revenue" },
@@ -180,7 +181,7 @@ function ClosePage() {
 
 export default function ClosePageWrapper() {
   return (
-    <Suspense fallback={<p className="text-muted-foreground">Loading…</p>}>
+    <Suspense fallback={<PageLoader />}>
       <ClosePage />
     </Suspense>
   );

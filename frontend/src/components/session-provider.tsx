@@ -4,6 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useState } from "rea
 
 import { api } from "@/lib/api";
 import type { Me, Organization } from "@/lib/types";
+import { Spinner } from "@/components/loader";
 
 type SessionValue = {
   me: Me;
@@ -39,8 +40,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
 
   if (!me) {
     return (
-      <div className="flex min-h-screen items-center justify-center text-sm text-muted-foreground">
-        Loading…
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <Spinner />
       </div>
     );
   }

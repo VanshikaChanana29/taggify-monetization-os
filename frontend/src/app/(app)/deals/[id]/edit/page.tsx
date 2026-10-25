@@ -21,7 +21,7 @@ export default function EditDealPage() {
   }, [id]);
 
   return (
-    <div className="max-w-4xl space-y-8">
+    <div className="space-y-6">
       <PageHeader title={deal ? `Edit ${deal.title}` : "Edit deal"} description="Every change is recorded in the deal's activity." />
       {error && <Notice kind="error">{error}</Notice>}
       {deal && <DealForm deal={deal} />}

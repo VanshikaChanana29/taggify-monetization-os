@@ -4,7 +4,7 @@ import { Crown, Plus, Tv, Users } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
-import { EmptyRow, FilterBar, SearchInput, SortableHead, TablePagination } from "@/components/data-table";
+import { EmptyRow, SortableHead, TablePagination } from "@/components/data-table";
 import { EmployeeForm } from "@/components/employee-form";
 import { Notice } from "@/components/notice";
 import { PageHeader } from "@/components/page-header";
@@ -13,7 +13,6 @@ import { useOrganization } from "@/components/session-provider";
 import { StatCard } from "@/components/stat-card";
 import { StatusPill, Tag } from "@/components/status-pill";
 import { Button } from "@/components/ui/button";
-import { NativeSelect } from "@/components/ui/native-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { UserAvatar } from "@/components/user-avatar";
 import { api } from "@/lib/api";
@@ -21,6 +20,8 @@ import { HELP } from "@/lib/help";
 import { formatMoney } from "@/lib/deals";
 import type { ChannelsSummary, Employee, RoleWithCount, Team } from "@/lib/types";
 import { useClientTable } from "@/lib/use-client-table";
+import { Dialog } from "@/components/ui/dialog";
+import { type FilterField, ListFilters } from "@/components/list-filters";
 
 const SORT_BY = {
   name: (e: Employee) => e.full_name,
@@ -50,9 +51,15 @@ export default function PeoplePage() {
     api<Employee[]>("/employees")
       .then(setPeople)
       .catch((err: Error) => setError(err.message));
-    api<RoleWithCount[]>("/employee-roles").then(setRoles).catch(() => {});
-    api<Team[]>("/teams").then(setTeams).catch(() => {});
-    api<ChannelsSummary>("/channels/summary").then(setSummary).catch(() => {});
+    api<RoleWithCount[]>("/employee-roles")
+      .then(setRoles)
+      .catch(() => {});
+    api<Team[]>("/teams")
+      .then(setTeams)
+      .catch(() => {});
+    api<ChannelsSummary>("/channels/summary")
+      .then(setSummary)
+      .catch(() => {});
   }, []);
   useEffect(load, [load]);
 
@@ -71,6 +78,20 @@ export default function PeoplePage() {
     resetKey: [q, role, team, status].join("|"),
   });
   const active = people.filter((p) => p.is_active);
+
+  const filterFields: FilterField[] = [
+    { key: "role", label: "Role", options: [["", "All roles"], ...roles.map((r): [string, string] => [r.id, r.name])] },
+    { key: "team", label: "Team", options: [["", "All teams"], ...teams.map((t): [string, string] => [t.id, t.name]), ["none", "No team"]] },
+    {
+      key: "status",
+      label: "Status",
+      options: [
+        ["", "Everyone"],
+        ["active", "Active"],
+        ["inactive", "Inactive"],
+      ],
+    },
+  ];
 
   return (
     <div className="space-y-8">
@@ -121,56 +142,43 @@ export default function PeoplePage() {
       {error && <Notice kind="error">{error}</Notice>}
       {notice && <Notice kind="success">{notice}</Notice>}
 
-      {adding && (
-        <EmployeeForm
-          employee={null}
-          onCancel={() => setAdding(false)}
-          onSaved={(saved) => {
-            setAdding(false);
-            setNotice(`${saved.full_name} added.`);
-            load();
-          }}
-        />
-      )}
+      <Dialog open={adding} onClose={() => setAdding(false)} wide title="Add a person">
+        {adding && (
+          <EmployeeForm
+            inDialog
+            employee={null}
+            onCancel={() => setAdding(false)}
+            onSaved={(saved) => {
+              setAdding(false);
+              setNotice(`${saved.full_name} added.`);
+              load();
+            }}
+          />
+        )}
+      </Dialog>
 
-      <FilterBar
-        active={Boolean(q || role || team || status !== "active")}
+      <ListFilters
+        search={query}
+        onSearch={setQuery}
+        placeholder="Search name or email…"
+        fields={filterFields}
+        values={{ role, team, status }}
+        onChange={(key, value) => (key === "role" ? setRole(value) : key === "team" ? setTeam(value) : setStatus(value))}
         onClear={() => {
           setQuery("");
           setRole("");
           setTeam("");
           setStatus("active");
         }}
-      >
-        <SearchInput value={query} onChange={setQuery} placeholder="Search name or email…" />
-        <NativeSelect aria-label="Filter by role" className="w-48" value={role} onChange={(e) => setRole(e.target.value)}>
-          <option value="">All roles</option>
-          {roles.map((r) => (
-            <option key={r.id} value={r.id}>
-              {r.name}
-            </option>
-          ))}
-        </NativeSelect>
-        <NativeSelect aria-label="Filter by team" className="w-48" value={team} onChange={(e) => setTeam(e.target.value)}>
-          <option value="">All teams</option>
-          {teams.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.name}
-            </option>
-          ))}
-          <option value="none">No team</option>
-        </NativeSelect>
-        <NativeSelect aria-label="Filter by status" className="w-36" value={status} onChange={(e) => setStatus(e.target.value)}>
-          <option value="">Everyone</option>
-          <option value="active">Active</option>
-          <option value="inactive">Inactive</option>
-        </NativeSelect>
-      </FilterBar>
+        total={table.total}
+        noun="people"
+      />
 
       <div className="overflow-hidden rounded-2xl border bg-card shadow-sm">
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="w-14">S.No.</TableHead>
               <SortableHead label="Person" sortKey="name" sort={table.sort} onSort={table.toggleSort} />
               <SortableHead label="Role" sortKey="role" sort={table.sort} onSort={table.toggleSort} />
               <SortableHead label="Team" sortKey="team" sort={table.sort} onSort={table.toggleSort} />
@@ -182,8 +190,9 @@ export default function PeoplePage() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {table.pageRows.map((e) => (
+            {table.pageRows.map((e, idx) => (
               <TableRow key={e.id}>
+                <TableCell className="w-14 tabular-nums text-muted-foreground">{(table.page - 1) * table.pageSize + idx + 1}</TableCell>
                 <TableCell>
                   <Link href={`/people/${e.id}`} className="flex items-center gap-4 hover:text-primary">
                     <UserAvatar name={e.full_name} seed={e.id} />
@@ -235,11 +244,18 @@ export default function PeoplePage() {
               </TableRow>
             ))}
             {table.total === 0 && (
-              <EmptyRow colSpan={8}>{people.length ? "Nobody matches these filters." : "No people yet — add your team."}</EmptyRow>
+              <EmptyRow colSpan={9}>{people.length ? "Nobody matches these filters." : "No people yet — add your team."}</EmptyRow>
             )}
           </TableBody>
         </Table>
-        <TablePagination page={table.page} pageSize={table.pageSize} total={table.total} onPageChange={table.setPage} onPageSizeChange={table.setPageSize} noun="people" />
+        <TablePagination
+          page={table.page}
+          pageSize={table.pageSize}
+          total={table.total}
+          onPageChange={table.setPage}
+          onPageSizeChange={table.setPageSize}
+          noun="people"
+        />
       </div>
     </div>
   );

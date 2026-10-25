@@ -18,6 +18,7 @@ from app.api import (
     roles,
     teams,
     users,
+    youtube,
 )
 
 app = FastAPI(title="Taggify Monetization OS", version="0.1.0")
@@ -42,4 +43,5 @@ api.include_router(cms_sheets.router)
 api.include_router(payouts.router)
 api.include_router(dashboard.router)
 api.include_router(deal_assets.router)
+api.include_router(youtube.router)
 app.include_router(api)

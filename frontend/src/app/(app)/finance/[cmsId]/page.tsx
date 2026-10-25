@@ -26,6 +26,7 @@ import { formatDateTime } from "@/lib/format";
 import { HELP } from "@/lib/help";
 import type { CmsMonthDetail } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { PageLoader } from "@/components/loader";
 
 type Tab = "channels" | "statement" | "cash" | "adjustments";
 const TABS: Tab[] = ["channels", "statement", "cash", "adjustments"];
@@ -83,7 +84,7 @@ function CmsMonthPage() {
     }
   }
 
-  if (!data) return error ? <Notice kind="error">{error}</Notice> : <p className="text-muted-foreground">Loading…</p>;
+  if (!data) return error ? <Notice kind="error">{error}</Notice> : <PageLoader />;
   const s = data.summary;
   const cur = s.currency ?? "USD";
   const base = data.base_currency;
@@ -539,7 +540,7 @@ function CmsMonthPage() {
 
 export default function CmsMonthPageWrapper() {
   return (
-    <Suspense fallback={<p className="text-muted-foreground">Loading…</p>}>
+    <Suspense fallback={<PageLoader />}>
       <CmsMonthPage />
     </Suspense>
   );

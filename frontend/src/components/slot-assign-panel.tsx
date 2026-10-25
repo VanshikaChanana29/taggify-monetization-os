@@ -88,7 +88,7 @@ export function SlotAssignPanel({
             <div className="space-y-1 md:col-span-2">
               <Label htmlFor={`ch-${slot.id}`}>{PLATFORM_LABELS[slot.platform]} channel *</Label>
               <NativeSelect id={`ch-${slot.id}`} required value={channelId} onChange={(e) => setChannelId(e.target.value)}>
-                <option value="">{channels === null ? "Loading…" : "Select a channel…"}</option>
+                <option value="">{channels === null ? "…" : "Select a channel…"}</option>
                 {channels?.map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.name}

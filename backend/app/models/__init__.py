@@ -39,8 +39,12 @@ from app.models.people import (
 )
 from app.models.session import UserSession
 from app.models.user import Membership, User
+from app.models.youtube import ChannelDailyStat, YouTubeConnection, YouTubeSnapshot
 
 __all__ = [
+    "ChannelDailyStat",
+    "YouTubeConnection",
+    "YouTubeSnapshot",
     "MonthClose",
     "IncentiveRun",
     "IncentiveRate",

@@ -14,6 +14,7 @@ import { api } from "@/lib/api";
 import { todayISO } from "@/lib/deals";
 import { roleAbilities } from "@/lib/people";
 import type { Employee, RoleWithCount, Team } from "@/lib/types";
+import { DialogFooter } from "@/components/ui/dialog";
 
 type Form = {
   full_name: string;
@@ -50,10 +51,13 @@ export function EmployeeForm({
   employee,
   onSaved,
   onCancel,
+  inDialog = false,
 }: {
   employee: Employee | null;
   onSaved: (saved: Employee) => void;
   onCancel: () => void;
+  /** Inside a popup: no card frame or title of its own. */
+  inDialog?: boolean;
 }) {
   const [form, setForm] = useState<Form>(() => fromEmployee(employee));
   const [roles, setRoles] = useState<RoleWithCount[]>([]);
@@ -62,8 +66,12 @@ export function EmployeeForm({
   const set = (change: Partial<Form>) => setForm((f) => ({ ...f, ...change }));
 
   useEffect(() => {
-    api<RoleWithCount[]>("/employee-roles").then(setRoles).catch(() => {});
-    api<Team[]>("/teams").then(setTeams).catch(() => {});
+    api<RoleWithCount[]>("/employee-roles")
+      .then(setRoles)
+      .catch(() => {});
+    api<Team[]>("/teams")
+      .then(setTeams)
+      .catch(() => {});
   }, []);
 
   const teamChanged = (employee?.team?.id ?? "") !== form.team_id;
@@ -94,14 +102,16 @@ export function EmployeeForm({
   }
 
   return (
-    <form onSubmit={submit} className="grid gap-4 rounded-2xl border bg-card p-6 shadow-sm md:grid-cols-3">
-      <h3 className="text-lg font-semibold md:col-span-3">{employee ? `Edit ${employee.full_name}` : "Add a person"}</h3>
+    <form onSubmit={submit} className={inDialog ? "grid gap-4 md:grid-cols-3" : "grid gap-4 rounded-2xl border bg-card p-6 shadow-sm md:grid-cols-3"}>
+      {!inDialog && <h3 className="text-lg font-semibold md:col-span-3">{employee ? `Edit ${employee.full_name}` : "Add a person"}</h3>}
       <div className="space-y-2">
         <Label htmlFor="emp-name">Full name *</Label>
         <Input id="emp-name" required autoFocus value={form.full_name} onChange={(e) => set({ full_name: e.target.value })} />
       </div>
       <div className="space-y-2">
-        <Label htmlFor="emp-role">Role * <InfoTip text={HELP.role} /></Label>
+        <Label htmlFor="emp-role">
+          Role * <InfoTip text={HELP.role} />
+        </Label>
         <NativeSelect id="emp-role" required value={form.role_id} onChange={(e) => set({ role_id: e.target.value })}>
           <option value="">Select…</option>
           {roles.map((r) => (
@@ -120,7 +130,9 @@ export function EmployeeForm({
         </p>
       </div>
       <div className="space-y-2">
-        <Label htmlFor="emp-team">Team <InfoTip text={HELP.team} /></Label>
+        <Label htmlFor="emp-team">
+          Team <InfoTip text={HELP.team} />
+        </Label>
         <NativeSelect id="emp-team" value={form.team_id} onChange={(e) => set({ team_id: e.target.value })}>
           <option value="">No team</option>
           {teamOptions.map((t) => (
@@ -142,7 +154,9 @@ export function EmployeeForm({
       </div>
       {employee && teamChanged && (
         <div className="space-y-2">
-          <Label htmlFor="emp-team-date">Team change from <InfoTip text={HELP.effectiveDate} /></Label>
+          <Label htmlFor="emp-team-date">
+            Team change from <InfoTip text={HELP.effectiveDate} />
+          </Label>
           <Input
             id="emp-team-date"
             type="date"
@@ -165,7 +179,9 @@ export function EmployeeForm({
         <Input id="emp-join" type="date" value={form.join_date} onChange={(e) => set({ join_date: e.target.value })} />
       </div>
       <div className="space-y-2">
-        <Label htmlFor="emp-salary">Fixed pay / month <InfoTip text={HELP.fixedPay} /></Label>
+        <Label htmlFor="emp-salary">
+          Fixed pay / month <InfoTip text={HELP.fixedPay} />
+        </Label>
         <Input id="emp-salary" type="number" min="0" step="1" value={form.monthly_salary} onChange={(e) => set({ monthly_salary: e.target.value })} />
       </div>
       <div className="space-y-2">
@@ -181,7 +197,12 @@ export function EmployeeForm({
       </div>
       {employee && (
         <label className="flex items-center gap-2 text-sm md:col-span-3">
-          <input type="checkbox" className="h-4 w-4 accent-[hsl(var(--primary))]" checked={form.is_active} onChange={(e) => set({ is_active: e.target.checked })} />
+          <input
+            type="checkbox"
+            className="h-4 w-4 accent-[hsl(var(--primary))]"
+            checked={form.is_active}
+            onChange={(e) => set({ is_active: e.target.checked })}
+          />
           Active (to deactivate, first hand over their channels and any team they lead)
         </label>
       )}
@@ -191,11 +212,22 @@ export function EmployeeForm({
           <Notice kind="error">{error}</Notice>
         </div>
       )}
-      <div className="flex gap-3 md:col-span-3">
-        <Button type="submit">{employee ? "Save changes" : "Add person"}</Button>
-        <Button type="button" variant="outline" onClick={onCancel}>
-          Cancel
-        </Button>
+      <div className="md:col-span-3">
+        {inDialog ? (
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={onCancel}>
+              Cancel
+            </Button>
+            <Button type="submit">{employee ? "Save changes" : "Add person"}</Button>
+          </DialogFooter>
+        ) : (
+          <div className="flex gap-3">
+            <Button type="button" variant="outline" onClick={onCancel}>
+              Cancel
+            </Button>
+            <Button type="submit">{employee ? "Save changes" : "Add person"}</Button>
+          </div>
+        )}
       </div>
     </form>
   );

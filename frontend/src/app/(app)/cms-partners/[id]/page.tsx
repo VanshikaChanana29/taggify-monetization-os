@@ -1,56 +1,42 @@
 "use client";
 
-import { ArrowLeft, Plus, Trash2 } from "lucide-react";
+import { ArrowLeft, ArrowRight, Layers, Pencil, Plus, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
+import { SlabExample, SlabLadder, SlabsDialog, slabSummary, TYPE_TEXT } from "@/components/fee-slabs";
+import { PageLoader } from "@/components/loader";
 import { Notice } from "@/components/notice";
 import { Pill } from "@/components/pill";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { NativeSelect } from "@/components/ui/native-select";
-import { InfoTip } from "@/components/ui/info-tip";
-import { HELP } from "@/lib/help";
 import { api } from "@/lib/api";
-import { formatMonth, money, thisMonth } from "@/lib/finance";
+import { formatMonth, shiftMonth, thisMonth } from "@/lib/finance";
 import { PLATFORM_LABELS, PLATFORM_TONES } from "@/lib/people";
-import type { CmsPartner, FeeSchedule, Tier } from "@/lib/types";
+import type { CmsPartner, FeeSchedule } from "@/lib/types";
+import { cn } from "@/lib/utils";
 
-const EXAMPLE: Tier[] = [
-  { from_amount: "0", rate_pct: "20" },
-  { from_amount: "20000", rate_pct: "15" },
-];
-
-/** Same maths as the backend, to preview a schedule while typing. */
-function previewFee(gross: number, type: "whole" | "marginal", tiers: Tier[]): number {
-  const t = tiers.map((x) => [Number(x.from_amount), Number(x.rate_pct)] as const).sort((a, b) => a[0] - b[0]);
-  if (type === "whole") {
-    let rate = 0;
-    for (const [from, r] of t) if (gross >= from) rate = r;
-    return (gross * rate) / 100;
-  }
-  return t.reduce((fee, [from, r], i) => {
-    const end = i + 1 < t.length ? t[i + 1][0] : Infinity;
-    return fee + (Math.max(0, Math.min(gross, end) - from) * r) / 100;
-  }, 0);
+/** The schedule in force this month; if none has started yet, the first one to come. */
+function inForce(schedules: FeeSchedule[]): FeeSchedule | null {
+  const now = `${thisMonth()}-01`;
+  const sorted = [...schedules].sort((a, b) => a.effective_from.localeCompare(b.effective_from));
+  return sorted.filter((s) => s.effective_from <= now).pop() ?? sorted[0] ?? null;
 }
 
 export default function CmsDetailPage() {
   const { id } = useParams<{ id: string }>();
   const [cms, setCms] = useState<CmsPartner | null>(null);
   const [schedules, setSchedules] = useState<FeeSchedule[]>([]);
-  const [adding, setAdding] = useState(false);
-
-  // Arriving from "New CMS": open the fee slabs form straight away.
-  useEffect(() => {
-    if (new URLSearchParams(window.location.search).get("tiers") === "new") setAdding(true);
-  }, []);
-  const [form, setForm] = useState({ month: thisMonth(), tier_type: "whole" as "whole" | "marginal", currency: "USD", tiers: EXAMPLE });
+  const [editing, setEditing] = useState(false);
   const [sample, setSample] = useState("25000");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+
+  // Arriving from "New CMS" or "Add slabs": open the slabs form straight away.
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("tiers") === "new") setEditing(true);
+  }, []);
 
   const load = useCallback(() => {
     api<CmsPartner[]>("/cms-partners")
@@ -60,38 +46,21 @@ export default function CmsDetailPage() {
   }, [id]);
   useEffect(load, [load]);
 
-  const setTier = (i: number, change: Partial<Tier>) =>
-    setForm((f) => ({ ...f, tiers: f.tiers.map((t, j) => (j === i ? { ...t, ...change } : t)) }));
-
-  async function save(event: React.FormEvent) {
-    event.preventDefault();
-    setError(null);
-    setNotice(null);
-    try {
-      await api(`/cms-partners/${id}/fee-schedules`, {
-        method: "POST",
-        json: { effective_from: `${form.month}-01`, tier_type: form.tier_type, currency: form.currency, tiers: form.tiers },
-      });
-      setNotice(`Fee tiers from ${formatMonth(form.month)} saved.`);
-      setAdding(false);
-      load();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not save");
-    }
-  }
-
   async function remove(s: FeeSchedule) {
-    if (!window.confirm(`Delete the tiers from ${formatMonth(s.effective_from.slice(0, 7))}?`)) return;
+    if (!window.confirm(`Delete the slabs that start in ${formatMonth(s.effective_from.slice(0, 7))}?`)) return;
     try {
       await api(`/fee-schedules/${s.id}`, { method: "DELETE" });
+      setNotice(null);
       load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not delete");
     }
   }
 
-  if (!cms) return error ? <Notice kind="error">{error}</Notice> : <p className="text-muted-foreground">Loading…</p>;
-  const fee = previewFee(Number(sample) || 0, form.tier_type, form.tiers);
+  if (!cms) return error ? <Notice kind="error">{error}</Notice> : <PageLoader />;
+  const current = inForce(schedules);
+  const others = schedules.filter((s) => s.id !== current?.id).sort((a, b) => b.effective_from.localeCompare(a.effective_from));
+  const now = `${thisMonth()}-01`;
 
   return (
     <div className="space-y-8">
@@ -104,118 +73,115 @@ export default function CmsDetailPage() {
           <h1 className="text-3xl font-bold tracking-tight">{cms.name}</h1>
           <div className="mt-2 flex items-center gap-2">
             <Pill tone={PLATFORM_TONES[cms.platform]}>{PLATFORM_LABELS[cms.platform]}</Pill>
-            <span className="text-sm text-muted-foreground">{cms.channel_count} channel(s)</span>
+            <span className="text-sm text-muted-foreground">
+              {cms.channel_count} channel{cms.channel_count === 1 ? "" : "s"}
+            </span>
           </div>
         </div>
-        <Button size="lg" onClick={() => setAdding(true)}>
-          <Plus />
-          New fee tiers
+        <Button variant="outline" asChild>
+          <Link href={`/finance/${cms.id}?month=${shiftMonth(thisMonth(), -1)}`}>
+            Money from {cms.name} <ArrowRight />
+          </Link>
         </Button>
       </div>
 
       {error && <Notice kind="error">{error}</Notice>}
       {notice && <Notice kind="success">{notice}</Notice>}
 
-      {adding && (
-        <form onSubmit={save} className="space-y-5 rounded-2xl border bg-card p-6 shadow-sm">
-          <h3 className="text-lg font-semibold">New fee tiers <InfoTip text={HELP.feeTiers} /></h3>
-          <div className="grid gap-4 md:grid-cols-3">
-            <div className="space-y-1">
-              <Label htmlFor="fs-month">Applies from (month) *</Label>
-              <Input id="fs-month" type="month" required value={form.month} onChange={(e) => setForm({ ...form, month: e.target.value })} />
+      {/* The slabs in force, front and centre */}
+      {current ? (
+        <section className="rounded-2xl border bg-card p-6 shadow-sm">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-primary">
+                <Layers className="h-4 w-4" /> Fee slabs {current.effective_from > now ? "(starting soon)" : "in force"}
+              </p>
+              <h2 className="mt-1 text-2xl font-bold">{slabSummary(current)}</h2>
+              <p className="text-sm text-muted-foreground">
+                Since {formatMonth(current.effective_from.slice(0, 7))} · {TYPE_TEXT[current.tier_type].title.toLowerCase()} · in {current.currency}
+              </p>
             </div>
-            <div className="space-y-1">
-              <Label htmlFor="fs-type">How tiers work * <InfoTip text={HELP.tierType} /></Label>
-              <NativeSelect id="fs-type" value={form.tier_type} onChange={(e) => setForm({ ...form, tier_type: e.target.value as "whole" | "marginal" })}>
-                <option value="whole">Whole revenue — the reached tier&apos;s rate applies to everything</option>
-                <option value="marginal">Marginal — each band at its own rate (like tax slabs)</option>
-              </NativeSelect>
-            </div>
-            <div className="space-y-1">
-              <Label htmlFor="fs-cur">Currency of the thresholds</Label>
-              <NativeSelect id="fs-cur" value={form.currency} onChange={(e) => setForm({ ...form, currency: e.target.value })}>
-                <option value="USD">USD</option>
-                <option value="INR">INR</option>
-              </NativeSelect>
-            </div>
+            <Button onClick={() => setEditing(true)}>
+              <Pencil /> Change slabs
+            </Button>
           </div>
-          <div className="space-y-2">
-            <Label>Tiers (monthly gross across all of this CMS&apos;s channels)</Label>
-            {form.tiers.map((t, i) => (
-              <div key={i} className="flex flex-wrap items-center gap-2 text-sm">
-                <span className="w-16 text-muted-foreground">{i === 0 ? "From" : "From"}</span>
-                <Input
-                  aria-label="From amount"
-                  className="w-36"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  required
-                  disabled={i === 0}
-                  value={t.from_amount}
-                  onChange={(e) => setTier(i, { from_amount: e.target.value })}
-                />
-                <span className="text-muted-foreground">{form.currency} →</span>
-                <Input aria-label="Rate %" className="w-24" type="number" min="0" max="100" step="0.01" required value={t.rate_pct} onChange={(e) => setTier(i, { rate_pct: e.target.value })} />
-                <span className="text-muted-foreground">%</span>
-                {i > 0 && (
-                  <Button type="button" variant="ghost" size="icon" aria-label="Remove tier" onClick={() => setForm({ ...form, tiers: form.tiers.filter((_, j) => j !== i) })}>
-                    <Trash2 />
-                  </Button>
-                )}
+          <div className="mt-6 grid gap-6 lg:grid-cols-2">
+            <SlabLadder slabs={current} example={Number(sample) || 0} />
+            <div className="space-y-4">
+              <div className="rounded-xl border p-4">
+                <p className="font-semibold">{TYPE_TEXT[current.tier_type].title}</p>
+                <p className="mt-1 text-sm text-muted-foreground">{TYPE_TEXT[current.tier_type].text}</p>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  The month&apos;s total of <b>all {cms.channel_count} channels</b> under {cms.name} decides the slab — not each channel or deal on its own.
+                </p>
               </div>
-            ))}
-            <Button type="button" variant="outline" size="sm" onClick={() => setForm({ ...form, tiers: [...form.tiers, { from_amount: "", rate_pct: "" }] })}>
-              <Plus />
-              Add tier
-            </Button>
+              <div className="space-y-2">
+                <div className="flex flex-wrap items-center gap-2 text-sm">
+                  <label htmlFor="cms-sample" className="font-medium">
+                    Try a month&apos;s earnings
+                  </label>
+                  <Input id="cms-sample" className="w-36" type="number" min="0" value={sample} onChange={(e) => setSample(e.target.value)} />
+                </div>
+                <SlabExample slabs={current} gross={Number(sample) || 0} name={cms.name} />
+              </div>
+            </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2 rounded-xl bg-muted/60 p-4 text-sm">
-            Try it: a month with gross
-            <Input aria-label="Sample gross" className="w-32" type="number" value={sample} onChange={(e) => setSample(e.target.value)} />
-            {form.currency} → fee <span className="font-bold">{money(fee, form.currency)}</span>, net due{" "}
-            <span className="font-bold">{money((Number(sample) || 0) - fee, form.currency)}</span>
-          </div>
-          <div className="flex gap-3">
-            <Button type="submit">Save tiers</Button>
-            <Button type="button" variant="outline" onClick={() => setAdding(false)}>
-              Cancel
-            </Button>
-          </div>
-        </form>
+        </section>
+      ) : (
+        <section className="flex flex-col items-center gap-3 rounded-2xl border-2 border-dashed border-amber-300 bg-amber-50/60 p-10 text-center dark:border-amber-500/40 dark:bg-amber-500/10">
+          <Layers className="h-8 w-8 text-amber-600" />
+          <h2 className="text-xl font-semibold">No fee slabs yet</h2>
+          <p className="max-w-md text-sm text-muted-foreground">
+            Add the slabs from {cms.name}&apos;s contract (for example: up to $10,000 → 15%, above that → 12%). Until then the tool cannot work out what {cms.name} owes.
+          </p>
+          <Button size="lg" onClick={() => setEditing(true)}>
+            <Plus /> Add fee slabs
+          </Button>
+        </section>
       )}
 
-      <section className="space-y-4">
-        <h3 className="text-lg font-semibold">Fee tiers over time <InfoTip text={HELP.feeTiers} /></h3>
-        {schedules.map((s, idx) => (
-          <div key={s.id} className="rounded-2xl border bg-card p-5 shadow-sm">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <p className="font-semibold">
-                From {formatMonth(s.effective_from.slice(0, 7))}
-                {idx === 0 && <span className="ml-2 text-xs font-normal text-emerald-600">latest</span>}
-              </p>
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-muted-foreground">{s.tier_type === "whole" ? "Whole revenue" : "Marginal"} · {s.currency}</span>
-                <Button variant="ghost" size="icon" aria-label="Delete schedule" onClick={() => remove(s)}>
-                  <Trash2 />
-                </Button>
+      {others.length > 0 && (
+        <section className="space-y-3">
+          <h3 className="text-lg font-semibold">Other slabs</h3>
+          <p className="-mt-2 text-sm text-muted-foreground">Each month uses the slabs that had started by then, so past months keep the rates they had.</p>
+          {others.map((s) => (
+            <div key={s.id} className={cn("flex flex-wrap items-center justify-between gap-3 rounded-2xl border bg-card px-5 py-4 shadow-sm")}>
+              <div>
+                <p className="font-semibold">
+                  From {formatMonth(s.effective_from.slice(0, 7))}
+                  <span className="ml-2 text-xs font-normal text-muted-foreground">{s.effective_from > now ? "upcoming" : "earlier"}</span>
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  {slabSummary(s)} · {TYPE_TEXT[s.tier_type].title.toLowerCase()} · {s.currency}
+                </p>
               </div>
+              <Button variant="ghost" size="icon" aria-label="Delete these slabs" onClick={() => remove(s)}>
+                <Trash2 />
+              </Button>
             </div>
-            <p className="mt-2 text-sm">
-              {s.tiers.map((t, i) => (
-                <span key={i} className="mr-4">
-                  {money(t.from_amount, s.currency)}+ → <span className="font-semibold">{Number(t.rate_pct)}%</span>
-                </span>
-              ))}
-            </p>
-          </div>
-        ))}
-        {schedules.length === 0 && (
-          <p className="rounded-2xl border border-dashed p-6 text-sm text-muted-foreground">
-            No fee tiers yet — settlements for {cms.name} will show the fee as missing until you add them.
-          </p>
-        )}
-      </section>
+          ))}
+        </section>
+      )}
+      {current && (
+        <button type="button" onClick={() => remove(current)} className="text-sm text-muted-foreground underline-offset-4 hover:text-red-600 hover:underline">
+          Delete the slabs in force
+        </button>
+      )}
+
+      {editing && (
+        <SlabsDialog
+          open={editing}
+          onClose={() => setEditing(false)}
+          cmsId={cms.id}
+          cmsName={cms.name}
+          start={current}
+          existing={schedules}
+          onSaved={(m) => {
+            setNotice(m);
+            load();
+          }}
+        />
+      )}
     </div>
   );
 }

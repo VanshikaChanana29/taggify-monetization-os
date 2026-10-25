@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
-import { EmptyRow, FilterBar, SearchInput, SortableHead, TablePagination } from "@/components/data-table";
+import { EmptyRow, SortableHead, TablePagination } from "@/components/data-table";
 import { Notice } from "@/components/notice";
 import { PageHeader } from "@/components/page-header";
 import { PeopleTabs } from "@/components/people-tabs";
@@ -20,6 +20,8 @@ import { api } from "@/lib/api";
 import { HELP } from "@/lib/help";
 import type { Employee, Team } from "@/lib/types";
 import { useClientTable } from "@/lib/use-client-table";
+import { Dialog, DialogFooter } from "@/components/ui/dialog";
+import { ListFilters } from "@/components/list-filters";
 
 const SORT_BY = {
   name: (t: Team) => t.name,
@@ -44,7 +46,9 @@ export default function TeamsPage() {
     api<Team[]>("/teams")
       .then(setTeams)
       .catch((err: Error) => setError(err.message));
-    api<Employee[]>("/employees").then(setPeople).catch(() => {});
+    api<Employee[]>("/employees")
+      .then(setPeople)
+      .catch(() => {});
   }, []);
   useEffect(load, [load]);
 
@@ -113,9 +117,8 @@ export default function TeamsPage() {
 
       {error && <Notice kind="error">{error}</Notice>}
 
-      {creating && (
-        <form onSubmit={create} className="grid gap-4 rounded-2xl border bg-card p-6 shadow-sm md:grid-cols-3">
-          <h3 className="text-lg font-semibold md:col-span-3">New team</h3>
+      <Dialog open={Boolean(creating)} onClose={() => setCreating(false)} wide title={"New team"}>
+        <form onSubmit={create} className="grid gap-4 md:grid-cols-3">
           <div className="space-y-2">
             <Label htmlFor="team-name">Name *</Label>
             <Input id="team-name" required autoFocus placeholder="e.g. Kapil Team" value={name} onChange={(e) => setName(e.target.value)} />
@@ -145,28 +148,48 @@ export default function TeamsPage() {
             <Input id="team-desc" value={description} onChange={(e) => setDescription(e.target.value)} />
           </div>
           <p className="text-xs text-muted-foreground md:col-span-3">Add members by choosing this team on each person.</p>
-          <div className="flex gap-3 md:col-span-3">
-            <Button type="submit">Create team</Button>
-            <Button type="button" variant="outline" onClick={() => setCreating(false)}>
-              Cancel
-            </Button>
+          <div className="md:col-span-3">
+            {error && <Notice kind="error">{error}</Notice>}
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setCreating(false)}>
+                Cancel
+              </Button>
+              <Button type="submit">Create team</Button>
+            </DialogFooter>
           </div>
         </form>
-      )}
+      </Dialog>
 
-      <FilterBar active={Boolean(q || status !== "active")} onClear={() => { setQuery(""); setStatus("active"); }}>
-        <SearchInput value={query} onChange={setQuery} placeholder="Search team or lead…" />
-        <NativeSelect aria-label="Filter by status" className="w-36" value={status} onChange={(e) => setStatus(e.target.value)}>
-          <option value="">All teams</option>
-          <option value="active">Active</option>
-          <option value="inactive">Inactive</option>
-        </NativeSelect>
-      </FilterBar>
+      <ListFilters
+        search={query}
+        onSearch={setQuery}
+        placeholder="Search team or lead…"
+        fields={[
+          {
+            key: "status",
+            label: "Status",
+            options: [
+              ["", "All teams"],
+              ["active", "Active"],
+              ["inactive", "Inactive"],
+            ],
+          },
+        ]}
+        values={{ status }}
+        onChange={(_, value) => setStatus(value)}
+        onClear={() => {
+          setQuery("");
+          setStatus("active");
+        }}
+        total={table.total}
+        noun="teams"
+      />
 
       <div className="overflow-hidden rounded-2xl border bg-card shadow-sm">
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="w-14">S.No.</TableHead>
               <SortableHead label="Team" sortKey="name" sort={table.sort} onSort={table.toggleSort} />
               <SortableHead label="Team lead" sortKey="lead" sort={table.sort} onSort={table.toggleSort} />
               <SortableHead label="Members" sortKey="members" sort={table.sort} onSort={table.toggleSort} />
@@ -175,8 +198,9 @@ export default function TeamsPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {table.pageRows.map((t) => (
+            {table.pageRows.map((t, idx) => (
               <TableRow key={t.id} className="cursor-pointer" onClick={() => router.push(`/people/teams/${t.id}`)}>
+                <TableCell className="w-14 tabular-nums text-muted-foreground">{(table.page - 1) * table.pageSize + idx + 1}</TableCell>
                 <TableCell>
                   <p className="font-semibold">{t.name}</p>
                   {t.description && <p className="text-xs text-muted-foreground">{t.description}</p>}
@@ -189,10 +213,19 @@ export default function TeamsPage() {
                 </TableCell>
               </TableRow>
             ))}
-            {table.total === 0 && <EmptyRow colSpan={5}>{teams.length ? "No teams match these filters." : "No teams yet — create the first one."}</EmptyRow>}
+            {table.total === 0 && (
+              <EmptyRow colSpan={6}>{teams.length ? "No teams match these filters." : "No teams yet — create the first one."}</EmptyRow>
+            )}
           </TableBody>
         </Table>
-        <TablePagination page={table.page} pageSize={table.pageSize} total={table.total} onPageChange={table.setPage} onPageSizeChange={table.setPageSize} noun="teams" />
+        <TablePagination
+          page={table.page}
+          pageSize={table.pageSize}
+          total={table.total}
+          onPageChange={table.setPage}
+          onPageSizeChange={table.setPageSize}
+          noun="teams"
+        />
       </div>
     </div>
   );

@@ -21,6 +21,7 @@ import { HELP } from "@/lib/help";
 import { api } from "@/lib/api";
 import { DEAL_STATUS_LABELS, DEAL_STATUS_TONES, DEAL_TYPE_LABELS, dealValue, episodeSummary, formatDate } from "@/lib/deals";
 import type { Deal, DealEconomics } from "@/lib/types";
+import { InlineLoader, PageLoader } from "@/components/loader";
 
 const TABS: DealTab[] = ["overview", "slots", "payments", "profitability", "episodes", "documents", "history"];
 
@@ -71,7 +72,7 @@ function DealDetail() {
   }
 
   if (error && !deal) return <Notice kind="error">{error}</Notice>;
-  if (!deal) return <p className="text-muted-foreground">Loading…</p>;
+  if (!deal) return <PageLoader />;
 
   const overdue = economics?.installments.some((i) => i.overdue) ?? false;
   const pending = deal.slots.some((s) => s.status === "pending_whitelist");
@@ -128,9 +129,9 @@ function DealDetail() {
 
       {tab === "overview" && <DealOverview deal={deal} e={economics} go={go} />}
       {tab === "slots" && <DealSlots deal={deal} refreshKey={refreshKey} onChange={refresh} />}
-      {tab === "payments" && (economics ? <DealPayments deal={deal} e={economics} onChange={() => refresh()} /> : <p className="text-muted-foreground">Loading…</p>)}
+      {tab === "payments" && (economics ? <DealPayments deal={deal} e={economics} onChange={() => refresh()} /> : <InlineLoader />)}
       {tab === "profitability" &&
-        (economics ? <DealProfitability deal={deal} e={economics} onChange={() => refresh()} /> : <p className="text-muted-foreground">Loading…</p>)}
+        (economics ? <DealProfitability deal={deal} e={economics} onChange={() => refresh()} /> : <InlineLoader />)}
       {tab === "episodes" && <DealEpisodes dealId={deal.id} scope={deal.episode_scope} onChange={() => refresh()} />}
       {tab === "documents" && <DealDocuments dealId={deal.id} onChange={() => refresh()} />}
       {tab === "history" && <DealActivity dealId={deal.id} refreshKey={refreshKey} currency={economics?.base_currency ?? "INR"} />}
@@ -140,7 +141,7 @@ function DealDetail() {
 
 export default function DealDetailPage() {
   return (
-    <Suspense fallback={<p className="text-muted-foreground">Loading…</p>}>
+    <Suspense fallback={<PageLoader />}>
       <DealDetail />
     </Suspense>
   );

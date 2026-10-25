@@ -6,6 +6,7 @@ import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
 import { ChannelForm } from "@/components/channel-form";
+import { ChannelYouTubeCard } from "@/components/channel-youtube";
 import { Notice } from "@/components/notice";
 import { Pill } from "@/components/pill";
 import { StatusPill } from "@/components/status-pill";
@@ -20,6 +21,7 @@ import { api } from "@/lib/api";
 import { SLOT_STATUS_LABELS, SLOT_STATUS_TONES, formatDate, todayISO } from "@/lib/deals";
 import { PLATFORM_LABELS, PLATFORM_TONES, canManage } from "@/lib/people";
 import type { ChannelDetail, Employee } from "@/lib/types";
+import { PageLoader } from "@/components/loader";
 
 function InfoCard({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -76,7 +78,7 @@ export default function ChannelDetailPage() {
     }
   }
 
-  if (!channel) return error ? <Notice kind="error">{error}</Notice> : <p className="text-muted-foreground">Loading…</p>;
+  if (!channel) return error ? <Notice kind="error">{error}</Notice> : <PageLoader />;
 
   const firstSlot = channel.slots[0];
   const activePeople = people.filter(
@@ -210,15 +212,19 @@ export default function ChannelDetailPage() {
             </Table>
           </section>
 
-          <section className="rounded-2xl border border-dashed bg-card p-6">
-            <div className="flex items-center gap-2">
-              <BarChart3 className="h-5 w-5 text-muted-foreground" />
-              <h3 className="text-lg font-semibold">Views, revenue and RPM</h3>
-            </div>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Synced from YouTube / Meta in Part 6 (CSV import arrives first, in Part 4), with the source and last sync time for every number.
-            </p>
-          </section>
+          {channel.platform === "youtube" ? (
+            <ChannelYouTubeCard channelId={channel.id} channelName={channel.name} />
+          ) : (
+            <section className="rounded-2xl border border-dashed bg-card p-6">
+              <div className="flex items-center gap-2">
+                <BarChart3 className="h-5 w-5 text-muted-foreground" />
+                <h3 className="text-lg font-semibold">Views, revenue and RPM</h3>
+              </div>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Facebook pages: revenue comes from the CMS sheet or revenue import for now.
+              </p>
+            </section>
+          )}
         </div>
 
         <div className="space-y-6">
