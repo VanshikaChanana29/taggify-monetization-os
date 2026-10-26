@@ -1,6 +1,19 @@
 "use client";
 
-import { AlertTriangle, ArrowRight, BadgeCheck, Banknote, Check, ChevronRight, FileSpreadsheet, Plus, Trash2 } from "lucide-react";
+import {
+  AlertTriangle,
+  ArrowLeft,
+  ArrowRight,
+  BadgeCheck,
+  Banknote,
+  Check,
+  ChevronRight,
+  FileSpreadsheet,
+  Info,
+  Layers,
+  Plus,
+  Trash2,
+} from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useState } from "react";
@@ -14,6 +27,7 @@ import { isPaid, sheetOk } from "@/components/finance/lifecycle";
 import { MoneyFlow } from "@/components/finance/money-flow";
 import { StatementTab } from "@/components/finance/statement-tab";
 import { LoadingOverlay, PageLoader } from "@/components/loader";
+import { MonthPicker } from "@/components/month-picker";
 import { Notice } from "@/components/notice";
 import { Pill } from "@/components/pill";
 import { Button } from "@/components/ui/button";
@@ -154,7 +168,7 @@ function CmsMonthPage() {
   const { cmsId } = useParams<{ cmsId: string }>();
   const router = useRouter();
   const params = useSearchParams();
-  const [month] = useFinanceMonth();
+  const [month, setMonth] = useFinanceMonth();
   const asked = params.get("tab") ?? "";
   const requested = (OLD[asked] ?? asked) as Tab;
   const tab: Tab = TABS.includes(requested) ? requested : "channels";
@@ -162,6 +176,7 @@ function CmsMonthPage() {
   const [data, setData] = useState<CmsMonthDetail | null>(null);
   const [cms, setCms] = useState<CmsPartner | null>(null);
   const [schedules, setSchedules] = useState<FeeSchedule[]>([]);
+  const [openSlabs, setOpenSlabs] = useState(params.get("slabs") === "new" ? 1 : 0);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [errors, setErrors] = useState<Errors>({});
@@ -186,6 +201,12 @@ function CmsMonthPage() {
 
   function go(next: Tab) {
     router.replace(`/finance/${cmsId}?month=${month}${next === "channels" ? "" : `&tab=${next}`}`, { scroll: false });
+  }
+
+  // "Add slabs" anywhere on the page: show the Contract slabs tab with its popup open.
+  function addSlabs() {
+    go("slabs");
+    setOpenSlabs((n) => n + 1);
   }
 
   async function submit(action: () => Promise<unknown>, message: string, rules: [string, string][]) {
@@ -227,7 +248,16 @@ function CmsMonthPage() {
   const differs = s.statement_net !== null && Number(s.variance ?? 0) !== 0;
   const grossTotal = data.channels.reduce((t, c) => t + Number(c.gross), 0);
 
-  // This month for this CMS, in three steps.
+  // The slabs that apply to the month on screen (a later change does not re-price it).
+  const monthSlabs =
+    [...schedules]
+      .sort((a, b) => a.effective_from.localeCompare(b.effective_from))
+      .filter((x) => x.effective_from <= `${month}-01`)
+      .pop() ?? null;
+  // A month with no earnings for this CMS: point to the latest month that has some.
+  const otherMonth = Number(s.gross) === 0 ? (data.outstanding_by_month ?? []).find((o) => o.month !== month) : undefined;
+
+  // This month for this CMS, step by step.
   const steps: {
     key: string;
     title: string;
@@ -236,7 +266,18 @@ function CmsMonthPage() {
     tab: Tab;
     action: string;
     icon: React.ComponentType<{ className?: string }>;
+    onClick?: () => void;
   }[] = [
+    {
+      key: "slabs",
+      title: "Contract slabs",
+      status: monthSlabs ? slabSummary(monthSlabs) : "Not added yet",
+      done: Boolean(monthSlabs),
+      tab: "slabs",
+      action: "Add slabs",
+      icon: Layers,
+      onClick: monthSlabs ? undefined : addSlabs,
+    },
     {
       key: "sheet",
       title: "CMS statement",
@@ -264,7 +305,7 @@ function CmsMonthPage() {
     {
       key: "settled",
       title: "Settled",
-      status: sheetOk(s) && isPaid(s) ? `${formatMonth(month)} is settled` : "After the two steps above",
+      status: sheetOk(s) && isPaid(s) ? `${formatMonth(month)} is settled` : "After the steps before it",
       done: sheetOk(s) && isPaid(s),
       tab: "outstanding",
       action: "View",
@@ -273,12 +314,6 @@ function CmsMonthPage() {
   ];
   const current = steps.findIndex((x) => !x.done);
 
-  // The slabs that apply to the month on screen (a later change does not re-price it).
-  const monthSlabs =
-    [...schedules]
-      .sort((a, b) => a.effective_from.localeCompare(b.effective_from))
-      .filter((x) => x.effective_from <= `${month}-01`)
-      .pop() ?? null;
   const facts: [string, React.ReactNode][] = [
     [
       "Tier contract",
@@ -288,7 +323,7 @@ function CmsMonthPage() {
           <span className="block text-xs font-normal text-muted-foreground">since {formatMonth(monthSlabs.effective_from.slice(0, 7))}</span>
         </button>
       ) : (
-        <button type="button" className="text-amber-700 hover:underline dark:text-amber-400" onClick={() => go("slabs")}>
+        <button type="button" className="text-amber-700 hover:underline dark:text-amber-400" onClick={addSlabs}>
           Not set — add slabs
         </button>
       ),
@@ -298,121 +333,123 @@ function CmsMonthPage() {
     ["Latest statement", data.latest_statement_month ? formatMonth(data.latest_statement_month) : "None yet"],
   ];
 
-  return (
-    <div className="space-y-6">
-      <nav className="flex items-center gap-1 text-sm text-muted-foreground">
-        <Link href={`/finance/partners?month=${month}`} className="hover:text-primary">
-          CMS partners
-        </Link>
-        <ChevronRight className="h-4 w-4" />
-        <span className="font-medium text-foreground">
-          {s.cms_name} · {formatMonth(month)}
-        </span>
-      </nav>
+  const next = current >= 0 ? steps[current] : null;
+  const notes = s.warnings.filter((w) => !w.includes("fee schedule")); // missing slabs: step 1 says it
 
-      <section className="space-y-5 rounded-2xl border bg-card p-6 shadow-sm">
+  return (
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-center gap-3">
+        <Button variant="outline" size="sm" asChild>
+          <Link href={`/finance/partners?month=${month}`}>
+            <ArrowLeft /> All CMS partners
+          </Link>
+        </Button>
+        <span className="flex items-center gap-1 text-sm text-muted-foreground">
+          CMS partners <ChevronRight className="h-4 w-4" />
+          <span className="font-medium text-foreground">{s.cms_name}</span>
+        </span>
+        <div className="ml-auto">
+          <MonthPicker month={month} onChange={setMonth} />
+        </div>
+      </div>
+
+      <section className="space-y-4 rounded-2xl border bg-card p-5 shadow-sm">
         <div className="flex flex-wrap items-center gap-3">
           <h2 className="text-2xl font-bold tracking-tight">{s.cms_name}</h2>
           {cms && <Pill tone={PLATFORM_TONES[cms.platform]}>{PLATFORM_LABELS[cms.platform]}</Pill>}
         </div>
+
         {hasCms ? (
-          <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <dl className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
             {facts.map(([k, v]) => (
-              <div key={k} className="rounded-xl border bg-muted/30 px-4 py-3">
-                <dt className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{k}</dt>
-                <dd className="mt-1 font-semibold">{v}</dd>
+              <div key={k} className="rounded-xl border bg-muted/30 px-3 py-2">
+                <dt className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{k}</dt>
+                <dd className="text-sm font-semibold">{v}</dd>
               </div>
             ))}
           </dl>
         ) : (
           <p className="text-sm text-muted-foreground">These channels have no CMS, so there is nothing to collect from a partner.</p>
         )}
-        {s.warnings.map((w) => (
-          <p
-            key={w}
-            className="flex flex-wrap items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-400"
-          >
-            <AlertTriangle className="h-4 w-4" />
-            {w}
-            {w.includes("fee schedule") && hasCms && (
-              <button type="button" onClick={() => go("slabs")} className="ml-auto font-semibold underline">
-                Add slabs
-              </button>
+
+        {hasCms && (
+          <div className="flex flex-wrap items-center gap-2 rounded-xl bg-muted/40 p-2">
+            <ol className="flex flex-wrap items-center gap-1">
+              {steps.map((st, i) => {
+                const state = st.done ? "done" : i === current ? "current" : "ahead";
+                return (
+                  <li key={st.key} className="flex items-center gap-1">
+                    {i > 0 && <ChevronRight className="h-4 w-4 text-muted-foreground" />}
+                    <button
+                      type="button"
+                      title={st.status}
+                      onClick={st.onClick ?? (() => go(st.tab))}
+                      className={cn(
+                        "inline-flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm transition-colors hover:bg-card",
+                        state === "current" && "bg-card font-semibold text-primary shadow-sm",
+                        state === "ahead" && "text-muted-foreground",
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "grid h-5 w-5 place-items-center rounded-full text-[11px] font-bold",
+                          state === "done"
+                            ? "bg-emerald-500 text-white"
+                            : state === "current"
+                              ? "bg-primary text-primary-foreground"
+                              : "bg-muted-foreground/20",
+                        )}
+                      >
+                        {st.done ? <Check className="h-3 w-3" strokeWidth={3} /> : i + 1}
+                      </span>
+                      {st.title}
+                    </button>
+                  </li>
+                );
+              })}
+            </ol>
+            {next ? (
+              <div className="ml-auto flex flex-wrap items-center gap-2 pr-1">
+                <span className="text-sm text-muted-foreground">{next.status}</span>
+                <Button size="sm" onClick={next.onClick ?? (() => go(next.tab))}>
+                  {next.action} <ArrowRight />
+                </Button>
+              </div>
+            ) : (
+              <span className="ml-auto pr-2 text-sm font-medium text-emerald-700 dark:text-emerald-400">{formatMonth(month)} is settled</span>
             )}
+          </div>
+        )}
+
+        {otherMonth && (
+          <p className="flex flex-wrap items-center gap-2 text-sm text-sky-800 dark:text-sky-300">
+            <Info className="h-4 w-4 shrink-0" />
+            No earnings in {formatMonth(month)} — the latest month with earnings is {formatMonth(otherMonth.month)}.
+            <button type="button" className="font-semibold underline" onClick={() => setMonth(otherMonth.month)}>
+              Show {formatMonth(otherMonth.month)}
+            </button>
+          </p>
+        )}
+        {notes.map((w) => (
+          <p key={w} className="flex flex-wrap items-center gap-2 text-sm text-amber-700 dark:text-amber-400">
+            <AlertTriangle className="h-4 w-4 shrink-0" />
+            {w}
             {w.includes("rate") && (
-              <Link href={`/finance/fx?month=${month}`} className="ml-auto font-semibold underline">
+              <Link href={`/finance/fx?month=${month}`} className="font-semibold underline">
                 Set FX rate
               </Link>
             )}
           </p>
         ))}
 
-        {hasCms && (
-          <ol className="grid gap-3 md:grid-cols-3">
-            {steps.map((st, i) => {
-              const Icon = st.icon;
-              const state = st.done ? "done" : i === current ? "current" : "ahead";
-              return (
-                <li key={st.key}>
-                  <button
-                    type="button"
-                    onClick={() => go(st.tab)}
-                    className={cn(
-                      "flex h-full w-full items-start gap-3 rounded-xl border-2 p-4 text-left transition-colors hover:border-primary/50",
-                      state === "done" && "border-emerald-300 bg-emerald-50/60 dark:border-emerald-500/40 dark:bg-emerald-500/10",
-                      state === "current" && "border-primary/60 bg-primary/5",
-                      state === "ahead" && "border-border",
-                    )}
-                  >
-                    <span
-                      className={cn(
-                        "grid h-9 w-9 shrink-0 place-items-center rounded-full",
-                        state === "done"
-                          ? "bg-emerald-500 text-white"
-                          : state === "current"
-                            ? "bg-primary text-primary-foreground"
-                            : "bg-muted text-muted-foreground",
-                      )}
-                    >
-                      {st.done ? <Check className="h-4 w-4" strokeWidth={3} /> : <Icon className="h-4 w-4" />}
-                    </span>
-                    <span className="min-w-0">
-                      <span className="block text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Step {i + 1}</span>
-                      <span className="block font-semibold">{st.title}</span>
-                      <span className="block text-sm text-muted-foreground">{st.status}</span>
-                      {!st.done && (
-                        <span className="mt-1 inline-flex items-center gap-1 text-sm font-medium text-primary">
-                          {st.action} <ArrowRight className="h-3.5 w-3.5" />
-                        </span>
-                      )}
-                    </span>
-                  </button>
-                </li>
-              );
-            })}
-          </ol>
-        )}
-
         <MoneyFlow
+          compact
           steps={[
-            { label: "Gross", value: money(s.gross, cur), info: HELP.grossRevenue, sub: "All its channels together" },
+            { label: "Gross", value: money(s.gross, cur), info: HELP.grossRevenue },
             ...(hasTax ? [{ label: "Tax withheld", value: money(s.tax, cur), op: "−", tone: "minus" as const, info: HELP.taxWithheld }] : []),
             { label: "CMS fee", value: s.fee === null ? "—" : money(s.fee, cur), op: "−", tone: "minus", info: HELP.feeTiers },
-            {
-              label: "Net receivable",
-              value: s.net === null ? "—" : money(s.net, cur),
-              op: "=",
-              info: HELP.netReceivable,
-              sub: cur !== base && s.net_base ? `${money(s.net_base, base)} at the month's rate` : undefined,
-            },
-            {
-              label: "Received",
-              value: money(s.received, base),
-              op: "−",
-              tone: "minus",
-              info: HELP.cashReceived,
-              sub: Number(s.adjustments) ? `Adjustments ${money(s.adjustments, base)}` : undefined,
-            },
+            { label: "Net receivable", value: s.net === null ? "—" : money(s.net, cur), op: "=", info: HELP.netReceivable },
+            { label: "Received", value: money(s.received, base), op: "−", tone: "minus", info: HELP.cashReceived },
             {
               label: "Outstanding",
               value: !hasCms ? "—" : rateMissing ? "Set rate" : money(s.outstanding, base),
@@ -456,7 +493,8 @@ function CmsMonthPage() {
           cmsId={cmsId}
           cmsName={s.cms_name}
           channelCount={cms?.channel_count ?? s.channel_count}
-          openNew={params.get("slabs") === "new"}
+          afterTax={cms?.fee_after_tax ?? false}
+          openSignal={openSlabs}
           onChanged={load}
         />
       )}

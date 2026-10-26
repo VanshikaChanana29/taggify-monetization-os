@@ -1,9 +1,10 @@
 "use client";
 
-import { Building2, Plus, UserX, Users } from "lucide-react";
+import { Building2, Plus, Trash2, UserX, Users } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
 import { EmptyRow, SortableHead, TablePagination } from "@/components/data-table";
+import { DeleteCompanyDialog } from "@/components/delete-company-dialog";
 import { Notice } from "@/components/notice";
 import { PageHeader } from "@/components/page-header";
 import { StatCard } from "@/components/stat-card";
@@ -47,6 +48,7 @@ export default function CompaniesPage() {
   const [currencyFilter, setCurrencyFilter] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<AdminOrganization | null>(null);
 
   const load = useCallback(() => {
     api<AdminOrganization[]>("/admin/organizations")
@@ -170,6 +172,16 @@ export default function CompaniesPage() {
         </form>
       </Dialog>
 
+      <DeleteCompanyDialog
+        company={deleting}
+        onClose={() => setDeleting(null)}
+        onDeleted={(deleted) => {
+          setDeleting(null);
+          setNotice(`${deleted} and all of its data were deleted.`);
+          load();
+        }}
+      />
+
       <ListFilters
         search={query}
         onSearch={setQuery}
@@ -205,6 +217,7 @@ export default function CompaniesPage() {
               <SortableHead label="Currency" sortKey="currency" sort={table.sort} onSort={table.toggleSort} />
               <SortableHead label="Active founders" sortKey="founders" sort={table.sort} onSort={table.toggleSort} />
               <SortableHead label="Created" sortKey="created" sort={table.sort} onSort={table.toggleSort} />
+              <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -225,10 +238,23 @@ export default function CompaniesPage() {
                 </TableCell>
                 <TableCell className="font-semibold">{c.active_users}</TableCell>
                 <TableCell className="text-muted-foreground">{formatDateTime(c.created_at)}</TableCell>
+                <TableCell className="text-right">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="text-red-600 hover:bg-red-50 hover:text-red-700 dark:text-red-400 dark:hover:bg-red-500/10"
+                    onClick={() => {
+                      setNotice(null);
+                      setDeleting(c);
+                    }}
+                  >
+                    <Trash2 /> Delete
+                  </Button>
+                </TableCell>
               </TableRow>
             ))}
             {table.total === 0 && (
-              <EmptyRow colSpan={6}>
+              <EmptyRow colSpan={7}>
                 {companies.length === 0 ? "No companies yet — create the first one." : "No companies match these filters."}
               </EmptyRow>
             )}

@@ -14,7 +14,7 @@ import { HELP } from "@/lib/help";
 import { api } from "@/lib/api";
 import { EXTERNAL_ID_HINT } from "@/lib/people";
 import { cn } from "@/lib/utils";
-import type { ChannelListItem, CmsPartner, Platform } from "@/lib/types";
+import type { ChannelListItem, CmsPartner, Platform, DealPartner } from "@/lib/types";
 
 type Form = {
   platform: Platform;
@@ -22,6 +22,7 @@ type Form = {
   external_id: string;
   url: string;
   cms_partner_id: string;
+  partner_id: string;
   status: "active" | "inactive";
   notes: string;
 };
@@ -52,10 +53,12 @@ export function ChannelForm({
     external_id: channel?.external_id ?? "",
     url: channel?.url ?? "",
     cms_partner_id: channel?.cms_partner_id ?? "",
+    partner_id: channel?.partner?.id ?? "",
     status: channel?.status ?? "active",
     notes: notes ?? "",
   });
   const [cmsList, setCmsList] = useState<CmsPartner[]>([]);
+  const [partners, setPartners] = useState<DealPartner[]>([]);
   const [error, setError] = useState<string | null>(null);
   // New YouTube channel: an optional token file fills the ID and name, and connects it on save.
   const [tokenFile, setTokenFile] = useState<File | null>(null);
@@ -87,6 +90,9 @@ export function ChannelForm({
   }
 
   useEffect(() => {
+    api<DealPartner[]>("/partners")
+      .then(setPartners)
+      .catch(() => {});
     api<CmsPartner[]>("/cms-partners")
       .then(setCmsList)
       .catch(() => {});
@@ -105,6 +111,7 @@ export function ChannelForm({
         json: {
           ...form,
           cms_partner_id: form.cms_partner_id || null,
+          partner_id: form.partner_id || null,
           url: form.url || null,
           notes: form.notes || null,
         },
@@ -286,6 +293,22 @@ export function ChannelForm({
                 </option>
               ))}
             </NativeSelect>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="ch-partner">Owned by</Label>
+            <NativeSelect id="ch-partner" value={form.partner_id} onChange={(e) => set({ partner_id: e.target.value })}>
+              <option value="">Taggify</option>
+              {partners
+                .filter((p) => p.is_active || p.id === form.partner_id)
+                .map((p) => (
+                  <option key={p.id} value={p.id}>
+                    Deal partner: {p.name}
+                  </option>
+                ))}
+            </NativeSelect>
+            {form.partner_id && (
+              <p className="text-xs text-muted-foreground">Its earnings after the CMS fee are paid to this partner; no Taggify incentive on it.</p>
+            )}
           </div>
           <div className="space-y-2">
             <Label id="ch-status-label">Status</Label>

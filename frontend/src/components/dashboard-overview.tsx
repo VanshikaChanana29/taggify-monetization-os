@@ -33,7 +33,19 @@ const AGING: [AgingBucket, string][] = [
 
 const compactNum = (n: number) => new Intl.NumberFormat("en-IN", { notation: "compact", maximumFractionDigits: 1 }).format(n);
 
-function Card({ title, sub, action, className, children }: { title: string; sub?: string; action?: React.ReactNode; className?: string; children: React.ReactNode }) {
+function Card({
+  title,
+  sub,
+  action,
+  className,
+  children,
+}: {
+  title: string;
+  sub?: string;
+  action?: React.ReactNode;
+  className?: string;
+  children: React.ReactNode;
+}) {
   return (
     <section className={cn("min-w-0 rounded-2xl border bg-card p-6 shadow-sm", className)}>
       <div className="mb-4 flex items-start justify-between gap-3">
@@ -66,6 +78,7 @@ function Story({
   pending,
   todo,
   yt,
+  partners = [],
 }: {
   month: string;
   earned: string;
@@ -74,6 +87,7 @@ function Story({
   pending: string | null;
   todo: number;
   yt: DashboardChannels | null;
+  partners?: { id: string; name: string; channels: number; gross: string }[];
 }) {
   const change = yt?.revenue_change_pct == null ? null : Number(yt.revenue_change_pct);
   const facts: [string, string][] = [
@@ -93,7 +107,9 @@ function Story({
               <span
                 className={cn(
                   "inline-flex items-center gap-0.5 rounded-full px-2.5 py-0.5 text-sm font-semibold",
-                  change >= 0 ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400" : "bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-400",
+                  change >= 0
+                    ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400"
+                    : "bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-400",
                 )}
                 title={yt ? `Compared with the ${yt.previous_revenue ? "same number of days just before" : "period before"}` : undefined}
               >
@@ -103,7 +119,8 @@ function Story({
             )}
           </p>
           <p className="mt-3 max-w-3xl text-base leading-relaxed text-muted-foreground">
-            CMS partners owe us <b className="text-foreground">{owes}</b> for this month. <b className="text-emerald-700 dark:text-emerald-400">{received}</b> has reached the bank
+            CMS partners owe us <b className="text-foreground">{owes}</b> for this month.{" "}
+            <b className="text-emerald-700 dark:text-emerald-400">{received}</b> has reached the bank
             {pending ? (
               <>
                 , <b className="text-amber-700 dark:text-amber-400">{pending}</b> is still to come
@@ -121,11 +138,33 @@ function Story({
               "Nothing needs you right now."
             )}
           </p>
-          {yt?.last_sync && <p className="mt-2 text-xs text-muted-foreground">YouTube estimates until the CMS sheet arrives · last sync {formatDateTime(yt.last_sync)}</p>}
+          {partners.length > 0 && (
+            <p className="mt-2 text-sm text-violet-800 dark:text-violet-300">
+              Includes deal partners&apos; channels, paid out to them:{" "}
+              {partners.map((pt, i) => (
+                <span key={pt.id}>
+                  {i > 0 && ", "}
+                  <Link href={`/partners/${pt.id}`} className="font-semibold underline-offset-4 hover:underline">
+                    {pt.name} {money(pt.gross, "USD")}
+                  </Link>
+                </span>
+              ))}
+              .
+            </p>
+          )}
+          {yt?.last_sync && (
+            <p className="mt-2 text-xs text-muted-foreground">
+              YouTube estimates until the CMS sheet arrives · last sync {formatDateTime(yt.last_sync)}
+            </p>
+          )}
         </div>
         <dl className="grid grid-cols-3 gap-3 lg:w-[22rem]">
           {facts.map(([k, v]) => (
-            <Link key={k} href={`/?tab=channels&month=${month}`} className="rounded-2xl border bg-card/80 p-3 text-center backdrop-blur transition-colors hover:border-primary/50">
+            <Link
+              key={k}
+              href={`/?tab=channels&month=${month}`}
+              className="rounded-2xl border bg-card/80 p-3 text-center backdrop-blur transition-colors hover:border-primary/50"
+            >
               <dd className="text-xl font-bold tabular-nums">{v}</dd>
               <dt className="text-xs text-muted-foreground">{k}</dt>
             </Link>
@@ -189,7 +228,11 @@ function MoneyJourney({ month, rows, data }: { month: string; rows: CmsMonth[]; 
     );
 
   const rowsOut: { label: string; hint: string; segs: Seg[]; offset?: number }[] = [
-    { label: "Earned", hint: "What the channels made", segs: [{ label: "Earned", value: earned, text: fmt(earned), color: "var(--series-1)", href: `/finance/revenue?${m}` }] },
+    {
+      label: "Earned",
+      hint: "What the channels made",
+      segs: [{ label: "Earned", value: earned, text: fmt(earned), color: "var(--series-1)", href: `/finance/revenue?${m}` }],
+    },
     {
       label: "Split",
       hint: "What the CMS keeps, and what it owes us",
@@ -260,7 +303,12 @@ function MoneyJourney({ month, rows, data }: { month: string; rows: CmsMonth[]; 
 function DoNow({ items, fmt }: { items: AttentionItem[]; fmt: (v: string) => string }) {
   const sorted = [...items].sort((a, b) => SEVERITY[a.severity].rank - SEVERITY[b.severity].rank);
   return (
-    <Card title="Do this now" sub={items.length ? "Most urgent first" : "All clear"} className="lg:col-span-2" action={items.length ? <Pill tone="border-border bg-muted text-foreground">{items.length}</Pill> : undefined}>
+    <Card
+      title="Do this now"
+      sub={items.length ? "Most urgent first" : "All clear"}
+      className="lg:col-span-2"
+      action={items.length ? <Pill tone="border-border bg-muted text-foreground">{items.length}</Pill> : undefined}
+    >
       {sorted.length === 0 ? (
         <p className="flex items-center gap-2 text-sm text-muted-foreground">
           <CheckCircle2 className="h-5 w-5 text-emerald-600" /> Nothing needs you right now.
@@ -335,7 +383,11 @@ function ByCms({ month, rows }: { month: string; rows: CmsMonth[] }) {
 function Deals({ data, fmt }: { data: Dashboard; fmt: (v: string) => string }) {
   const overall = data.recovery_pct === null ? null : Number(data.recovery_pct);
   return (
-    <Card title="Deal recovery" sub={overall === null ? "Fixed-fee deals" : `${overall}% of all rights cost earned back`} action={<AllLink href="/deals">All</AllLink>}>
+    <Card
+      title="Deal recovery"
+      sub={overall === null ? "Fixed-fee deals" : `${overall}% of all rights cost earned back`}
+      action={<AllLink href="/deals">All</AllLink>}
+    >
       {data.deals.length === 0 ? (
         <p className="flex flex-col items-center gap-2 py-6 text-center text-sm text-muted-foreground">
           <Handshake className="h-6 w-6" /> No fixed-fee deals yet.
@@ -381,6 +433,7 @@ export function DashboardOverview({ data }: { data: Dashboard }) {
   const [fin, setFin] = useState<FinanceMonth | null>(null);
   const [close, setClose] = useState<CloseStatus | null>(null);
   const [yt, setYt] = useState<DashboardChannels | null>(null);
+  const [partners, setPartners] = useState<{ id: string; name: string; channels: number; gross: string }[]>([]);
   // Months without an exchange rate come out as ₹0; then chart the CMS's own currency instead.
   const noRates = data.trend.every((t) => Number(t.gross) === 0);
   const [ownTrend, setOwnTrend] = useState<{ currency: string; points: Dashboard["trend"] } | null>(null);
@@ -388,9 +441,18 @@ export function DashboardOverview({ data }: { data: Dashboard }) {
   useEffect(() => {
     setFin(null);
     setYt(null);
-    api<FinanceMonth>(`/finance/settlements?month=${m}`).then(setFin).catch(() => setFin(null));
-    api<CloseStatus>(`/finance/close?month=${m}`).then(setClose).catch(() => setClose(null));
-    api<DashboardChannels>(`/dashboard/channels?month=${m}`).then(setYt).catch(() => setYt(null));
+    api<FinanceMonth>(`/finance/settlements?month=${m}`)
+      .then(setFin)
+      .catch(() => setFin(null));
+    api<CloseStatus>(`/finance/close?month=${m}`)
+      .then(setClose)
+      .catch(() => setClose(null));
+    api<DashboardChannels>(`/dashboard/channels?month=${m}`)
+      .then(setYt)
+      .catch(() => setYt(null));
+    api<{ id: string; name: string; channels: number; gross: string }[]>(`/partners/summary?month=${m}`)
+      .then((rows) => setPartners(rows.filter((r) => Number(r.gross) > 0)))
+      .catch(() => setPartners([]));
   }, [m]);
 
   useEffect(() => {
@@ -406,7 +468,15 @@ export function DashboardOverview({ data }: { data: Dashboard }) {
           currency: currencies[0],
           points: data.trend.map((t, i) => {
             const rows = months[i].rows;
-            return { ...t, gross: add(rows, (r) => r.gross), fee: add(rows, (r) => r.fee), net: add(rows.filter((r) => r.cms_id), (r) => r.net) };
+            return {
+              ...t,
+              gross: add(rows, (r) => r.gross),
+              fee: add(rows, (r) => r.fee),
+              net: add(
+                rows.filter((r) => r.cms_id),
+                (r) => r.net,
+              ),
+            };
           }),
         });
       })
@@ -428,10 +498,18 @@ export function DashboardOverview({ data }: { data: Dashboard }) {
       <Story
         month={m}
         earned={own ? money(allRows, own) : fmt(data.current.gross)}
-        owes={own ? money(sum((r) => r.net), own) : fmt(data.current.net)}
+        owes={
+          own
+            ? money(
+                sum((r) => r.net),
+                own,
+              )
+            : fmt(data.current.net)
+        }
         received={fmt(data.current.received)}
         pending={fxGap ? null : fmt(data.current.outstanding)}
         todo={items.length}
+        partners={partners}
         yt={yt}
       />
 
@@ -441,7 +519,15 @@ export function DashboardOverview({ data }: { data: Dashboard }) {
           sub={`${list.filter((s) => s.done).length} of ${list.length} steps done for ${formatMonth(m)} — click a step to work on it`}
           action={<AllLink href={`/finance?month=${m}`}>Finance</AllLink>}
         >
-          <Track list={list} current={Math.max(0, list.findIndex((s) => !s.done))} selected={-1} onSelect={(i) => router.push(`/finance?month=${m}&step=${list[i].key}`)} />
+          <Track
+            list={list}
+            current={Math.max(
+              0,
+              list.findIndex((s) => !s.done),
+            )}
+            selected={-1}
+            onSelect={(i) => router.push(`/finance?month=${m}&step=${list[i].key}`)}
+          />
         </Card>
       )}
 
@@ -500,7 +586,9 @@ export function DashboardOverview({ data }: { data: Dashboard }) {
                   <TableCell className="text-right font-semibold tabular-nums">{fmt(a.total)}</TableCell>
                 </TableRow>
               ))}
-              {data.aging.length === 0 && <EmptyRow colSpan={6}>{fxGap ? "Set this month's rate to see what is owed." : "No CMS owes anything."}</EmptyRow>}
+              {data.aging.length === 0 && (
+                <EmptyRow colSpan={6}>{fxGap ? "Set this month's rate to see what is owed." : "No CMS owes anything."}</EmptyRow>
+              )}
             </TableBody>
           </Table>
         </section>
@@ -517,7 +605,9 @@ export function DashboardOverview({ data }: { data: Dashboard }) {
                   <TableCell className="w-8 text-muted-foreground">{i + 1}</TableCell>
                   <TableCell>
                     <p className="font-semibold">{p.name}</p>
-                    <p className="text-xs text-muted-foreground">{p.channels ? `${p.channels} channel${p.channels > 1 ? "s" : ""} · ${fmt(p.gross)}` : "Team lead"}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {p.channels ? `${p.channels} channel${p.channels > 1 ? "s" : ""} · ${fmt(p.gross)}` : "Team lead"}
+                    </p>
                   </TableCell>
                   <TableCell className="text-right">
                     <p className="font-semibold">{fmt(p.incentive)}</p>
@@ -525,7 +615,9 @@ export function DashboardOverview({ data }: { data: Dashboard }) {
                   </TableCell>
                 </TableRow>
               ))}
-              {data.people.length === 0 && <EmptyRow colSpan={3}>{fxGap ? "Set this month's rate to work out incentives." : "No incentives this month."}</EmptyRow>}
+              {data.people.length === 0 && (
+                <EmptyRow colSpan={3}>{fxGap ? "Set this month's rate to work out incentives." : "No incentives this month."}</EmptyRow>
+              )}
             </TableBody>
           </Table>
         </section>

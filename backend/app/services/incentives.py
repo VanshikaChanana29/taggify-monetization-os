@@ -21,6 +21,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import (
+    Channel,
     ChannelManagerAssignment,
     Employee,
     IncentiveRate,
@@ -125,11 +126,15 @@ class IncentiveCalc:
 
 def calculate(db: Session, org: Organization, month: date) -> IncentiveCalc:
     timeline = Timeline(db, org)
+    # Deal partners run their own channels: no Taggify incentive on those.
     facts = db.scalars(
-        select(RevenueFact).where(
+        select(RevenueFact)
+        .join(Channel, Channel.id == RevenueFact.channel_id)
+        .where(
             RevenueFact.organization_id == org.id,
             RevenueFact.day >= month,
             RevenueFact.day < month_end(month),
+            Channel.partner_id.is_(None),
         )
     ).all()
     lines: dict[tuple, Line] = {}

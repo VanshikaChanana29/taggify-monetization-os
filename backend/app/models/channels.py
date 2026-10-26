@@ -53,6 +53,11 @@ class Channel(UUIDPrimaryKeyMixin, OrgScopedMixin, TimestampMixin, Base):
     )
     status: Mapped[str] = mapped_column(String(20), default="active")
     notes: Mapped[str | None] = mapped_column(Text)
+    # Set when the channel is a deal partner's own (e.g. Vanshika's): its earnings after the
+    # CMS fee are paid to the partner, and it is left out of Taggify's incentives and recovery.
+    partner_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("deal_partners.id", ondelete="RESTRICT"), index=True
+    )
 
     cms_partner: Mapped[CmsPartner | None] = relationship(lazy="joined")
 

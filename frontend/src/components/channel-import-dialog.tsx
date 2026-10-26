@@ -17,6 +17,7 @@ type Line = {
   platform: string;
   cms: string | null;
   manager: string | null;
+  partner?: string | null;
   status: string;
   result: "new" | "exists" | "duplicate" | "error";
   notes: string[];
@@ -37,6 +38,7 @@ const COLUMNS: [string, string, boolean][] = [
   ["CMS", "Must match a CMS partner's name", false],
   ["Manager", "Name or email, as in People", false],
   ["Status", "Active / Inactive — Active if empty", false],
+  ["Partner", "Deal partner who owns it (e.g. Vanshika) — empty for Taggify's own", false],
 ];
 
 export function ChannelImportDialog({ open, onClose, onImported }: { open: boolean; onClose: () => void; onImported: (added: number) => void }) {
@@ -111,7 +113,11 @@ export function ChannelImportDialog({ open, onClose, onImported }: { open: boole
             <div className="rounded-xl border">
               <div className="flex items-center justify-between gap-3 border-b bg-muted/40 px-4 py-2.5">
                 <p className="text-sm font-semibold">What the file can have</p>
-                <a href="/api/channels/import/template" download className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline">
+                <a
+                  href="/api/channels/import/template"
+                  download
+                  className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
+                >
                   <Download className="h-4 w-4" /> Template
                 </a>
               </div>
@@ -119,7 +125,12 @@ export function ChannelImportDialog({ open, onClose, onImported }: { open: boole
                 {COLUMNS.map(([name, hint, required]) => (
                   <li key={name} className="flex flex-wrap items-baseline gap-x-3 px-4 py-2">
                     <span className="w-28 font-medium">{name}</span>
-                    <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-semibold", required ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground")}>
+                    <span
+                      className={cn(
+                        "rounded-full px-2 py-0.5 text-[11px] font-semibold",
+                        required ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground",
+                      )}
+                    >
                       {required ? "Required" : "Optional"}
                     </span>
                     <span className="text-muted-foreground">{hint}</span>
@@ -144,7 +155,9 @@ export function ChannelImportDialog({ open, onClose, onImported }: { open: boole
                 <>
                   <Upload className="h-7 w-7 text-primary" />
                   <span className="font-semibold">Choose or drop the file</span>
-                  <span className="text-xs text-muted-foreground">.xlsx or .csv · column names in any order · nothing is saved until you confirm</span>
+                  <span className="text-xs text-muted-foreground">
+                    .xlsx or .csv · column names in any order · nothing is saved until you confirm
+                  </span>
                 </>
               )}
             </button>
@@ -183,8 +196,18 @@ export function ChannelImportDialog({ open, onClose, onImported }: { open: boole
             </div>
             <div className="grid gap-3 sm:grid-cols-3">
               {[
-                ["all", preview.added, "will be added", "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300"],
-                ["notes", preview.with_notes, "added with a note", "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300"],
+                [
+                  "all",
+                  preview.added,
+                  "will be added",
+                  "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300",
+                ],
+                [
+                  "notes",
+                  preview.with_notes,
+                  "added with a note",
+                  "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300",
+                ],
                 ["skipped", skipped, "skipped (missing ID or name, or already there)", "border-border bg-muted/50 text-muted-foreground"],
               ].map(([key, n, label, tone]) => (
                 <button
@@ -224,6 +247,7 @@ export function ChannelImportDialog({ open, onClose, onImported }: { open: boole
                         <TableCell className="text-sm">
                           <p>{l.cms ?? <span className="text-muted-foreground">No CMS</span>}</p>
                           <p className="text-xs text-muted-foreground">{l.manager ?? "No manager"}</p>
+                          {l.partner && <p className="text-xs font-medium text-violet-700 dark:text-violet-400">Partner: {l.partner}</p>}
                         </TableCell>
                         <TableCell className="text-sm">
                           <p className={cn("flex items-center gap-1.5 font-medium", r.className)}>
@@ -250,7 +274,9 @@ export function ChannelImportDialog({ open, onClose, onImported }: { open: boole
               </Table>
             </div>
             {preview.with_notes > 0 && (
-              <p className="text-xs text-muted-foreground">Lines with a note are still added — set the missing CMS or manager on the channel later.</p>
+              <p className="text-xs text-muted-foreground">
+                Lines with a note are still added — set the missing CMS or manager on the channel later.
+              </p>
             )}
           </>
         )}

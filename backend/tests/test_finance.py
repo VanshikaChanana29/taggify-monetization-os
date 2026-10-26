@@ -332,3 +332,14 @@ def test_cms_detail_shows_latest_statement_and_what_is_owed_by_month(founder):
     )
     d = founder.get(f"/api/finance/settlements/{cms_a}?month={MONTH}").json()
     assert d["latest_statement_month"] == MONTH
+
+
+def test_new_cms_charges_its_fee_after_tax_unless_told_otherwise(founder):
+    # Founders: every CMS takes its fee on the earnings left after tax.
+    r = founder.post("/api/cms-partners", json={"name": "Giri CMS", "platform": "youtube"})
+    assert r.status_code == 201 and r.json()["fee_after_tax"] is True
+    r = founder.post(
+        "/api/cms-partners",
+        json={"name": "Other CMS", "platform": "youtube", "fee_after_tax": False},
+    )
+    assert r.json()["fee_after_tax"] is False

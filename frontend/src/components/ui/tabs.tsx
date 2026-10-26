@@ -22,7 +22,7 @@ export function Tabs<K extends string>({
   onChange: (key: K) => void;
 }) {
   return (
-    <div role="tablist" className="flex gap-1 overflow-x-auto border-b">
+    <div role="tablist" className="flex gap-1 overflow-x-auto border-b [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       {tabs.map((t) => (
         <button
           key={t.key}

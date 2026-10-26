@@ -22,8 +22,9 @@ class CmsIn(BaseModel):
     platform: Platform
     notes: str | None = Field(default=None, max_length=5000)
     is_active: bool = True
-    # The CMS takes its commission after the tax it withholds (e.g. US tax).
-    fee_after_tax: bool = False
+    # The CMS takes its commission after the tax it withholds (e.g. US tax). Founders' answer:
+    # every CMS does, so new ones start with it on.
+    fee_after_tax: bool = True
 
     @field_validator("name")
     @classmethod
@@ -73,6 +74,8 @@ class ChannelIn(BaseModel):
     cms_partner_id: uuid.UUID | None = None
     status: ChannelStatus = "active"
     notes: str | None = Field(default=None, max_length=5000)
+    # A deal partner's own channel (its earnings are paid to the partner).
+    partner_id: uuid.UUID | None = None
 
     @field_validator("name", "external_id")
     @classmethod
@@ -133,6 +136,7 @@ class ChannelListItem(BaseModel):
     status: ChannelStatus
     cms_partner_id: uuid.UUID | None
     cms_name: str | None
+    partner: PersonRef | None = None
     slots: list[ChannelSlotRef]
     manager: PersonRef | None
     team_lead: PersonRef | None
@@ -198,6 +202,7 @@ class ImportLineOut(BaseModel):
     platform: str
     cms: str | None
     manager: str | None
+    partner: str | None = None
     status: str
     result: Literal["new", "exists", "duplicate", "error"]
     notes: list[str]

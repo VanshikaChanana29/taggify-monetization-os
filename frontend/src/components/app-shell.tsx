@@ -6,6 +6,7 @@ import {
   Building2,
   ClipboardCheck,
   Crown,
+  HandCoins,
   Handshake,
   History,
   Landmark,
@@ -46,7 +47,20 @@ const COMPANY_NAV: NavGroup[] = [
   },
   {
     title: "Money",
-    items: [{ label: "CMS & Finance", icon: Landmark, href: "/finance", hint: "CMS partners & their slabs, revenue, settlement, cash, incentives, month close" }],
+    items: [
+      {
+        label: "CMS & Finance",
+        icon: Landmark,
+        href: "/finance",
+        hint: "CMS partners & their slabs, revenue, settlement, cash, incentives, month close",
+      },
+      {
+        label: "Deal partners",
+        icon: HandCoins,
+        href: "/partners",
+        hint: "People who share a licence (e.g. Vanshika 50%): their channels, share and payments",
+      },
+    ],
   },
   {
     title: "Operations",
@@ -82,6 +96,7 @@ const TITLES: Record<string, string> = {
   "/cms-partners": "CMS partners",
   "/people": "People",
   "/finance": "CMS & Finance",
+  "/partners": "Deal partners",
   "/settings/users": "Users",
   "/settings/roles": "Roles",
   "/settings/activity": "Activity",
@@ -123,9 +138,7 @@ function ModeSwitch({ mode }: { mode: Mode }) {
           onClick={() => router.push(tab.href)}
           className={cn(
             "flex flex-1 items-center justify-center gap-2 rounded-lg py-2 text-sm font-medium transition-colors",
-            mode === tab.mode
-              ? "bg-card text-primary shadow-sm"
-              : "text-muted-foreground hover:text-foreground",
+            mode === tab.mode ? "bg-card text-primary shadow-sm" : "text-muted-foreground hover:text-foreground",
           )}
         >
           <tab.icon className="h-4 w-4" />
@@ -157,9 +170,7 @@ function CompanyTabs({ me, onSwitch }: { me: Me; onSwitch: (id: string) => void 
             }}
             className={cn(
               "flex items-center gap-2 rounded-lg px-4 py-1.5 text-sm font-semibold transition-colors",
-              active
-                ? "bg-primary text-primary-foreground shadow-sm"
-                : "text-muted-foreground hover:bg-card hover:text-foreground",
+              active ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:bg-card hover:text-foreground",
               pending === org.id && "opacity-60",
             )}
           >
@@ -178,8 +189,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const mode = modeFor(me, pathname);
   const nav = mode === "admin" ? ADMIN_NAV : COMPANY_NAV;
   const blocked = guard(me, pathname);
-  const subtitle =
-    mode === "admin" ? "Admin workspace" : `${me.organization?.name ?? ""} workspace`;
+  const subtitle = mode === "admin" ? "Admin workspace" : `${me.organization?.name ?? ""} workspace`;
 
   return (
     <div className="flex min-h-screen bg-background">
@@ -197,8 +207,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   <p className="px-4 pb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">{group.title}</p>
                 )}
                 {group.items.map((item) => {
-                  const active =
-                    item.href === pathname || (item.href !== "/" && pathname.startsWith(`${item.href}/`));
+                  const active = item.href === pathname || (item.href !== "/" && pathname.startsWith(`${item.href}/`));
                   return item.href ? (
                     <Link
                       key={item.label}
@@ -206,9 +215,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                       title={item.hint}
                       className={cn(
                         "flex items-center gap-3 rounded-xl px-4 py-2.5 text-[15px] font-medium transition-colors",
-                        active
-                          ? "bg-primary text-primary-foreground shadow-md shadow-primary/20"
-                          : "text-sidebar-foreground hover:bg-sidebar-accent",
+                        active ? "bg-primary text-primary-foreground shadow-md shadow-primary/20" : "text-sidebar-foreground hover:bg-sidebar-accent",
                       )}
                     >
                       <item.icon className="h-5 w-5" />
@@ -232,9 +239,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     >
                       <item.icon className="h-5 w-5" />
                       {item.label}
-                      <span className="ml-auto rounded-md bg-muted px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide">
-                        Soon
-                      </span>
+                      <span className="ml-auto rounded-md bg-muted px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide">Soon</span>
                     </span>
                   );
                 })}
@@ -264,13 +269,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="sticky top-0 z-10 flex h-20 items-center justify-between gap-4 border-b bg-card/90 px-6 backdrop-blur lg:px-10">
-          <h2 className="text-xl font-semibold">
-            {TITLES[pathname] ?? TITLES[`/${pathname.split("/")[1]}`] ?? ""}
-          </h2>
+          <h2 className="text-xl font-semibold">{TITLES[pathname] ?? TITLES[`/${pathname.split("/")[1]}`] ?? ""}</h2>
           <div className="flex items-center gap-3">
-            {me.organizations.length > 1 && (
-              <CompanyTabs me={me} onSwitch={switchOrganization} />
-            )}
+            {me.organizations.length > 1 && <CompanyTabs me={me} onSwitch={switchOrganization} />}
             <ClockChip />
             <ThemeToggle />
             {me.user.is_superadmin && (
@@ -281,16 +282,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             )}
             <div className="hidden text-right sm:block">
               <p className="text-sm font-semibold">{me.user.full_name}</p>
-              <p className="text-xs text-muted-foreground">
-                {me.organization?.name ?? "All companies"}
-              </p>
+              <p className="text-xs text-muted-foreground">{me.organization?.name ?? "All companies"}</p>
             </div>
             <UserAvatar name={me.user.full_name} square />
           </div>
         </header>
-        <main className="flex-1 px-6 py-8 lg:px-10">
-          {blocked ? <p className="text-muted-foreground">{blocked}</p> : children}
-        </main>
+        <main className="flex-1 px-6 py-8 lg:px-10">{blocked ? <p className="text-muted-foreground">{blocked}</p> : children}</main>
       </div>
     </div>
   );

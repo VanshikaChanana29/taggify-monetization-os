@@ -17,7 +17,7 @@ from datetime import date, datetime
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import Channel, CmsPartner, Employee, Organization
+from app.models import Channel, CmsPartner, DealPartner, Employee, Organization
 from app.services.assignments import AssignmentError, set_manager
 from app.services.cms_sheet import Table, _norm, _text
 from app.services.deals import company_today
@@ -50,6 +50,7 @@ FIELDS: dict[str, tuple[str, ...]] = {
     "status": ("status",),
     "url": ("link", "url", "channel link", "channel url"),
     "notes": ("notes", "remarks", "comment", "comments"),
+    "partner": ("partner", "deal partner", "owned by", "partner name"),
 }
 
 TEMPLATE_HEADERS = [
@@ -87,6 +88,7 @@ class ImportLine:
     platform: str
     cms: str | None = None
     manager: str | None = None
+    partner: str | None = None
     status: str = "active"
     result: str = "new"  # new | exists | duplicate | error
     notes: list[str] = field(default_factory=list)
@@ -154,6 +156,10 @@ def import_channels(db: Session, org: Organization, table: Table, *, commit: boo
     if missing:
         return ImportResult([], missing)
 
+    partners_by_name = {
+        p.name.lower(): p
+        for p in db.scalars(select(DealPartner).where(DealPartner.organization_id == org.id))
+    }
     cms_by_name = {
         c.name.lower(): c
         for c in db.scalars(select(CmsPartner).where(CmsPartner.organization_id == org.id))
@@ -256,6 +262,17 @@ def import_channels(db: Session, org: Organization, table: Table, *, commit: boo
                 manager = matches[0]
                 row.manager = manager.full_name
 
+        partner = None
+        partner_name = cell(cells, "partner")
+        if partner_name:
+            partner = partners_by_name.get(partner_name.lower())
+            if partner is None:
+                row.notes.append(
+                    f"Partner “{partner_name}” is not in the tool — added as a Taggify channel."
+                )
+            else:
+                row.partner = partner.name
+
         url = cell(cells, "url") or None
         if url and not url.startswith(("http://", "https://")):
             url = None
@@ -271,6 +288,7 @@ def import_channels(db: Session, org: Organization, table: Table, *, commit: boo
             external_id=external_id[:100],
             url=url,
             cms_partner_id=cms.id if cms else None,
+            partner_id=partner.id if partner else None,
             status=row.status,
             notes=notes,
         )

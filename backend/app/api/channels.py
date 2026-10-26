@@ -15,6 +15,7 @@ from app.models import (
     ChannelManagerAssignment,
     CmsPartner,
     ContentDeal,
+    DealPartner,
     DealSlot,
     Employee,
     SlotAssignment,
@@ -45,7 +46,16 @@ from app.services.teams import team_leads_for
 
 router = APIRouter(prefix="/channels", tags=["channels"])
 
-TRACKED = ("platform", "name", "external_id", "url", "cms_partner_id", "status", "notes")
+TRACKED = (
+    "platform",
+    "name",
+    "external_id",
+    "url",
+    "cms_partner_id",
+    "status",
+    "notes",
+    "partner_id",
+)
 
 
 def _person(employee: Employee | None) -> PersonRef | None:
@@ -78,6 +88,16 @@ def channel_items(db: Session, channels: list[Channel]) -> list[ChannelListItem]
             )
     managers = open_managers(db, ids)
     leads = team_leads_for(db, {m.employee_id for m in managers.values()})
+    partner_ids = {c.partner_id for c in channels if c.partner_id}
+    partners = (
+        dict(
+            db.execute(
+                select(DealPartner.id, DealPartner.name).where(DealPartner.id.in_(partner_ids))
+            ).all()
+        )
+        if partner_ids
+        else {}
+    )
     items = []
     for c in channels:
         m = managers.get(c.id)
@@ -91,6 +111,9 @@ def channel_items(db: Session, channels: list[Channel]) -> list[ChannelListItem]
                 status=c.status,  # type: ignore[arg-type]
                 cms_partner_id=c.cms_partner_id,
                 cms_name=c.cms_partner.name if c.cms_partner else None,
+                partner=PersonRef(id=c.partner_id, name=partners[c.partner_id])
+                if c.partner_id
+                else None,
                 slots=slots[c.id],
                 manager=_person(m.employee) if m else None,
                 team_lead=_person(leads.get(m.employee_id)) if m else None,
@@ -112,6 +135,12 @@ def get_channel(db: Session, ctx: AuthContext, channel_id: uuid.UUID) -> Channel
 
 
 def _check_refs(db: Session, ctx: AuthContext, body: ChannelIn, current: Channel | None) -> None:
+    if body.partner_id and not db.scalar(
+        select(DealPartner.id).where(
+            DealPartner.id == body.partner_id, DealPartner.organization_id == ctx.organization.id
+        )
+    ):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Partner not found")
     if body.cms_partner_id:
         cms = db.scalar(
             select(CmsPartner).where(
@@ -173,6 +202,7 @@ def list_channels(
     q: str | None = None,
     platform: Literal["youtube", "facebook"] | None = None,
     cms_partner_id: uuid.UUID | None = None,
+    partner_id: uuid.UUID | None = None,
     status_: Annotated[Literal["active", "inactive"] | None, Query(alias="status")] = None,
     deal_id: uuid.UUID | None = None,
     manager_id: uuid.UUID | None = None,
@@ -229,6 +259,8 @@ def list_channels(
         stmt = stmt.where(Channel.platform == platform)
     if cms_partner_id:
         stmt = stmt.where(Channel.cms_partner_id == cms_partner_id)
+    if partner_id:
+        stmt = stmt.where(Channel.partner_id == partner_id)
     if status_:
         stmt = stmt.where(Channel.status == status_)
     holds_slot = (

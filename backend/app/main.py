@@ -14,6 +14,7 @@ from app.api import (
     employees,
     finance,
     health,
+    partners,
     payouts,
     roles,
     teams,
@@ -41,6 +42,7 @@ api.include_router(teams.router)
 api.include_router(finance.router)
 api.include_router(cms_sheets.router)
 api.include_router(payouts.router)
+api.include_router(partners.router)
 api.include_router(dashboard.router)
 api.include_router(deal_assets.router)
 api.include_router(youtube.router)

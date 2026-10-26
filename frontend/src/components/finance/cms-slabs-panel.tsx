@@ -23,17 +23,24 @@ export function CmsSlabsPanel({
   cmsId,
   cmsName,
   channelCount,
-  openNew = false,
+  afterTax = false,
+  openSignal = 0,
   onChanged,
 }: {
   cmsId: string;
   cmsName: string;
   channelCount: number;
-  openNew?: boolean;
+  /** The CMS takes its fee on earnings after tax. */
+  afterTax?: boolean;
+  /** Bump to open the add / change slabs popup. */
+  openSignal?: number;
   onChanged?: () => void;
 }) {
   const [schedules, setSchedules] = useState<FeeSchedule[] | null>(null);
-  const [editing, setEditing] = useState(openNew);
+  const [editing, setEditing] = useState(openSignal > 0);
+  useEffect(() => {
+    if (openSignal > 0) setEditing(true);
+  }, [openSignal]);
   const [sample, setSample] = useState("25000");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -100,7 +107,7 @@ export function CmsSlabsPanel({
                   </label>
                   <Input id={`sample-${cmsId}`} className="w-36" type="number" min="0" value={sample} onChange={(e) => setSample(e.target.value)} />
                 </div>
-                <SlabExample slabs={current} gross={Number(sample) || 0} name={cmsName} />
+                <SlabExample slabs={current} gross={Number(sample) || 0} name={cmsName} afterTax={afterTax} />
               </div>
             </div>
           </div>
@@ -161,6 +168,7 @@ export function CmsSlabsPanel({
           cmsName={cmsName}
           start={current}
           existing={schedules}
+          afterTax={afterTax}
           onSaved={(m) => {
             setNotice(m);
             load();

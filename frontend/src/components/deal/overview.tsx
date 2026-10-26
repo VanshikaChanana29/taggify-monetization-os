@@ -11,7 +11,7 @@ import { money } from "@/lib/finance";
 import type { Deal, DealEconomics, Platform } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-export type DealTab = "overview" | "slots" | "payments" | "profitability" | "episodes" | "documents" | "history";
+export type DealTab = "overview" | "slots" | "partners" | "payments" | "profitability" | "episodes" | "documents" | "history";
 
 type Todo = { tone: "danger" | "warning" | "info"; text: string; tab: DealTab };
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { Plus, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { Dialog, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -53,7 +53,10 @@ export function slabSummary(s: Slabs): string {
 
 export const TYPE_TEXT: Record<TierType, { title: string; text: string }> = {
   whole: { title: "Whole amount at one rate", text: "The month's total decides the slab, and that one rate applies to all of it." },
-  marginal: { title: "Each part at its own rate", text: "Like income-tax slabs: the first part at the first rate, the next part at the next rate, and so on." },
+  marginal: {
+    title: "Each part at its own rate",
+    text: "Like income-tax slabs: the first part at the first rate, the next part at the next rate, and so on.",
+  },
 };
 
 /** The slabs as a ladder: one row per band, the example month's band highlighted. */
@@ -85,7 +88,7 @@ export function SlabLadder({ slabs, example }: { slabs: Slabs; example?: number 
 }
 
 /** "If the CMS earns $25,000 in a month …" worked out in words. */
-export function SlabExample({ slabs, gross, name }: { slabs: Slabs; gross: number; name: string }) {
+export function SlabExample({ slabs, gross, name, afterTax = false }: { slabs: Slabs; gross: number; name: string; afterTax?: boolean }) {
   const cur = slabs.currency;
   const fee = feeFor(gross, slabs.tier_type, slabs.tiers);
   const b = bands(slabs.tiers);
@@ -102,7 +105,7 @@ export function SlabExample({ slabs, gross, name }: { slabs: Slabs; gross: numbe
   return (
     <div className="rounded-xl bg-muted/50 p-4 text-sm">
       <p>
-        If {name} earns <b>{money(gross, cur)}</b> in a month, its fee is <b>{money(fee, cur)}</b>
+        If {name}&apos;s channels earn <b>{money(gross, cur)}</b> in a month{afterTax ? " after tax" : ""}, its fee is <b>{money(fee, cur)}</b>
         {slabs.tier_type === "whole" ? ` (${rate.toFixed(rate % 1 ? 1 : 0)}% on all of it)` : ` (${rate.toFixed(1)}% overall)`} and we get{" "}
         <b className="text-emerald-700 dark:text-emerald-400">{money(gross - fee, cur)}</b>.
       </p>
@@ -127,6 +130,7 @@ export function SlabsDialog({
   cmsName,
   start,
   existing = [],
+  afterTax = false,
   onSaved,
 }: {
   open: boolean;
@@ -136,9 +140,23 @@ export function SlabsDialog({
   start?: Slabs | null;
   /** Slabs already saved; picking one of their months replaces it. */
   existing?: { id: string; effective_from: string }[];
+  afterTax?: boolean;
   onSaved: (message: string) => void;
 }) {
   const [month, setMonth] = useState(thisMonth());
+  const [fromStart, setFromStart] = useState(false);
+  // A CMS's first slabs apply from the start: begin at its first month of earnings in the tool.
+  useEffect(() => {
+    if (!open || existing.length > 0) return;
+    api<{ items: { day: string }[] }>(`/revenue/facts?cms_partner_id=${cmsId}&sort=day&direction=asc&page_size=1`)
+      .then((r) => {
+        if (r.items[0]) {
+          setMonth(r.items[0].day.slice(0, 7));
+          setFromStart(true);
+        }
+      })
+      .catch(() => {});
+  }, [open, cmsId, existing.length]);
   const [type, setType] = useState<TierType>(start?.tier_type ?? "whole");
   const [currency, setCurrency] = useState(start?.currency ?? "USD");
   const [rows, setRows] = useState<Row[]>(
@@ -183,14 +201,24 @@ export function SlabsDialog({
   }
 
   return (
-    <Dialog open={open} onClose={onClose} wide title={start ? `Change ${cmsName}'s fee slabs` : `${cmsName}'s fee slabs`} description="Copy them from the CMS contract. The fee is worked out on the month's total earnings of all this CMS's channels together.">
+    <Dialog
+      open={open}
+      onClose={onClose}
+      wide
+      title={start ? `Change ${cmsName}'s fee slabs` : `${cmsName}'s fee slabs`}
+      description="Copy them from the CMS contract. The fee is worked out on the month's total earnings of all this CMS's channels together."
+    >
       <form onSubmit={save} className="space-y-6">
         <div className="grid gap-4 sm:grid-cols-[1fr_8rem]">
           <div className="space-y-1">
             <Label htmlFor="sl-month">Start from month *</Label>
             <Input id="sl-month" type="month" required value={month} onChange={(e) => setMonth(e.target.value)} />
             <p className={cn("text-xs", replacing ? "text-amber-700 dark:text-amber-400" : "text-muted-foreground")}>
-              {replacing ? `This replaces the slabs that start in ${formatMonth(month)}.` : "Earlier months keep their old slabs."}
+              {replacing
+                ? `This replaces the slabs that start in ${formatMonth(month)}.`
+                : fromStart && existing.length === 0
+                  ? `${cmsName}'s first month in the tool — the contract applies from the start.`
+                  : "Earlier months keep their old slabs."}
             </p>
           </div>
           <div className="space-y-1">
@@ -219,9 +247,26 @@ export function SlabsDialog({
                   {last ? (
                     <span className="text-sm text-muted-foreground">and above</span>
                   ) : (
-                    <Input aria-label={`Slab ${i + 1} up to`} type="number" min="0" step="0.01" required value={r.upto} onChange={(e) => set(i, { upto: e.target.value })} />
+                    <Input
+                      aria-label={`Slab ${i + 1} up to`}
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      required
+                      value={r.upto}
+                      onChange={(e) => set(i, { upto: e.target.value })}
+                    />
                   )}
-                  <Input aria-label={`Slab ${i + 1} fee %`} type="number" min="0" max="100" step="0.01" required value={r.rate} onChange={(e) => set(i, { rate: e.target.value })} />
+                  <Input
+                    aria-label={`Slab ${i + 1} fee %`}
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.01"
+                    required
+                    value={r.rate}
+                    onChange={(e) => set(i, { rate: e.target.value })}
+                  />
                   {rows.length > 1 ? (
                     <Button
                       type="button"
@@ -271,7 +316,10 @@ export function SlabsDialog({
                 type="button"
                 onClick={() => setType(t)}
                 aria-pressed={type === t}
-                className={cn("rounded-xl border-2 p-4 text-left transition-colors", type === t ? "border-primary bg-primary/5" : "border-border hover:border-primary/40")}
+                className={cn(
+                  "rounded-xl border-2 p-4 text-left transition-colors",
+                  type === t ? "border-primary bg-primary/5" : "border-border hover:border-primary/40",
+                )}
               >
                 <p className="font-semibold">{TYPE_TEXT[t].title}</p>
                 <p className="mt-1 text-xs text-muted-foreground">{TYPE_TEXT[t].text}</p>
@@ -289,7 +337,7 @@ export function SlabsDialog({
             <Label htmlFor="sl-sample">Try a month&apos;s earnings</Label>
             <Input id="sl-sample" className="w-36" type="number" min="0" value={sample} onChange={(e) => setSample(e.target.value)} />
           </div>
-          <SlabExample slabs={slabs} gross={Number(sample) || 0} name={cmsName} />
+          <SlabExample slabs={slabs} gross={Number(sample) || 0} name={cmsName} afterTax={afterTax} />
         </div>
 
         {(error || problem) && <p className="text-sm text-red-600 dark:text-red-400">{error ?? problem}</p>}

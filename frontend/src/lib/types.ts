@@ -224,6 +224,8 @@ export type ChannelListItem = {
   status: "active" | "inactive";
   cms_partner_id: string | null;
   cms_name: string | null;
+  /** Set when a deal partner (e.g. Vanshika) owns the channel. */
+  partner?: PersonRef | null;
   slots: ChannelSlotRef[];
   manager: PersonRef | null;
   team_lead: PersonRef | null;
@@ -824,3 +826,61 @@ export type ChannelRankRow = {
   subscribers_net: number | null;
   youtube_status: YouTubeStatus;
 };
+
+// ---- Deal partners ----------------------------------------------------------------------------
+
+export type DealPartner = {
+  id: string;
+  name: string;
+  email: string | null;
+  phone: string | null;
+  tds_pct: string | null;
+  notes: string | null;
+  is_active: boolean;
+  created_at: string;
+  deals: { deal_id: string; title: string; share_pct: string }[];
+  channel_count: number;
+  earned: string;
+  paid: string;
+  outstanding: string;
+  waiting: string;
+};
+
+export type PartnerMonth = {
+  month: string;
+  currency: string | null;
+  channels: number;
+  gross: string;
+  tax: string;
+  cms_fee: string;
+  share: string;
+  share_base: string | null;
+  tds: string | null;
+  to_pay: string | null;
+  paid: string;
+  tds_paid: string;
+  balance: string | null;
+  cms_paid: boolean;
+  status: "waiting_cms" | "due" | "part_paid" | "paid" | "needs_rate" | "needs_slabs";
+};
+
+export type PartnerDetail = {
+  partner: DealPartner;
+  base_currency: string;
+  months: PartnerMonth[];
+  deals: {
+    deal_id: string;
+    title: string;
+    owner: string;
+    share_pct: string;
+    licence_share: string | null;
+    contributed: string;
+    contribution_due: string | null;
+  }[];
+  channels: { id: string; name: string; platform: Platform; external_id: string; cms_name: string | null; status: string }[];
+  contributions: { id: string; deal_id: string; deal_title: string; amount: string; received_on: string; reference: string | null }[];
+  payouts: { id: string; month: string; amount: string; tds_amount: string; paid_on: string; reference: string | null }[];
+  warnings: string[];
+};
+
+export type DealPartnerShare = { partner_id: string; name: string; share_pct: string };

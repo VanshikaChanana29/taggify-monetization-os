@@ -7,6 +7,7 @@ import { Suspense, useCallback, useEffect, useState } from "react";
 
 import { DealActivity } from "@/components/deal/activity";
 import { type DealTab, DealOverview } from "@/components/deal/overview";
+import { DealPartners } from "@/components/deal/partners";
 import { DealPayments } from "@/components/deal/payments";
 import { DealProfitability } from "@/components/deal/profitability";
 import { DealSlots } from "@/components/deal/slots";
@@ -23,7 +24,7 @@ import { DEAL_STATUS_LABELS, DEAL_STATUS_TONES, DEAL_TYPE_LABELS, dealValue, epi
 import type { Deal, DealEconomics } from "@/lib/types";
 import { InlineLoader, PageLoader } from "@/components/loader";
 
-const TABS: DealTab[] = ["overview", "slots", "payments", "profitability", "episodes", "documents", "history"];
+const TABS: DealTab[] = ["overview", "slots", "partners", "payments", "profitability", "episodes", "documents", "history"];
 
 function Fact({ label, value, sub, info }: { label: string; value: React.ReactNode; sub?: string; info?: string }) {
   return (
@@ -116,6 +117,7 @@ function DealDetail() {
         tabs={[
           { key: "overview", label: "Overview" },
           { key: "slots", label: "Slots", count: deal.yt_slot_limit + deal.fb_slot_limit, alert: pending },
+          { key: "partners", label: "Partners" },
           { key: "payments", label: "Payments", count: economics?.installments.length, alert: overdue },
           { key: "profitability", label: "Profitability" },
           { key: "episodes", label: "Episodes", count: deal.episode_count },
@@ -129,6 +131,7 @@ function DealDetail() {
 
       {tab === "overview" && <DealOverview deal={deal} e={economics} go={go} />}
       {tab === "slots" && <DealSlots deal={deal} refreshKey={refreshKey} onChange={refresh} />}
+      {tab === "partners" && <DealPartners deal={deal} onChange={(m) => refresh(m)} />}
       {tab === "payments" && (economics ? <DealPayments deal={deal} e={economics} onChange={() => refresh()} /> : <InlineLoader />)}
       {tab === "profitability" &&
         (economics ? <DealProfitability deal={deal} e={economics} onChange={() => refresh()} /> : <InlineLoader />)}

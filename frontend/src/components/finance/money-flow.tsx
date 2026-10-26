@@ -19,19 +19,20 @@ export type FlowStep = {
 };
 
 /** Slide 10's formula as boxes: Gross − CMS fee = Net receivable − Cash ± Adjustments = Outstanding. */
-export function MoneyFlow({ steps }: { steps: FlowStep[] }) {
+export function MoneyFlow({ steps, compact = false }: { steps: FlowStep[]; compact?: boolean }) {
   return (
     <div className="flex flex-col items-stretch gap-2 lg:flex-row lg:items-center">
       {steps.map((s, i) => (
         <Fragment key={s.label}>
           {s.op && (
-            <span aria-hidden className="self-center text-2xl font-light text-muted-foreground lg:px-1">
+            <span aria-hidden className={cn("self-center font-light text-muted-foreground lg:px-1", compact ? "text-lg" : "text-2xl")}>
               {s.op}
             </span>
           )}
           <div
             className={cn(
-              "flex-1 rounded-2xl border p-4",
+              "flex-1 rounded-2xl border",
+              compact ? "px-3 py-2" : "p-4",
               (s.tone ?? "plain") === "plain" && "bg-card",
               s.tone === "minus" && "bg-muted/40",
               s.tone === "result" && "border-emerald-200 bg-emerald-50 dark:border-emerald-500/30 dark:bg-emerald-500/10",
@@ -43,8 +44,8 @@ export function MoneyFlow({ steps }: { steps: FlowStep[] }) {
               {s.label}
               {s.info && <InfoTip text={s.info} />}
             </p>
-            <p className={cn("mt-1 font-bold", i === steps.length - 1 ? "text-2xl" : "text-xl")}>{s.value}</p>
-            {s.sub && <p className="mt-0.5 text-xs text-muted-foreground">{s.sub}</p>}
+            <p className={cn("mt-1 font-bold", compact ? "text-lg" : i === steps.length - 1 ? "text-2xl" : "text-xl")}>{s.value}</p>
+            {s.sub && !compact && <p className="mt-0.5 text-xs text-muted-foreground">{s.sub}</p>}
           </div>
         </Fragment>
       ))}

@@ -9,6 +9,10 @@ effective rate for the month), the incentives paid on it, and the deal's operati
 
 A partnership has no rights cost: the partner gets their % of what is left after tax and
 the CMS fee, and our incentives and expenses come out of our part.
+
+Deal partners (e.g. Vanshika holding 50% of the Sony deal) pay their % of the licence fee
+and keep their own channels' earnings, so Taggify's rights cost is only its own part and
+the partner's channels are left out here.
     recovery %       = net contribution ÷ rights cost
 
 Installments only change what is still payable in cash — never the rights cost.
@@ -24,10 +28,12 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models import (
+    Channel,
     CmsPartner,
     ContentDeal,
     DealExpense,
     DealInstallment,
+    DealPartnerShare,
     DealSlot,
     Organization,
     RevenueFact,
@@ -78,9 +84,15 @@ def deal_economics(db: Session, org: Organization, deal: ContentDeal) -> Economi
 
     rights_cost = None
     # The rights cost is the licence fee, or for a hybrid deal the minimum guarantee.
+    partner_pct = db.scalar(
+        select(func.coalesce(func.sum(DealPartnerShare.share_pct), 0)).where(
+            DealPartnerShare.deal_id == deal.id
+        )
+    )
+    ours = (Decimal(100) - Decimal(partner_pct)) / 100
     if deal.deal_type in ("fixed_fee", "hybrid") and deal.fee_amount is not None:
         if deal.currency == base:
-            rights_cost = deal.fee_amount
+            rights_cost = money(deal.fee_amount * ours)
         else:
             rate = fx_rate(db, org, deal.term_start.replace(day=1), deal.currency)
             if rate is None:
@@ -89,14 +101,23 @@ def deal_economics(db: Session, org: Organization, deal: ContentDeal) -> Economi
                     "to value the licence fee."
                 )
             else:
-                rights_cost = money(deal.fee_amount * rate)
+                rights_cost = money(deal.fee_amount * rate * ours)
 
     # Every slot holding of this deal's slots, and of any other deal by the same channels.
     slot_ids = [s.id for s in deal.slots]
     held = db.scalars(
         select(SlotAssignment).where(SlotAssignment.slot_id.in_(slot_ids or [uuid.uuid4()]))
     ).all()
-    channel_ids = {a.channel_id for a in held}
+    # A partner's own channels earn for the partner, not for Taggify.
+    partner_channels = set(
+        db.scalars(
+            select(Channel.id).where(
+                Channel.id.in_({a.channel_id for a in held} or {uuid.uuid4()}),
+                Channel.partner_id.is_not(None),
+            )
+        )
+    )
+    channel_ids = {a.channel_id for a in held} - partner_channels
     all_holdings: dict[uuid.UUID, list[tuple[SlotAssignment, uuid.UUID]]] = defaultdict(list)
     if channel_ids:
         for a, deal_id in db.execute(

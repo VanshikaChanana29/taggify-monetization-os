@@ -3,6 +3,7 @@
 import uuid
 
 from fastapi import APIRouter, HTTPException, Request, status
+from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
@@ -19,8 +20,10 @@ from app.schemas.admin import (
     CreateOrganizationRequest,
     ResetPasswordRequest,
 )
+from app.services import file_store
 from app.services.audit import record_audit
 from app.services.auth import normalize_email, revoke_sessions
+from app.services.company_delete import delete_company, impact
 from app.services.teams import seed_default_roles
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -129,6 +132,59 @@ def create_organization(
         active_users=0,
         created_at=org.created_at,
     )
+
+
+class DeleteCompanyIn(BaseModel):
+    confirm_name: str
+
+
+@router.get("/organizations/{organization_id}/delete-check")
+def delete_check(organization_id: uuid.UUID, ctx: SuperAdmin, db: DbSession) -> dict:
+    """What deleting the company would remove, shown in the warning before it happens."""
+    org = _get_org(db, organization_id)
+    return {
+        "name": org.name,
+        "is_current": ctx.organization is not None and ctx.organization.id == org.id,
+        "counts": impact(db, org),
+    }
+
+
+@router.delete("/organizations/{organization_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_organization(
+    organization_id: uuid.UUID,
+    body: DeleteCompanyIn,
+    ctx: SuperAdmin,
+    request: Request,
+    db: DbSession,
+) -> None:
+    """Delete a company and all of its data. Cannot be undone."""
+    org = _get_org(db, organization_id)
+    if ctx.organization is not None and ctx.organization.id == org.id:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "You are working in this company. Switch to another company first.",
+        )
+    if body.confirm_name.strip() != org.name:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            f"Type the company name exactly ({org.name}) to delete it.",
+        )
+    counts = impact(db, org)
+    name, slug = org.name, org.slug
+    keys = delete_company(db, org)
+    record_audit(
+        db,
+        "org.deleted",
+        organization_id=None,
+        user_id=ctx.user.id,
+        entity_type="organization",
+        entity_id=organization_id,
+        details={"name": name, "slug": slug, "removed": counts},
+        ip=client_ip(request),
+    )
+    db.commit()
+    for key in keys:
+        file_store.remove(key)
 
 
 # ---- Users ----------------------------------------------------------------------------

@@ -1,7 +1,8 @@
 "use client";
 
 import { bands, slabSummary } from "@/components/fee-slabs";
-import { Layers, Pencil, Plus } from "lucide-react";
+import { ArrowRight, ChevronRight, Pencil, Plus } from "lucide-react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
 import { EmptyRow, SortableHead, TablePagination } from "@/components/data-table";
@@ -28,13 +29,17 @@ const SORT_BY = {
 };
 
 type Form = { name: string; platform: Platform | ""; notes: string; is_active: boolean; fee_after_tax: boolean };
-const EMPTY: Form = { name: "", platform: "", notes: "", is_active: true, fee_after_tax: false };
+const EMPTY: Form = { name: "", platform: "", notes: "", is_active: true, fee_after_tax: true };
 
 const compactMoney = (v: number, cur: string) =>
   `${cur === "INR" ? "₹" : "$"}${new Intl.NumberFormat("en-IN", { notation: "compact", maximumFractionDigits: 1 }).format(v)}`;
 
 /** Every CMS partner with its contract slabs; a row opens that CMS's page in CMS & Finance. */
 export function CmsPartnersList() {
+  const router = useRouter();
+  const month = useSearchParams().get("month");
+  // Open a CMS on the month the list was showing (or the default month).
+  const openHref = (id: string, extra = "") => `/finance/${id}${month ? `?month=${month}${extra ? `&${extra}` : ""}` : extra ? `?${extra}` : ""}`;
   const organization = useOrganization();
   const [rows, setRows] = useState<CmsPartner[]>([]);
   const [editing, setEditing] = useState<string | null>(null);
@@ -93,8 +98,8 @@ export function CmsPartnersList() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="max-w-3xl text-sm text-muted-foreground">
-          The CMS networks (YouTube) and business portfolios (Facebook) {organization.name}&apos;s channels earn through. Open one to see its contract
-          slabs, statements, bank receipts and what it still owes.
+          The CMS networks (YouTube) and business portfolios (Facebook) {organization.name}&apos;s channels earn through.{" "}
+          <b className="text-foreground">Click a CMS</b> to see its contract slabs, statements, bank receipts and what it still owes.
         </p>
         <Button size="lg" onClick={() => start(null)}>
           <Plus />
@@ -142,7 +147,8 @@ export function CmsPartnersList() {
             <span>
               Fee is charged after tax
               <span className="block text-xs text-muted-foreground">
-                Tick if this CMS first deducts tax (e.g. 15% US tax) and then takes its fee on what is left.
+                The CMS first deducts tax (e.g. US tax) and then takes its fee on what is left. On by default — untick only if this CMS&apos;s
+                contract says the fee is on the amount before tax.
               </span>
             </span>
           </label>
@@ -209,11 +215,16 @@ export function CmsPartnersList() {
           </TableHeader>
           <TableBody>
             {table.pageRows.map((r, idx) => (
-              <TableRow key={r.id}>
+              <TableRow key={r.id} className="group cursor-pointer hover:bg-primary/5" onClick={() => router.push(openHref(r.id))}>
                 <TableCell className="w-14 tabular-nums text-muted-foreground">{(table.page - 1) * table.pageSize + idx + 1}</TableCell>
                 <TableCell>
-                  <a href={`/finance/${r.id}?tab=slabs`} className="font-semibold hover:text-primary">
+                  <a
+                    href={openHref(r.id)}
+                    onClick={(e) => e.stopPropagation()}
+                    className="inline-flex items-center gap-1 font-semibold text-primary underline-offset-4 group-hover:underline"
+                  >
                     {r.name}
+                    <ChevronRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
                   </a>
                   {r.notes && <p className="text-xs text-muted-foreground">{r.notes}</p>}
                   {r.fee_after_tax && <p className="text-xs text-muted-foreground">Fee after tax</p>}
@@ -224,18 +235,25 @@ export function CmsPartnersList() {
                 <TableCell className="font-semibold">{r.channel_count}</TableCell>
                 <TableCell>
                   {r.slabs ? (
-                    <a href={`/finance/${r.id}?tab=slabs`} className="group block">
-                      <span className="font-semibold group-hover:text-primary">{slabSummary(r.slabs)}</span>
+                    <a href={openHref(r.id, "tab=slabs")} onClick={(e) => e.stopPropagation()} className="block hover:text-primary">
+                      <span className="font-semibold">{slabSummary(r.slabs)}</span>
                       <span className="block text-xs text-muted-foreground">
                         {bands(r.slabs.tiers)
-                          .map((b, i, all) => (all.length === 1 ? "any amount" : b.to === null ? `${compactMoney(b.from, r.slabs!.currency)}+` : `≤${compactMoney(b.to, r.slabs!.currency)}`))
+                          .map((b, i, all) =>
+                            all.length === 1
+                              ? "any amount"
+                              : b.to === null
+                                ? `${compactMoney(b.from, r.slabs!.currency)}+`
+                                : `≤${compactMoney(b.to, r.slabs!.currency)}`,
+                          )
                           .join(" · ")}
                         {r.slabs.tier_type === "marginal" ? " · each part at its rate" : ""}
                       </span>
                     </a>
                   ) : (
                     <a
-                      href={`/finance/${r.id}?tab=slabs&slabs=new`}
+                      href={openHref(r.id, "tab=slabs&slabs=new")}
+                      onClick={(e) => e.stopPropagation()}
                       className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-800 hover:underline dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-300"
                     >
                       <Plus className="h-3 w-3" /> Add slabs
@@ -246,14 +264,14 @@ export function CmsPartnersList() {
                   <StatusPill active={r.is_active} />
                 </TableCell>
                 <TableCell className="text-right">
-                  <div className="flex justify-end gap-2">
-                    <Button variant="outline" size="sm" asChild>
-                      <a href={`/finance/${r.id}?tab=slabs`}>
-                        <Layers />
-                        {r.slabs ? "Slabs" : "Add slabs"}
+                  <div className="flex justify-end gap-2" onClick={(e) => e.stopPropagation()}>
+                    <Button size="sm" asChild>
+                      <a href={openHref(r.id)}>
+                        Open
+                        <ArrowRight />
                       </a>
                     </Button>
-                    <Button variant="outline" size="icon" aria-label={`Edit ${r.name}`} onClick={() => start(r)}>
+                    <Button variant="outline" size="icon" aria-label={`Edit ${r.name}`} title="Edit name and settings" onClick={() => start(r)}>
                       <Pencil />
                     </Button>
                   </div>

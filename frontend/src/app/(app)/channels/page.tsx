@@ -22,7 +22,7 @@ import { api } from "@/lib/api";
 import { DEAL_STATUS_TONES } from "@/lib/deals";
 import { money } from "@/lib/finance";
 import { PLATFORM_LABELS, PLATFORM_TONES } from "@/lib/people";
-import type { ChannelListItem, CmsPartner, DealListItem, Employee, Page, Team } from "@/lib/types";
+import type { ChannelListItem, CmsPartner, DealListItem, DealPartner, Employee, Page, Team } from "@/lib/types";
 import type { SortState } from "@/lib/use-client-table";
 import { isoDay, shortDate, yesterday, YT_STATUS } from "@/lib/youtube";
 import { LoadingOverlay, PageLoader } from "@/components/loader";
@@ -31,6 +31,7 @@ type SortKey = "name" | "platform" | "created" | "revenue" | "views" | "rpm" | "
 type Filters = {
   platform: string;
   cms: string;
+  partner: string;
   deal: string;
   manager: string;
   team: string;
@@ -41,6 +42,7 @@ type Filters = {
 const NO_FILTERS: Filters = {
   platform: "",
   cms: "",
+  partner: "",
   deal: "",
   manager: "",
   team: "",
@@ -88,6 +90,7 @@ function ChannelsPage() {
   const [deals, setDeals] = useState<DealListItem[]>([]);
   const [people, setPeople] = useState<Employee[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
+  const [partners, setPartners] = useState<DealPartner[]>([]);
   const [filters, setFilters] = useState<Filters>(() => ({
     ...NO_FILTERS,
     manager: urlParams.get("managed") === "no" ? "none" : urlParams.get("managed") === "yes" ? "any" : "",
@@ -95,6 +98,7 @@ function ChannelsPage() {
     status: urlParams.get("status") ?? "",
     youtube: urlParams.get("youtube") ?? "",
     cms: urlParams.get("cms") ?? "",
+    partner: urlParams.get("partner") ?? "",
     team: urlParams.get("team") ?? "",
     deal: urlParams.get("deal") ?? "",
   }));
@@ -124,6 +128,9 @@ function ChannelsPage() {
   useEffect(() => {
     api<CmsPartner[]>("/cms-partners")
       .then(setCmsList)
+      .catch(() => {});
+    api<DealPartner[]>("/partners")
+      .then(setPartners)
       .catch(() => {});
     api<Page<DealListItem>>("/deals?page_size=100&sort=title")
       .then((p) => setDeals(p.items))
@@ -160,6 +167,7 @@ function ChannelsPage() {
     if (q.trim()) params.set("q", q.trim());
     if (filters.platform) params.set("platform", filters.platform);
     if (filters.cms) params.set("cms_partner_id", filters.cms);
+    if (filters.partner) params.set("partner_id", filters.partner);
     if (filters.deal) params.set("deal_id", filters.deal);
     if (filters.team) params.set("team_id", filters.team);
     if (filters.youtube) params.set("youtube", filters.youtube);
@@ -201,6 +209,16 @@ function ChannelsPage() {
       options: [["", "All managers"], ["none", "No manager"], ["any", "Has a manager"], ...people.map((p): [string, string] => [p.id, p.full_name])],
     },
     { group: "Business", key: "cms", label: "CMS", options: [["", "All CMS"], ...cmsList.map((c): [string, string] => [c.id, c.name])] },
+    ...(partners.length
+      ? [
+          {
+            group: "Business",
+            key: "partner",
+            label: "Owned by partner",
+            options: [["", "Anyone"], ...partners.map((p): [string, string] => [p.id, p.name])] as [string, string][],
+          },
+        ]
+      : []),
     { key: "deal", label: "Deal", options: [["", "All deals"], ...deals.map((d): [string, string] => [d.id, d.title])] },
     {
       key: "slot",
@@ -385,6 +403,11 @@ function ChannelsPage() {
                     <div className="mt-1 flex flex-wrap items-center gap-1.5">
                       <Pill tone={PLATFORM_TONES[c.platform]}>{PLATFORM_LABELS[c.platform]}</Pill>
                       {c.cms_name && <span className="text-xs text-muted-foreground">{c.cms_name}</span>}
+                      {c.partner && (
+                        <Pill tone="border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-500/30 dark:bg-violet-500/10 dark:text-violet-300">
+                          Partner: {c.partner.name}
+                        </Pill>
+                      )}
                       {c.status === "inactive" && <Pill tone={DEAL_STATUS_TONES.expired}>Inactive</Pill>}
                     </div>
                   </TableCell>
