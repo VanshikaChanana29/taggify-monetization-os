@@ -1,6 +1,6 @@
 "use client";
 
-import { Crown, KeyRound, UserCheck, UserPlus, Users } from "lucide-react";
+import { Crown, KeyRound, Trash2, UserCheck, UserPlus, Users } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
 import { EmptyRow, SortableHead, TablePagination } from "@/components/data-table";
@@ -53,6 +53,25 @@ export default function AllUsersPage() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [savingPassword, setSavingPassword] = useState(false);
+  const [deleting, setDeleting] = useState<AdminUser | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deletingBusy, setDeletingBusy] = useState(false);
+
+  async function confirmDelete() {
+    if (!deleting) return;
+    setDeletingBusy(true);
+    setDeleteError(null);
+    try {
+      await api(`/admin/users/${deleting.id}`, { method: "DELETE" });
+      setNotice(`${deleting.full_name}'s login deleted.`);
+      setDeleting(null);
+      load();
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : "Could not delete");
+    } finally {
+      setDeletingBusy(false);
+    }
+  }
 
   const load = useCallback(() => {
     Promise.all([api<AdminUser[]>("/admin/users"), api<AdminOrganization[]>("/admin/organizations")])
@@ -413,16 +432,31 @@ export default function AllUsersPage() {
                   <TableCell className="text-muted-foreground">{formatDateTime(u.last_login_at)}</TableCell>
                   <TableCell className="text-right">
                     {!isMe && (
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        title="Change password"
-                        aria-label={`Change password for ${u.full_name}`}
-                        className="border-amber-200 text-amber-600 hover:bg-amber-50 dark:border-amber-500/30"
-                        onClick={() => openPasswordDialog(u)}
-                      >
-                        <KeyRound />
-                      </Button>
+                      <span className="inline-flex gap-2">
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          title="Change password"
+                          aria-label={`Change password for ${u.full_name}`}
+                          className="border-amber-200 text-amber-600 hover:bg-amber-50 dark:border-amber-500/30"
+                          onClick={() => openPasswordDialog(u)}
+                        >
+                          <KeyRound />
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          title="Delete user"
+                          aria-label={`Delete ${u.full_name}`}
+                          className="border-red-200 text-red-600 hover:bg-red-50 dark:border-red-500/30"
+                          onClick={() => {
+                            setDeleteError(null);
+                            setDeleting(u);
+                          }}
+                        >
+                          <Trash2 />
+                        </Button>
+                      </span>
                     )}
                   </TableCell>
                 </TableRow>
@@ -440,6 +474,29 @@ export default function AllUsersPage() {
           noun="users"
         />
       </div>
+
+      <Dialog
+        open={deleting !== null}
+        onClose={() => setDeleting(null)}
+        title={deleting ? `Delete ${deleting.full_name}?` : "Delete user"}
+        description="Their login is removed for good and they are signed out. This cannot be undone."
+      >
+        <div className="space-y-4 text-sm">
+          <p className="text-muted-foreground">
+            {deleting?.email} loses access to every company. What they did stays — deals, uploads and the activity log keep their entries, just
+            without their name. To only stop access to one company, switch that company off in the Companies column instead.
+          </p>
+          {deleteError && <Notice kind="error">{deleteError}</Notice>}
+        </div>
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={() => setDeleting(null)}>
+            Cancel
+          </Button>
+          <Button type="button" variant="destructive" onClick={confirmDelete} disabled={deletingBusy}>
+            {deletingBusy ? "Deleting…" : "Delete user"}
+          </Button>
+        </DialogFooter>
+      </Dialog>
     </div>
   );
 }

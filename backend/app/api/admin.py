@@ -4,6 +4,7 @@ import uuid
 
 from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel
+from sqlalchemy import delete as sa_delete
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session, selectinload
 
@@ -355,4 +356,40 @@ def reset_password(
             details={"email": user.email},
             ip=client_ip(request),
         )
+    db.commit()
+
+
+@router.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_user(user_id: uuid.UUID, ctx: SuperAdmin, request: Request, db: DbSession) -> None:
+    """Delete a login for good (super admin only). What they did stays in the books: deals,
+    uploads and the activity log keep their entries, without the name of who did it."""
+    if user_id == ctx.user.id:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "You cannot delete your own login")
+    user = _get_user(db, user_id)
+    if user.is_superadmin:
+        others = db.scalar(
+            select(func.count())
+            .select_from(User)
+            .where(User.is_superadmin.is_(True), User.id != user.id)
+        )
+        if not others:
+            raise HTTPException(status.HTTP_409_CONFLICT, "The last super admin cannot be deleted")
+    org_ids = [m.organization_id for m in user.memberships]
+    revoke_sessions(db, user.id)
+    db.execute(sa_delete(UserSession).where(UserSession.user_id == user.id))
+    db.execute(sa_delete(Membership).where(Membership.user_id == user.id))
+    # One entry per company, so each company's activity log shows it.
+    for org_id in org_ids or [None]:
+        record_audit(
+            db,
+            "user.deleted",
+            organization_id=org_id,
+            user_id=ctx.user.id,
+            entity_type="user",
+            entity_id=user.id,
+            details={"email": user.email, "name": user.full_name},
+            ip=client_ip(request),
+        )
+    db.expire(user, ["memberships"])
+    db.delete(user)
     db.commit()

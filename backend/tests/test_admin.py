@@ -181,3 +181,32 @@ def test_admin_actions_show_in_company_activity(make_superadmin, make_founder, l
     assert ("user.password_reset", "Platform Admin") in [
         (e["action"], e["user_name"]) for e in logs
     ]
+
+
+def test_superadmin_deletes_a_login_but_not_their_own_or_the_last_admin(
+    make_superadmin, make_founder, login
+):
+    admin_user = make_superadmin()
+    founder_user = make_founder("gone@taggify.in")
+    founder = login("gone@taggify.in")
+    admin = login("admin@taggify.in")
+
+    assert admin.delete(f"/api/admin/users/{founder_user.id}").status_code == 204
+    emails = [u["email"] for u in admin.get("/api/admin/users").json()]
+    assert "gone@taggify.in" not in emails
+    # Their session is gone and they cannot log in again.
+    assert founder.get("/api/auth/me").status_code == 401
+    r = founder.post("/api/auth/login", json={"email": "gone@taggify.in", "password": "x" * 12})
+    assert r.status_code in (400, 401)
+
+    assert admin.delete(f"/api/admin/users/{admin_user.id}").status_code == 400  # own login
+    make_superadmin("second@taggify.in", "Second")
+    second = login("second@taggify.in")
+    assert second.delete(f"/api/admin/users/{admin_user.id}").status_code == 204
+    # Now "second" is the last super admin; nobody can remove them.
+
+
+def test_founder_cannot_delete_users(make_founder, login):
+    other = make_founder("other@taggify.in")
+    make_founder("a@taggify.in")
+    assert login("a@taggify.in").delete(f"/api/admin/users/{other.id}").status_code == 403
