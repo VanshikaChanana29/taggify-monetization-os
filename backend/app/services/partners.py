@@ -494,3 +494,31 @@ def deal_earnings(
         "licence_cost": money(licence * (100 - partner_pct) / 100) if licence is not None else None,
         "missing": missing,
     }
+
+
+def partner_commission_by_month(
+    db: Session, org: Organization, deal: ContentDeal, held: list, channel_ids: set[uuid.UUID]
+) -> dict[str, Decimal]:
+    """{"YYYY-MM": Taggify's commission (base currency)} on partners' channels, for the
+    months each held one of this deal's slots (deal profitability)."""
+    spans: dict[uuid.UUID, list[tuple[date, date | None]]] = defaultdict(list)
+    for a in held:
+        if a.channel_id in channel_ids:
+            spans[a.channel_id].append((a.start_date, a.end_date))
+    owners = {
+        c.id: c.partner_id
+        for c in db.scalars(select(Channel).where(Channel.id.in_(list(spans) or [deal.id])))
+    }
+    rates = commissions(db, list({p for p in owners.values() if p}))
+    out: dict[str, Decimal] = defaultdict(lambda: ZERO)
+    for x in revenue_months(db, org, list(spans)):
+        if x.fee is None or x.fx_rate is None:
+            continue
+        if not any(
+            s < month_end(x.month) and (e is None or e >= x.month) for s, e in spans[x.channel_id]
+        ):
+            continue
+        pct = commission_pct(rates.get(owners[x.channel_id], []), x.channel_id, x.month) or ZERO
+        if pct:
+            out[f"{x.month:%Y-%m}"] += money(x.fee_on * pct / 100 * x.fx_rate)
+    return dict(out)

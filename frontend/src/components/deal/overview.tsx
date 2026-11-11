@@ -130,15 +130,27 @@ export function DealOverview({ deal, e, go }: { deal: Deal; e: DealEconomics | n
           <SummaryCard title="Payments to owner" value="No licence fee" sub="Revenue share / owned content" onClick={() => go("profitability")} />
         )}
         <SummaryCard
-          title="Recovery"
+          title="Profit / loss"
           info={HELP.recovery}
-          value={pct === null ? "—" : `${pct}%`}
-          sub={e?.rights_cost ? `${money(e.net_contribution, e.base_currency)} of ${money(e.rights_cost, e.base_currency)} earned back` : "No rights cost"}
+          value={
+            e?.profit == null
+              ? "—"
+              : `${Number(e.profit) >= 0 ? "+" : "−"}${money(Math.abs(Number(e.profit)), e.base_currency)}`
+          }
+          sub={
+            e?.rights_cost
+              ? `${pct ?? 0}% of ${money(e.rights_cost, e.base_currency)} covered${e.remaining && Number(e.remaining) > 0 ? ` · ${money(e.remaining, e.base_currency)} to go` : ""}`
+              : "No licence fee: all of it is profit"
+          }
+          alert={e?.profit != null && Number(e.profit) < 0}
           onClick={() => go("profitability")}
         >
           {pct !== null && (
             <span className="mt-3 block h-2 overflow-hidden rounded-full bg-muted">
-              <span className="block h-full rounded-full bg-emerald-600" style={{ width: `${Math.min(100, Math.max(0, pct))}%` }} />
+              <span
+                className={`block h-full rounded-full ${pct >= 100 ? "bg-emerald-600" : "bg-red-500"}`}
+                style={{ width: `${Math.min(100, Math.max(0, pct))}%` }}
+              />
             </span>
           )}
         </SummaryCard>

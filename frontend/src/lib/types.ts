@@ -113,6 +113,10 @@ export type DealListItem = {
   fb_slot_limit: number;
   yt_slots_used: number;
   fb_slots_used: number;
+  /** Deals list: earned so far − our part of the licence fee (negative = loss). */
+  profit?: string | null;
+  recovery_pct?: string | null;
+  rights_cost?: string | null;
 };
 
 export type Slot = {
@@ -546,12 +550,27 @@ export type DealEconomics = {
   net_contribution: string;
   recovery_pct: string | null;
   remaining: string | null;
+  partner_commission: string;
+  profit: string | null;
+  term_start: string | null;
+  term_end: string | null;
+  months_left: number;
   installments_total: string;
   paid: string;
   payable: string;
   next_due_date: string | null;
   next_due_amount: string | null;
-  by_month: { month: string; gross: string; tax: string; cms_fee: string; incentives: string }[];
+  by_month: {
+    month: string;
+    gross: string;
+    tax: string;
+    cms_fee: string;
+    incentives: string;
+    commission: string;
+    expenses: string;
+    owner_share: string;
+    net: string;
+  }[];
   warnings: string[];
   installments: Installment[];
   expense_items: DealExpense[];

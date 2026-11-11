@@ -13,6 +13,7 @@ import { StatCard } from "@/components/stat-card";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { api } from "@/lib/api";
+import { compactInr } from "@/lib/finance";
 import { HELP } from "@/lib/help";
 import { DEAL_STATUS_LABELS, DEAL_STATUS_TONES, DEAL_TYPE_LABELS, dealValue, episodeSummary, formatDate, formatMoney } from "@/lib/deals";
 import type { ContentOwner, DealListItem, DealsSummary, Page } from "@/lib/types";
@@ -196,6 +197,7 @@ function DealsPage() {
               <TableHead>YT slots</TableHead>
               <TableHead>FB slots</TableHead>
               <TableHead>Status</TableHead>
+              <TableHead className="text-right">Profit / loss</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -221,10 +223,31 @@ function DealsPage() {
                 <TableCell>
                   <Pill tone={DEAL_STATUS_TONES[d.status]}>{DEAL_STATUS_LABELS[d.status]}</Pill>
                 </TableCell>
+                <TableCell className="whitespace-nowrap text-right">
+                  {d.profit == null ? (
+                    "—"
+                  ) : (
+                    <>
+                      <span
+                        className={
+                          Number(d.profit) >= 0
+                            ? "font-semibold text-emerald-700 dark:text-emerald-400"
+                            : "font-semibold text-red-700 dark:text-red-400"
+                        }
+                      >
+                        {Number(d.profit) >= 0 ? "+" : "−"}
+                        {compactInr(String(Math.abs(Number(d.profit))))}
+                      </span>
+                      {d.recovery_pct != null && (
+                        <span className="block text-xs text-muted-foreground">{Math.round(Number(d.recovery_pct))}% covered</span>
+                      )}
+                    </>
+                  )}
+                </TableCell>
               </TableRow>
             ))}
             {data && data.total === 0 && (
-              <EmptyRow colSpan={9}>
+              <EmptyRow colSpan={10}>
                 {Object.values(filters).some(Boolean) ? "No deals match these filters." : "No deals yet — create the first one."}
               </EmptyRow>
             )}

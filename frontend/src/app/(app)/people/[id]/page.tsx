@@ -2,9 +2,10 @@
 
 import { ArrowLeft, Pencil } from "lucide-react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
+import { DeleteButton } from "@/components/delete-button";
 import { EmployeeForm } from "@/components/employee-form";
 import { IncentiveRates } from "@/components/incentive-rates";
 import { Notice } from "@/components/notice";
@@ -34,6 +35,7 @@ function period(start: string, end: string | null) {
 
 export default function PersonPage() {
   const { id } = useParams<{ id: string }>();
+  const router = useRouter();
   const [person, setPerson] = useState<EmployeeDetail | null>(null);
   const [editing, setEditing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -67,10 +69,19 @@ export default function PersonPage() {
             </div>
           </div>
         </div>
-        <Button size="lg" variant="outline" onClick={() => setEditing((v) => !v)}>
-          <Pencil />
-          Edit
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button size="lg" variant="outline" onClick={() => setEditing((v) => !v)}>
+            <Pencil />
+            Edit
+          </Button>
+          <DeleteButton
+            path={`/employees/${person.id}`}
+            name={person.full_name}
+            what="person"
+            rule="Only someone who has never managed a channel, led a team or been paid incentives can be deleted — e.g. added by mistake. Otherwise mark them inactive (Edit → Active), so the incentive history stays."
+            onDeleted={() => router.push("/people")}
+          />
+        </div>
       </div>
 
       {error && <Notice kind="error">{error}</Notice>}

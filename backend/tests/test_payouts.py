@@ -261,8 +261,14 @@ def test_deal_economics(founder, setup):
             "tax": "0.00",
             "cms_fee": "16000.00",
             "incentives": "1200.00",
+            "commission": "0.00",
+            "expenses": "2800.00",
+            "owner_share": "0.00",
+            "net": "60000.00",
         }
     ]
+    # Still a loss: ₹60,000 earned back of the ₹50L licence fee.
+    assert e["profit"] == "-4940000.00" and e["months_left"] >= 0
 
 
 def test_installments_reduce_payable_not_rights_cost(founder, setup):

@@ -4,7 +4,8 @@ from decimal import Decimal
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request, status
-from sqlalchemy import select
+from sqlalchemy import delete as sa_delete
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import Auth, AuthContext, client_ip
@@ -16,6 +17,7 @@ from app.models import (
     DealSlot,
     Employee,
     EmployeeRole,
+    IncentiveLine,
     IncentiveRate,
     Organization,
     SlotAssignment,
@@ -407,3 +409,48 @@ def employee_detail(employee_id: uuid.UUID, ctx: Auth, db: DbSession) -> Employe
             for m in team_history
         ],
     )
+
+
+@router.delete("/{employee_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_employee(employee_id: uuid.UUID, ctx: Auth, request: Request, db: DbSession) -> None:
+    """Delete a person nothing depends on (e.g. added by mistake).
+
+    Someone who has managed a channel, led a team or been in an incentive run cannot be
+    deleted: incentives are worked out from that history. Mark them inactive instead.
+    Their team memberships and incentive rates go with them.
+    """
+    person = _get(db, ctx, employee_id)
+
+    def count(model, column) -> int:
+        return db.scalar(select(func.count()).select_from(model).where(column == person.id)) or 0
+
+    in_use = [
+        (
+            count(ChannelManagerAssignment, ChannelManagerAssignment.employee_id),
+            "channel managed",
+            "channels managed",
+        ),
+        (count(TeamLeadAssignment, TeamLeadAssignment.employee_id), "team led", "teams led"),
+        (count(IncentiveLine, IncentiveLine.employee_id), "incentive line", "incentive lines"),
+    ]
+    used = [f"{n} {one if n == 1 else many}" for n, one, many in in_use if n]
+    if used:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"{person.full_name} cannot be deleted: there is history of {', '.join(used)}, "
+            "which incentives are worked out from. Mark them inactive instead (Edit → Active).",
+        )
+    db.execute(sa_delete(TeamMembership).where(TeamMembership.employee_id == person.id))
+    db.execute(sa_delete(IncentiveRate).where(IncentiveRate.employee_id == person.id))
+    record_audit(
+        db,
+        "employee.deleted",
+        organization_id=ctx.organization.id,
+        user_id=ctx.user.id,
+        entity_type="employee",
+        entity_id=person.id,
+        details={"name": person.full_name},
+        ip=client_ip(request),
+    )
+    db.delete(person)
+    db.commit()

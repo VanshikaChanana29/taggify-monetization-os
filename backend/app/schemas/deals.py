@@ -222,6 +222,10 @@ class DealListItem(BaseModel):
     fb_slot_limit: int
     yt_slots_used: int
     fb_slots_used: int
+    # Deals list only: earned so far − Taggify's part of the licence fee (negative = loss).
+    profit: Decimal | None = None
+    recovery_pct: Decimal | None = None
+    rights_cost: Decimal | None = None
 
 
 class DealOut(DealListItem):

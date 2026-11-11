@@ -340,3 +340,20 @@ def test_import_from_a_partners_page_makes_every_line_theirs(founder, setup):
     assert {x["partner"] for x in r.json()["lines"]} == {"Vanshika"}
     names = {c["name"] for c in detail(founder, setup["vanshika"])["channels"]}
     assert {"Hers Too", "Also Hers"} <= names
+
+
+def test_deal_profit_counts_our_commission_on_her_channels(founder, setup):
+    url = f"/api/deals/{setup['deal']['id']}/economics"
+    before = founder.get(url).json()
+    # Taggify's own channel: $1,000 − 10% CMS fee = $900 at ₹80; her channel adds nothing yet.
+    assert (before["net_contribution"], before["partner_commission"]) == ("72000.00", "0.00")
+    set_pct(founder, setup["vanshika"], "5")
+    e = founder.get(url).json()
+    # + our 5% of her $1,000 = $50 → ₹4,000. Licence: our 50% of ₹50L = ₹25L.
+    assert (e["partner_commission"], e["net_contribution"], e["profit"]) == (
+        "4000.00",
+        "76000.00",
+        "-2424000.00",
+    )
+    (m,) = e["by_month"]
+    assert (m["commission"], m["net"]) == ("4000.00", "76000.00")

@@ -297,8 +297,21 @@ def list_deals(
     stmt = stmt.order_by(order, ContentDeal.id)
 
     deals, total = paginate(db, stmt, pagination)
+    from app.services.deal_economics import deal_economics
+
+    items = []
+    for d in deals:
+        e = deal_economics(db, ctx.organization, d)
+        items.append(
+            DealListItem(
+                **_list_item(d, today),
+                profit=e.profit,
+                recovery_pct=e.recovery_pct,
+                rights_cost=e.rights_cost,
+            )
+        )
     return Page(
-        items=[DealListItem(**_list_item(d, today)) for d in deals],
+        items=items,
         total=total,
         page=pagination.page,
         page_size=pagination.page_size,

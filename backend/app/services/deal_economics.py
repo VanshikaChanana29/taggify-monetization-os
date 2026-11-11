@@ -2,17 +2,20 @@
 
 Gross revenue is attributed to a deal day by day: a channel's revenue on a day belongs
 to the deal whose slot the channel held that day (split evenly if it held slots in
-several deals). From that gross we take the tax the CMS withheld, the CMS fee (at the CMS's
-effective rate for the month), the incentives paid on it, and the deal's operating expenses:
+several deals). From that gross we take the tax the CMS withheld, the CMS fee (what the CMS's
+own sheet says for the channel when uploaded, else the CMS's effective slab rate for the
+month), the incentives paid on it, and the deal's operating expenses:
 
     net contribution = gross − tax − CMS fee − incentives − expenses (− owner share)
+                       + Taggify's commission on partners' channels in the deal's slots
+    profit           = net contribution − rights cost   (negative = still a loss)
 
 A partnership has no rights cost: the partner gets their % of what is left after tax and
 the CMS fee, and our incentives and expenses come out of our part.
 
 Deal partners (e.g. Vanshika holding 50% of the Sony deal) pay their % of the licence fee
-and keep their own channels' earnings, so Taggify's rights cost is only its own part and
-the partner's channels are left out here.
+and keep their own channels' earnings, so Taggify's rights cost is only its own part, and of
+the partner's channels only Taggify's own commission on them counts here.
     recovery %       = net contribution ÷ rights cost
 
 Installments only change what is still payable in cash — never the rights cost.
@@ -30,6 +33,8 @@ from sqlalchemy.orm import Session
 from app.models import (
     Channel,
     CmsPartner,
+    CmsStatement,
+    CmsStatementLine,
     ContentDeal,
     DealExpense,
     DealInstallment,
@@ -40,6 +45,7 @@ from app.models import (
     SlotAssignment,
 )
 from app.services.cms_fees import money
+from app.services.deals import company_today
 from app.services.incentives import Timeline
 from app.services.settlement import cms_month, fx_rate
 
@@ -51,6 +57,10 @@ class MonthRow:
     tax: Decimal = Decimal(0)
     cms_fee: Decimal = Decimal(0)
     incentives: Decimal = Decimal(0)
+    commission: Decimal = Decimal(0)  # Taggify's commission on partners' channels
+    expenses: Decimal = Decimal(0)
+    owner_share: Decimal = Decimal(0)
+    net: Decimal = Decimal(0)  # what the month added to (or took from) the deal
 
 
 @dataclass
@@ -64,11 +74,16 @@ class Economics:
     incentives: Decimal = Decimal(0)
     expenses: Decimal = Decimal(0)
     owner_share: Decimal = Decimal(0)
+    partner_commission: Decimal = Decimal(0)
     # The owner's full revenue share before netting the minimum guarantee (hybrid deals).
     royalty: Decimal = Decimal(0)
     net_contribution: Decimal = Decimal(0)
     recovery_pct: Decimal | None = None
     remaining: Decimal | None = None
+    profit: Decimal | None = None  # net contribution − rights cost; negative = loss
+    term_start: date | None = None
+    term_end: date | None = None
+    months_left: int = 0  # months of the term still to run, this one included
     installments_total: Decimal = Decimal(0)
     paid: Decimal = Decimal(0)
     payable: Decimal = Decimal(0)
@@ -136,6 +151,17 @@ def deal_economics(db: Session, org: Organization, deal: ContentDeal) -> Economi
         if channel_ids
         else []
     )
+    # The CMS's own fee for a channel-month, as a share of its gross (from uploaded sheets).
+    sheet_fee: dict[tuple, Decimal] = {}
+    if channel_ids:
+        for line, st in db.execute(
+            select(CmsStatementLine, CmsStatement)
+            .join(CmsStatement, CmsStatement.id == CmsStatementLine.statement_id)
+            .where(CmsStatementLine.channel_id.in_(channel_ids))
+        ):
+            if line.gross_amount:
+                key = (line.channel_id, st.cms_partner_id, st.month, st.currency)
+                sheet_fee[key] = line.fee_amount / line.gross_amount
     timeline = Timeline(db, org)
     # (CMS, month) → (fee as a share of what it is charged on, charged after tax?)
     cms_cache: dict[tuple, tuple[Decimal, bool] | None] = {}
@@ -166,7 +192,10 @@ def deal_economics(db: Session, org: Organization, deal: ContentDeal) -> Economi
         tax_base = (f.tax_amount or Decimal(0)) * share * rate
 
         fee_base = Decimal(0)
-        if f.cms_partner_id:
+        sheet_key = (f.channel_id, f.cms_partner_id, month, f.currency)
+        if f.cms_partner_id and sheet_key in sheet_fee:
+            fee_base = gross_base * sheet_fee[sheet_key]
+        elif f.cms_partner_id:
             ck = (f.cms_partner_id, month)
             if ck not in cms_cache:
                 cms = db.get(CmsPartner, f.cms_partner_id)
@@ -195,6 +224,16 @@ def deal_economics(db: Session, org: Organization, deal: ContentDeal) -> Economi
         row.cms_fee += fee_base
         row.incentives += incentive_base
 
+    # Taggify's own commission on partners' channels, for months they held this deal's slots.
+    if partner_channels:
+        from app.services.partners import partner_commission_by_month
+
+        for key, amount in partner_commission_by_month(
+            db, org, deal, held, partner_channels
+        ).items():
+            months.setdefault(key, MonthRow(key)).commission += amount
+            result.partner_commission += amount
+
     for row in months.values():
         row.gross, row.tax, row.cms_fee, row.incentives = (
             money(row.gross),
@@ -208,13 +247,14 @@ def deal_economics(db: Session, org: Organization, deal: ContentDeal) -> Economi
         result.incentives += row.incentives
     result.by_month = sorted(months.values(), key=lambda r: r.month)
 
-    result.expenses = money(
-        db.scalar(
-            select(func.coalesce(func.sum(DealExpense.amount), 0)).where(
-                DealExpense.deal_id == deal.id
-            )
-        )
-    )
+    result.partner_commission = money(result.partner_commission)
+    for spent_on, amount in db.execute(
+        select(DealExpense.spent_on, DealExpense.amount).where(DealExpense.deal_id == deal.id)
+    ):
+        key = f"{spent_on:%Y-%m}"
+        months.setdefault(key, MonthRow(key)).expenses += amount
+        result.expenses += amount
+    result.expenses = money(result.expenses)
     if deal.deal_type == "partnership" and deal.revenue_share_pct is not None:
         after_cms = result.gross - result.tax - result.cms_fee
         result.royalty = money(after_cms * deal.revenue_share_pct / 100)
@@ -232,10 +272,29 @@ def deal_economics(db: Session, org: Organization, deal: ContentDeal) -> Economi
         - result.incentives
         - result.expenses
         - result.owner_share
+        + result.partner_commission
     )
+    # Each month's own result, for the run rate ("covered in about N months").
+    pct = deal.revenue_share_pct or Decimal(0)
+    for row in months.values():
+        after_cms = row.gross - row.tax - row.cms_fee
+        if deal.deal_type == "partnership":
+            row.owner_share = money(after_cms * pct / 100)
+        elif deal.deal_type == "revenue_share":
+            row.owner_share = money(row.gross * pct / 100)
+        row.commission, row.expenses = money(row.commission), money(row.expenses)
+        row.owner_share = money(row.owner_share)
+        row.net = after_cms - row.incentives - row.expenses - row.owner_share + row.commission
+    result.by_month = sorted(months.values(), key=lambda r: r.month)
     if rights_cost:
         result.recovery_pct = (result.net_contribution * 100 / rights_cost).quantize(Decimal("0.1"))
         result.remaining = max(Decimal("0.00"), rights_cost - result.net_contribution)
+    result.profit = result.net_contribution - (rights_cost or Decimal(0))
+    result.term_start, result.term_end = deal.term_start, deal.term_end
+    today = company_today(org)
+    result.months_left = max(
+        0, (deal.term_end.year - today.year) * 12 + deal.term_end.month - today.month + 1
+    )
 
     installments = db.scalars(
         select(DealInstallment)

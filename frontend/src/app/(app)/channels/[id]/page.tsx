@@ -2,10 +2,11 @@
 
 import { ArrowLeft, BarChart3, ExternalLink, Pencil } from "lucide-react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
 import { ChannelForm } from "@/components/channel-form";
+import { DeleteButton } from "@/components/delete-button";
 import { ChannelRevenue } from "@/components/channel-revenue";
 import { ChannelYouTubeCard } from "@/components/channel-youtube";
 import { Notice } from "@/components/notice";
@@ -41,6 +42,7 @@ function period(start: string, end: string | null): string {
 
 export default function ChannelDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const router = useRouter();
   const [channel, setChannel] = useState<ChannelDetail | null>(null);
   const [people, setPeople] = useState<Employee[]>([]);
   const [editing, setEditing] = useState(false);
@@ -107,10 +109,19 @@ export default function ChannelDetailPage() {
             )}
           </div>
         </div>
-        <Button size="lg" variant="outline" onClick={() => setEditing((v) => !v)}>
-          <Pencil />
-          Edit channel
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button size="lg" variant="outline" onClick={() => setEditing((v) => !v)}>
+            <Pencil />
+            Edit channel
+          </Button>
+          <DeleteButton
+            path={`/channels/${channel.id}`}
+            name={channel.name}
+            what="channel"
+            rule="Only a channel with no revenue, no deal slot (ever) and no incentives can be deleted — e.g. one added or imported by mistake. Otherwise mark it inactive (Edit channel → Status), so its records stay."
+            onDeleted={() => router.push("/channels")}
+          />
+        </div>
       </div>
 
       {error && <Notice kind="error">{error}</Notice>}

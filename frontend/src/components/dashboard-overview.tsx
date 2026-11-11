@@ -382,10 +382,15 @@ function ByCms({ month, rows }: { month: string; rows: CmsMonth[] }) {
 
 function Deals({ data, fmt }: { data: Dashboard; fmt: (v: string) => string }) {
   const overall = data.recovery_pct === null ? null : Number(data.recovery_pct);
+  const total = Number(data.net_contribution) - Number(data.rights_cost);
   return (
     <Card
-      title="Deal recovery"
-      sub={overall === null ? "Fixed-fee deals" : `${overall}% of all rights cost earned back`}
+      title="Deals: profit / loss"
+      sub={
+        overall === null
+          ? "Fixed-fee deals"
+          : `${total >= 0 ? "+" : "−"}${fmt(String(Math.abs(total)))} overall · ${overall}% of all licence fees covered`
+      }
       action={<AllLink href="/deals">All</AllLink>}
     >
       {data.deals.length === 0 ? (
@@ -393,9 +398,10 @@ function Deals({ data, fmt }: { data: Dashboard; fmt: (v: string) => string }) {
           <Handshake className="h-6 w-6" /> No fixed-fee deals yet.
         </p>
       ) : (
-        <ul className="space-y-4">
-          {data.deals.slice(0, 4).map((d) => {
+        <ul className="grid gap-x-8 gap-y-4 md:grid-cols-2 xl:grid-cols-3">
+          {data.deals.slice(0, 6).map((d) => {
             const pct = d.recovery_pct === null ? 0 : Number(d.recovery_pct);
+            const profit = Number(d.net_contribution) - Number(d.rights_cost);
             return (
               <li key={d.id}>
                 <Link href={`/deals/${d.id}`} className="group block">
@@ -405,12 +411,20 @@ function Deals({ data, fmt }: { data: Dashboard; fmt: (v: string) => string }) {
                   </span>
                   <span className="mt-1.5 flex items-center gap-2">
                     <span className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
-                      <span className="block h-full rounded-full bg-emerald-600" style={{ width: `${Math.min(100, Math.max(0, pct))}%` }} />
+                      <span
+                        className={`block h-full rounded-full ${pct >= 100 ? "bg-emerald-600" : "bg-red-500"}`}
+                        style={{ width: `${Math.min(100, Math.max(0, pct))}%` }}
+                      />
                     </span>
-                    <span className="w-12 text-right text-xs font-semibold tabular-nums">{pct}%</span>
+                    <span
+                      className={`w-20 text-right text-xs font-semibold tabular-nums ${profit >= 0 ? "text-emerald-700 dark:text-emerald-400" : "text-red-700 dark:text-red-400"}`}
+                    >
+                      {profit >= 0 ? "+" : "−"}
+                      {fmt(String(Math.abs(profit)))}
+                    </span>
                   </span>
                   <span className="mt-0.5 block text-xs text-muted-foreground">
-                    {fmt(d.net_contribution)} back of {fmt(d.rights_cost)}
+                    {pct}% covered · {fmt(d.net_contribution)} back of {fmt(d.rights_cost)}
                     {Number(d.payable) > 0 ? ` · ${fmt(d.payable)} still to pay the owner` : ""}
                   </span>
                 </Link>
@@ -513,6 +527,8 @@ export function DashboardOverview({ data }: { data: Dashboard }) {
         yt={yt}
       />
 
+      <Deals data={data} fmt={fmt} />
+
       {list && (
         <Card
           title="Month lifecycle"
@@ -543,10 +559,9 @@ export function DashboardOverview({ data }: { data: Dashboard }) {
         onPick={(month) => router.push(`/finance?month=${month.slice(0, 7)}`)}
       />
 
-      <div className="grid gap-8 lg:grid-cols-3">
+      <div className="grid gap-8 lg:grid-cols-2">
         <ByCms month={m} rows={rows} />
         <TopChannels rows={yt?.top ?? []} scope={yt ? `start=${yt.start}&end=${yt.end}` : `month=${m}`} />
-        <Deals data={data} fmt={fmt} />
       </div>
 
       <div className="grid gap-8 xl:grid-cols-5">

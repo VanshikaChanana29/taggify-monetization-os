@@ -14,6 +14,7 @@ from fastapi import (
     UploadFile,
     status,
 )
+from sqlalchemy import delete as sa_delete
 from sqlalchemy import exists, func, or_, select
 from sqlalchemy.orm import Session
 
@@ -28,6 +29,8 @@ from app.models import (
     DealPartner,
     DealSlot,
     Employee,
+    IncentiveLine,
+    RevenueFact,
     SlotAssignment,
     TeamMembership,
     YouTubeConnection,
@@ -663,3 +666,45 @@ def change_manager(
     db.commit()
     db.expire_all()
     return channel_items(db, [get_channel(db, ctx, channel.id)])[0]
+
+
+@router.delete("/{channel_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_channel(channel_id: uuid.UUID, ctx: Auth, request: Request, db: DbSession) -> None:
+    """Delete a channel nothing uses yet (e.g. added or imported by mistake).
+
+    A channel with revenue, a deal slot (ever) or incentives paid on it cannot be deleted:
+    those are the company's books and history. Mark it inactive instead. Its manager
+    history, YouTube connection and commission rates go with it.
+    """
+    channel = get_channel(db, ctx, channel_id)
+
+    def count(model, column) -> int:
+        return db.scalar(select(func.count()).select_from(model).where(column == channel.id)) or 0
+
+    in_use = [
+        (count(RevenueFact, RevenueFact.channel_id), "revenue row", "revenue rows"),
+        (count(SlotAssignment, SlotAssignment.channel_id), "deal slot", "deal slots"),
+        (count(IncentiveLine, IncentiveLine.channel_id), "incentive line", "incentive lines"),
+    ]
+    used = [f"{n} {one if n == 1 else many}" for n, one, many in in_use if n]
+    if used:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"{channel.name} cannot be deleted: it has {', '.join(used)}. Those records must "
+            "stay, so mark it inactive instead (Edit channel → Status: Inactive).",
+        )
+    db.execute(
+        sa_delete(ChannelManagerAssignment).where(ChannelManagerAssignment.channel_id == channel.id)
+    )
+    record_audit(
+        db,
+        "channel.deleted",
+        organization_id=ctx.organization.id,
+        user_id=ctx.user.id,
+        entity_type="channel",
+        entity_id=channel.id,
+        details={"name": channel.name, "external_id": channel.external_id},
+        ip=client_ip(request),
+    )
+    db.delete(channel)
+    db.commit()

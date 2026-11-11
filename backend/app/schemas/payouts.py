@@ -147,6 +147,10 @@ class EconomicsMonth(BaseModel):
     tax: Decimal = Decimal("0.00")
     cms_fee: Decimal
     incentives: Decimal
+    commission: Decimal = Decimal("0.00")
+    expenses: Decimal = Decimal("0.00")
+    owner_share: Decimal = Decimal("0.00")
+    net: Decimal = Decimal("0.00")
 
 
 class EconomicsOut(BaseModel):
@@ -163,6 +167,11 @@ class EconomicsOut(BaseModel):
     net_contribution: Decimal
     recovery_pct: Decimal | None
     remaining: Decimal | None
+    partner_commission: Decimal = Decimal("0.00")
+    profit: Decimal | None = None
+    term_start: date | None = None
+    term_end: date | None = None
+    months_left: int = 0
     installments_total: Decimal
     paid: Decimal
     payable: Decimal

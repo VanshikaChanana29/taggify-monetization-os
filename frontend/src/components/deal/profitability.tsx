@@ -5,6 +5,7 @@ import { useState } from "react";
 
 import { EmptyRow } from "@/components/data-table";
 import { Field, INVALID, fieldFor } from "@/components/deal/form-bits";
+import { DealProfitLoss } from "@/components/deal/profit-loss";
 import { Notice } from "@/components/notice";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogFooter } from "@/components/ui/dialog";
@@ -58,6 +59,9 @@ export function DealProfitability({ deal, e, onChange }: { deal: Deal; e: DealEc
             },
           ]
         : []),
+    ...(Number(e.partner_commission) > 0
+      ? [{ label: "+ Our commission on partners' channels", value: money(e.partner_commission, cur), hint: "Our % on top of the CMS fee" }]
+      : []),
     { label: "Net contribution", value: money(e.net_contribution, cur), strong: true },
   ];
 
@@ -87,6 +91,8 @@ export function DealProfitability({ deal, e, onChange }: { deal: Deal; e: DealEc
           </Notice>
         ))}
       {error && <Notice kind="error">{error}</Notice>}
+
+      <DealProfitLoss deal={deal} e={e} />
 
       <div className="grid gap-6 xl:grid-cols-5">
         <section className="rounded-2xl border bg-card p-6 shadow-sm xl:col-span-2">
@@ -160,6 +166,9 @@ export function DealProfitability({ deal, e, onChange }: { deal: Deal; e: DealEc
               <TableHead className="text-right">Gross</TableHead>
               <TableHead className="text-right">CMS fee</TableHead>
               <TableHead className="text-right">Incentives</TableHead>
+              <TableHead className="text-right">Expenses</TableHead>
+              <TableHead className="text-right">Partner commission</TableHead>
+              <TableHead className="text-right">Month&apos;s result</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -169,9 +178,19 @@ export function DealProfitability({ deal, e, onChange }: { deal: Deal; e: DealEc
                 <TableCell className="text-right">{money(m.gross, cur)}</TableCell>
                 <TableCell className="text-right">{money(m.cms_fee, cur)}</TableCell>
                 <TableCell className="text-right">{money(m.incentives, cur)}</TableCell>
+                <TableCell className="text-right">{money(m.expenses, cur)}</TableCell>
+                <TableCell className="text-right">{money(m.commission, cur)}</TableCell>
+                <TableCell
+                  className={cn(
+                    "text-right font-semibold",
+                    Number(m.net) >= 0 ? "text-emerald-700 dark:text-emerald-400" : "text-red-700 dark:text-red-400",
+                  )}
+                >
+                  {money(m.net, cur)}
+                </TableCell>
               </TableRow>
             ))}
-            {e.by_month.length === 0 && <EmptyRow colSpan={4}>No revenue yet — import a month under CMS &amp; Finance.</EmptyRow>}
+            {e.by_month.length === 0 && <EmptyRow colSpan={7}>No revenue yet — import a month under CMS &amp; Finance.</EmptyRow>}
           </TableBody>
         </Table>
       </section>
