@@ -137,19 +137,35 @@ def test_reset_password_logs_user_out(make_superadmin, make_founder, login):
     login("a@taggify.in", "temporary-password-1")
 
 
-def test_superadmin_cannot_lock_themselves_out(make_superadmin, login):
+def test_superadmin_cannot_reset_own_password_here(make_superadmin, login):
     admin_user = make_superadmin()
     admin = login("admin@taggify.in")
-    org = admin.post("/api/admin/organizations", json={"name": "Test Co", "slug": "test-co"}).json()
-    admin.post(f"/api/admin/users/{admin_user.id}/memberships", json={"organization_id": org["id"]})
 
-    deactivate = admin.post(f"/api/admin/users/{admin_user.id}/memberships/{org['id']}/deactivate")
     reset = admin.post(
         f"/api/admin/users/{admin_user.id}/reset-password", json={"password": "x" * 12}
     )
 
-    assert deactivate.status_code == 400
     assert reset.status_code == 400
+
+
+def test_superadmin_can_leave_a_company_and_stays_in_admin(make_superadmin, login):
+    admin_user = make_superadmin()
+    admin = login("admin@taggify.in")
+    org = admin.post("/api/admin/organizations", json={"name": "Test Co", "slug": "test-co"}).json()
+    admin.post(f"/api/admin/users/{admin_user.id}/memberships", json={"organization_id": org["id"]})
+    admin.post("/api/auth/switch-organization", json={"organization_id": org["id"]})
+    assert admin.get("/api/auth/me").json()["organization"]["id"] == org["id"]
+
+    deactivate = admin.post(f"/api/admin/users/{admin_user.id}/memberships/{org['id']}/deactivate")
+
+    assert deactivate.status_code == 200
+    assert deactivate.json()["memberships"][0]["is_active"] is False
+    me = admin.get("/api/auth/me")
+    assert me.status_code == 200
+    assert me.json()["organization"] is None
+    assert admin.get("/api/admin/users").status_code == 200
+    back = admin.post("/api/auth/switch-organization", json={"organization_id": org["id"]})
+    assert back.status_code == 403
 
 
 def test_admin_actions_show_in_company_activity(make_superadmin, make_founder, login, org_id):

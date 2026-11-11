@@ -156,6 +156,48 @@ def update_partner(
     return _out(db, ctx, p)
 
 
+@router.delete("/partners/{partner_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_partner(partner_id: uuid.UUID, ctx: Auth, request: Request, db: DbSession) -> None:
+    """Delete a partner nothing uses yet (e.g. added by mistake).
+
+    One on a deal or owning channels must be taken off those first; one with money paid in or
+    out cannot be deleted at all — those are the company's books. Mark them inactive instead.
+    """
+    p = _partner(db, ctx, partner_id)
+
+    def count(model, column) -> int:
+        return db.scalar(select(func.count()).select_from(model).where(column == p.id)) or 0
+
+    channels = count(Channel, Channel.partner_id)
+    deals = count(DealPartnerShare, DealPartnerShare.partner_id)
+    money = count(PartnerContribution, PartnerContribution.partner_id) + count(
+        PartnerPayout, PartnerPayout.partner_id
+    )
+    if money:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"{p.name} cannot be deleted: money has been paid in or out "
+            f"({money} payment{'' if money == 1 else 's'}). Those records must stay, so mark "
+            "them inactive instead (Edit → untick Active).",
+        )
+    steps = []
+    if deals:
+        steps.append(f"take them off {deals} deal{'' if deals == 1 else 's'} (Deal → Partners tab)")
+    if channels:
+        steps.append(
+            f"change the owner of {channels} channel{'' if channels == 1 else 's'} "
+            "(Channels → Edit → Owned by partner)"
+        )
+    if steps:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"{p.name} cannot be deleted yet: first {' and '.join(steps)}.",
+        )
+    _audit(db, ctx, request, "partner.deleted", p.id, {"name": p.name})
+    db.delete(p)
+    db.commit()
+
+
 @router.get("/partners/summary")
 def partners_month(
     ctx: Auth, db: DbSession, month: str = Query(pattern=r"^\d{4}-\d{2}$")

@@ -114,6 +114,28 @@ class ChannelSlotRef(BaseModel):
     since: date
 
 
+class ChannelRevenueMonth(BaseModel):
+    """One month of a channel's money: gross → tax → CMS fee → what the CMS pays."""
+
+    month: date
+    cms_id: uuid.UUID | None
+    cms_name: str | None
+    currency: str
+    gross: Decimal
+    tax: Decimal
+    fee: Decimal | None
+    net: Decimal | None
+    source: Literal["sheet", "slabs"] | None  # where the fee and net come from
+    fx_rate: Decimal | None
+    net_base: Decimal | None
+    views: int | None
+
+
+class ChannelRevenueOut(BaseModel):
+    base_currency: str
+    months: list[ChannelRevenueMonth]
+
+
 class ChannelMetricsOut(BaseModel):
     """The channel's numbers for the chosen period (revenue in USD)."""
 

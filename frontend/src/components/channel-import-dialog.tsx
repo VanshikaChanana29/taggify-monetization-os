@@ -34,10 +34,12 @@ const RESULT = {
 const COLUMNS: [string, string, boolean][] = [
   ["Channel ID", "UC… ID, the channel link, or the Facebook page ID", true],
   ["Channel name", "As you want it shown in the tool", true],
-  ["Platform", "YouTube / Facebook — guessed from the ID if empty", false],
-  ["CMS", "Must match a CMS partner's name", false],
+  ["Platform", "YouTube or Facebook", true],
+  ["CMS", "Must match a CMS partner's name", true],
+  ["Status", "Active or Inactive", true],
+  ["Link", "The channel or page link, starting with https://", true],
   ["Manager", "Name or email, as in People", false],
-  ["Status", "Active / Inactive — Active if empty", false],
+  ["Notes", "Anything worth remembering", false],
   ["Partner", "Deal partner who owns it (e.g. Vanshika) — empty for Taggify's own", false],
 ];
 
@@ -105,7 +107,7 @@ export function ChannelImportDialog({ open, onClose, onImported }: { open: boole
       }}
       wide
       title="Import channels"
-      description="Add many channels at once from an Excel or CSV file. Only the channel ID and name are required — everything else can be filled in later."
+      description="Add many channels at once from an Excel or CSV file. Every column is required except Manager, Notes and Partner."
     >
       <div className="space-y-5">
         {!preview && (
@@ -179,9 +181,9 @@ export function ChannelImportDialog({ open, onClose, onImported }: { open: boole
             <XCircle className="mt-0.5 h-5 w-5 shrink-0" />
             <div>
               <p className="font-semibold">
-                {file?.name} has no {preview.missing_columns.map((c) => `“${c}”`).join(" or ")} column
+                {file?.name} has no {preview.missing_columns.map((c) => `“${c}”`).join(", ")} column{preview.missing_columns.length > 1 ? "s" : ""}
               </p>
-              <p>Name the columns “Channel ID” and “Channel name” (or use the template) and choose the file again.</p>
+              <p>Add the missing columns (or use the template) and choose the file again.</p>
             </div>
           </div>
         )}

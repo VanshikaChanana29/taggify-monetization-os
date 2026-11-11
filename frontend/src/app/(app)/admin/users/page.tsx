@@ -48,6 +48,11 @@ export default function AllUsersPage() {
   const [role, setRole] = useState<Role>("");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [passwordFor, setPasswordFor] = useState<AdminUser | null>(null);
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [savingPassword, setSavingPassword] = useState(false);
 
   const load = useCallback(() => {
     Promise.all([api<AdminUser[]>("/admin/users"), api<AdminOrganization[]>("/admin/organizations")])
@@ -78,12 +83,24 @@ export default function AllUsersPage() {
       await api("/admin/users", { method: "POST", json: form });
       setForm(EMPTY_FORM);
       setShowForm(false);
-    }, `${form.full_name} created. Share the temporary password with them privately.`);
+    }, `${form.full_name} created. Share the password with them privately.`);
   }
 
   function toggleMembership(user: AdminUser, m: AdminMembership) {
     const action = m.is_active ? "deactivate" : "activate";
-    if (m.is_active && !window.confirm(`Remove ${user.full_name}'s access to ${m.organization_name}?`)) {
+    const self = user.id === me.user.id;
+    const question = self
+      ? `Remove your own access to ${m.organization_name}? You will no longer see its data. You can restore it here any time.`
+      : `Remove ${user.full_name}'s access to ${m.organization_name}?`;
+    if (m.is_active && !window.confirm(question)) {
+      return;
+    }
+    if (self) {
+      // The company switcher and the current company come from the session: reload them.
+      setError(null);
+      api(`/admin/users/${user.id}/memberships/${m.organization_id}/${action}`, { method: "POST" })
+        .then(() => window.location.reload())
+        .catch((err: Error) => setError(err.message));
       return;
     }
     run(
@@ -108,13 +125,33 @@ export default function AllUsersPage() {
     );
   }
 
-  function resetPassword(user: AdminUser) {
-    const password = window.prompt(`New temporary password for ${user.full_name} (min 10 characters):`);
-    if (!password) return;
-    run(
-      () => api(`/admin/users/${user.id}/reset-password`, { method: "POST", json: { password } }),
-      `Password reset for ${user.full_name}. They have been logged out everywhere.`,
-    );
+  function openPasswordDialog(user: AdminUser) {
+    setPasswordFor(user);
+    setNewPassword("");
+    setConfirmPassword("");
+    setPasswordError(null);
+  }
+
+  async function changePassword(event: React.FormEvent) {
+    event.preventDefault();
+    if (!passwordFor) return;
+    if (newPassword !== confirmPassword) {
+      setPasswordError("The two passwords do not match.");
+      return;
+    }
+    setSavingPassword(true);
+    setPasswordError(null);
+    try {
+      await api(`/admin/users/${passwordFor.id}/reset-password`, { method: "POST", json: { password: newPassword } });
+      setError(null);
+      setNotice(`Password changed for ${passwordFor.full_name}. They have been logged out everywhere — share the new password with them privately.`);
+      setPasswordFor(null);
+      load();
+    } catch (err) {
+      setPasswordError(err instanceof Error ? err.message : "Could not change the password");
+    } finally {
+      setSavingPassword(false);
+    }
   }
 
   const q = query.trim().toLowerCase();
@@ -231,7 +268,7 @@ export default function AllUsersPage() {
             <Input id="email" type="email" required value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="password">Temporary password (min 10)</Label>
+            <Label htmlFor="password">Password (min 10)</Label>
             <PasswordInput
               id="password"
               autoComplete="new-password"
@@ -250,6 +287,48 @@ export default function AllUsersPage() {
               <Button type="submit">Create founder</Button>
             </DialogFooter>
           </div>
+        </form>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(passwordFor)}
+        onClose={() => setPasswordFor(null)}
+        title={`Change password${passwordFor ? ` for ${passwordFor.full_name}` : ""}`}
+        description="This becomes their password. They are logged out on every device and sign in again with it."
+      >
+        <form onSubmit={changePassword} className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="new_password">New password (min 10)</Label>
+            <PasswordInput
+              id="new_password"
+              autoComplete="new-password"
+              minLength={10}
+              required
+              autoFocus
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="confirm_password">Confirm new password</Label>
+            <PasswordInput
+              id="confirm_password"
+              autoComplete="new-password"
+              minLength={10}
+              required
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+            />
+          </div>
+          {passwordError && <Notice kind="error">{passwordError}</Notice>}
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setPasswordFor(null)}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={savingPassword}>
+              {savingPassword ? "Saving…" : "Change password"}
+            </Button>
+          </DialogFooter>
         </form>
       </Dialog>
 
@@ -308,11 +387,9 @@ export default function AllUsersPage() {
                         <div key={m.organization_id} className="flex items-center gap-3">
                           <span className="min-w-24 font-medium">{m.organization_name}</span>
                           <StatusPill active={m.is_active} label={m.is_active ? "Active" : "Removed"} />
-                          {!(isMe && m.is_active) && (
-                            <button type="button" className="text-sm font-medium text-primary hover:underline" onClick={() => toggleMembership(u, m)}>
-                              {m.is_active ? "Remove" : "Restore"}
-                            </button>
-                          )}
+                          <button type="button" className="text-sm font-medium text-primary hover:underline" onClick={() => toggleMembership(u, m)}>
+                            {m.is_active ? "Remove" : "Restore"}
+                          </button>
                         </div>
                       ))}
                       {u.memberships.length === 0 && <p className="text-muted-foreground">No company access</p>}
@@ -339,10 +416,10 @@ export default function AllUsersPage() {
                       <Button
                         variant="outline"
                         size="icon"
-                        title="Reset password"
-                        aria-label={`Reset password for ${u.full_name}`}
+                        title="Change password"
+                        aria-label={`Change password for ${u.full_name}`}
                         className="border-amber-200 text-amber-600 hover:bg-amber-50 dark:border-amber-500/30"
-                        onClick={() => resetPassword(u)}
+                        onClick={() => openPasswordDialog(u)}
                       >
                         <KeyRound />
                       </Button>

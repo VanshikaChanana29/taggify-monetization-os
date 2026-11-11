@@ -1,6 +1,6 @@
 "use client";
 
-import { FileSpreadsheet } from "lucide-react";
+import { Download, FileSpreadsheet } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
@@ -14,7 +14,60 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { api } from "@/lib/api";
 import { formatMonth, money } from "@/lib/finance";
-import type { CmsPartner, SheetImport, SheetPreview } from "@/lib/types";
+import type { CmsPartner, SheetImport, SheetLine, SheetPreview } from "@/lib/types";
+
+// Same columns, in the same order, as the Import channels template.
+const IMPORT_HEADERS = ["Channel ID", "Channel name", "Platform", "CMS", "Manager", "Status", "Link", "Notes", "Partner"];
+
+/** Only real channel IDs: not a "Total" or other summary row of the CMS's sheet. */
+function looksLikeChannel(id: string, platform: CmsPartner["platform"]) {
+  return platform === "facebook" ? /^\d{5,}$/.test(id) : /^UC[\w-]{22}$/.test(id);
+}
+
+function csvCell(value: string) {
+  return /[",\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
+}
+
+/**
+ * The sheet's channels that are not in the tool, as a file for Channels → Import, with every
+ * column of the import: what is known is filled in (ID and name from the sheet; platform, CMS,
+ * status and link); manager, notes and partner are not known from a CMS sheet, so left empty.
+ */
+function exportMissing(lines: SheetLine[], cms: CmsPartner, month: string) {
+  const yt = cms.platform === "youtube";
+  const rows = lines
+    .filter((l) => looksLikeChannel(l.external_id, cms.platform))
+    .map((l) => [
+      l.external_id,
+      l.channel_name ?? "",
+      yt ? "YouTube" : "Facebook",
+      cms.name,
+      "",
+      "Active",
+      yt ? `https://www.youtube.com/channel/${l.external_id}` : `https://www.facebook.com/${l.external_id}`,
+      "",
+      "",
+    ]);
+  const text = [IMPORT_HEADERS, ...rows].map((r) => r.map(csvCell).join(",")).join("\r\n");
+  // BOM so Excel opens names in Hindi or with accents correctly.
+  const url = URL.createObjectURL(new Blob(["\ufeff" + text], { type: "text/csv;charset=utf-8" }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${cms.name} ${month} - channels to add.csv`.replace(/[\\/:*?"<>|]/g, "-");
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function ExportMissingButton({ lines, cms, month }: { lines: SheetLine[]; cms: CmsPartner | undefined; month: string }) {
+  const count = cms ? lines.filter((l) => looksLikeChannel(l.external_id, cms.platform)).length : 0;
+  if (!cms || count === 0) return null;
+  return (
+    <Button type="button" variant="outline" size="sm" className="h-7 px-2.5 text-xs" onClick={() => exportMissing(lines, cms, month)}>
+      <Download className="h-3.5 w-3.5" />
+      Export {count} for Import channels
+    </Button>
+  );
+}
 
 /**
  * Upload a CMS's monthly sheet exactly as the CMS sends it (Excel or CSV). The tool reads which
@@ -129,6 +182,9 @@ export function CmsSheetUpload({
                 Channels
               </Link>{" "}
               and upload the sheet again — nothing is counted twice.
+              <div className="mt-2">
+                <ExportMissingButton lines={result.unknown} cms={cmsList.find((c) => c.id === cms)} month={month} />
+              </div>
             </Notice>
           )}
           <p className="text-sm text-muted-foreground">
@@ -316,6 +372,9 @@ export function CmsSheetUpload({
                       <button type="button" className="font-semibold underline" onClick={() => setShowUnknown((v) => !v)}>
                         {showUnknown ? "Hide" : "See which"}
                       </button>
+                      <div className="mt-2">
+                        <ExportMissingButton lines={preview.unknown} cms={cmsList.find((c) => c.id === cms)} month={month} />
+                      </div>
                       {showUnknown && (
                         <ul className="mt-2 max-h-40 space-y-0.5 overflow-auto text-xs">
                           {preview.unknown.map((u) => (

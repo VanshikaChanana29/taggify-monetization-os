@@ -6,6 +6,7 @@ import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
 import { ChannelForm } from "@/components/channel-form";
+import { ChannelRevenue } from "@/components/channel-revenue";
 import { ChannelYouTubeCard } from "@/components/channel-youtube";
 import { Notice } from "@/components/notice";
 import { Pill } from "@/components/pill";
@@ -161,6 +162,8 @@ export default function ChannelDetailPage() {
           {channel.slots.length ? channel.slots.map((s) => <span key={s.slot_id} className="mr-2 font-mono">{s.slot_code}</span>) : "—"}
         </InfoCard>
       </div>
+
+      <ChannelRevenue channelId={channel.id} />
 
       <div className="grid gap-6 xl:grid-cols-3">
         <div className="space-y-6 xl:col-span-2">

@@ -1,7 +1,7 @@
 "use client";
 
 import { bands, slabSummary } from "@/components/fee-slabs";
-import { ArrowRight, ChevronRight, Pencil, Plus } from "lucide-react";
+import { ArrowRight, ChevronRight, Pencil, Plus, Trash2 } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
@@ -49,6 +49,9 @@ export function CmsPartnersList() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [added, setAdded] = useState<CmsPartner | null>(null);
+  const [deleting, setDeleting] = useState<CmsPartner | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
   const load = useCallback(() => {
     api<CmsPartner[]>("/cms-partners")
@@ -82,6 +85,29 @@ export function CmsPartnersList() {
       load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save");
+    }
+  }
+
+  function askDelete(row: CmsPartner) {
+    setDeleting(row);
+    setDeleteError(null);
+  }
+
+  async function confirmDelete() {
+    if (!deleting) return;
+    setBusy(true);
+    setDeleteError(null);
+    try {
+      await api(`/cms-partners/${deleting.id}`, { method: "DELETE" });
+      setError(null);
+      setAdded(null);
+      setNotice(`${deleting.name} deleted.`);
+      setDeleting(null);
+      load();
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : "Could not delete");
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -173,6 +199,41 @@ export function CmsPartnersList() {
             </DialogFooter>
           </div>
         </form>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(deleting)}
+        onClose={() => setDeleting(null)}
+        title={`Delete ${deleting?.name ?? "CMS"}?`}
+        description="This removes the CMS and its fee slabs. It cannot be undone."
+      >
+        <div className="space-y-4 text-sm">
+          {deleting && deleting.channel_count > 0 ? (
+            <Notice kind="error">
+              {deleting.channel_count} channel{deleting.channel_count === 1 ? " uses" : "s use"} this CMS. Move {deleting.channel_count === 1 ? "it" : "them"} to
+              another CMS first (Channels → Edit → CMS), or mark this CMS inactive instead.
+            </Notice>
+          ) : (
+            <p className="text-muted-foreground">
+              Only a CMS with no channels and no money on it (revenue, statements, bank receipts) can be deleted. If it has any, mark it inactive
+              instead — its records stay in the books.
+            </p>
+          )}
+          {deleteError && <Notice kind="error">{deleteError}</Notice>}
+        </div>
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={() => setDeleting(null)}>
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            variant="destructive"
+            onClick={confirmDelete}
+            disabled={busy || Boolean(deleting && deleting.channel_count > 0)}
+          >
+            {busy ? "Deleting…" : "Delete CMS"}
+          </Button>
+        </DialogFooter>
       </Dialog>
 
       <ListFilters
@@ -273,6 +334,16 @@ export function CmsPartnersList() {
                     </Button>
                     <Button variant="outline" size="icon" aria-label={`Edit ${r.name}`} title="Edit name and settings" onClick={() => start(r)}>
                       <Pencil />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      aria-label={`Delete ${r.name}`}
+                      title="Delete CMS"
+                      className="border-red-200 text-red-600 hover:bg-red-50 dark:border-red-500/30 dark:hover:bg-red-500/10"
+                      onClick={() => askDelete(r)}
+                    >
+                      <Trash2 />
                     </Button>
                   </div>
                 </TableCell>

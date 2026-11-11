@@ -1,9 +1,11 @@
 """Add many channels at once from the founder's Excel or CSV.
 
-Only the channel ID and name are needed (as in the New channel form). Everything else is
-optional and never blocks a line:
-  * no platform       → guessed from the ID (UC… = YouTube, digits = Facebook page),
-  * CMS / manager not found, or not allowed → the channel is still added without it, with a note,
+Every column of the template is required except Manager and Notes (founders' rule, as in the
+New channel form): Channel ID, Channel name, Platform, CMS, Status and Link. A line missing
+one of them, or with a CMS / platform / status the tool does not know, is skipped with the
+reason. Optional columns never block a line:
+  * manager not found, or not allowed → the channel is still added without one, with a note,
+  * partner not found → added as Taggify's own channel, with a note,
   * already in the tool, or twice in the file → skipped, nothing is changed.
 
 Columns are recognised by their header, in any order, with common spellings (see FIELDS).
@@ -62,6 +64,7 @@ TEMPLATE_HEADERS = [
     "Status",
     "Link",
     "Notes",
+    "Partner",
 ]
 TEMPLATE_ROWS = [
     [
@@ -71,11 +74,34 @@ TEMPLATE_ROWS = [
         "Giri CMS",
         "Ananya Sharma",
         "Active",
+        "https://www.youtube.com/channel/UCxxxxxxxxxxxxxxxxxxxxxx",
         "",
         "",
     ],
-    ["UCyyyyyyyyyyyyyyyyyyyyyy", "CID Moments 01", "", "", "", "", "", "Only ID and name needed"],
+    [
+        "UCyyyyyyyyyyyyyyyyyyyyyy",
+        "CID Moments 01",
+        "YouTube",
+        "Giri CMS",
+        "",
+        "Active",
+        "https://www.youtube.com/channel/UCyyyyyyyyyyyyyyyyyyyyyy",
+        "Manager, Notes and Partner can be left empty",
+        "",
+    ],
 ]
+
+# Required columns, in the template's order (Manager and Notes are optional).
+REQUIRED: tuple[tuple[str, str], ...] = (
+    ("external_id", "Channel ID"),
+    ("name", "Channel name"),
+    ("platform", "Platform"),
+    ("cms", "CMS"),
+    ("status", "Status"),
+    ("url", "Link"),
+)
+ACTIVE = ("active", "live", "yes")
+INACTIVE = ("inactive", "closed", "stopped", "terminated", "demonetized", "no")
 
 UC_ID = re.compile(r"(UC[0-9A-Za-z_-]{22})")
 
@@ -114,16 +140,13 @@ def _columns(table: Table) -> dict[str, int]:
     return found
 
 
-def _platform(value: str, external_id: str) -> tuple[str, str | None]:
+def _platform(value: str) -> str | None:
     v = value.lower().strip()
     if v in ("youtube", "yt", "you tube"):
-        return "youtube", None
+        return "youtube"
     if v in ("facebook", "fb", "meta"):
-        return "facebook", None
-    guess = "facebook" if external_id.isdigit() else "youtube"
-    if v:
-        return guess, f"Platform “{value}” not understood — taken as {guess.title()}."
-    return guess, None
+        return "facebook"
+    return None
 
 
 def _clean_id(value: str) -> str:
@@ -148,11 +171,7 @@ def _day(value: object) -> date | None:
 
 def import_channels(db: Session, org: Organization, table: Table, *, commit: bool) -> ImportResult:
     cols = _columns(table)
-    missing = [
-        label
-        for key, label in (("external_id", "Channel ID"), ("name", "Channel name"))
-        if key not in cols
-    ]
+    missing = [label for key, label in REQUIRED if key not in cols]
     if missing:
         return ImportResult([], missing)
 
@@ -183,30 +202,60 @@ def import_channels(db: Session, org: Organization, table: Table, *, commit: boo
             continue
         external_id = _clean_id(cell(cells, "external_id"))
         name = cell(cells, "name")
-        if not external_id:
-            out.append(
-                ImportLine(
-                    line_no, "", name, "", result="error", notes=["No channel ID — line skipped."]
-                )
-            )
-            continue
-        platform, note = _platform(cell(cells, "platform"), external_id)
-        if not name:
-            out.append(
-                ImportLine(
-                    line_no,
-                    external_id,
-                    "",
-                    platform,
-                    result="error",
-                    notes=["No channel name — line skipped."],
-                )
-            )
-            continue
-        row = ImportLine(line_no, external_id, name, platform)
-        if note:
-            row.notes.append(note)
+        platform_text = cell(cells, "platform")
+        platform = _platform(platform_text)
+        row = ImportLine(line_no, external_id, name, platform or "")
 
+        # Required columns first: a line missing any of them is skipped, with every reason.
+        problems: list[str] = []
+        if not external_id:
+            problems.append("No channel ID.")
+        if not name:
+            problems.append("No channel name.")
+        if not platform_text:
+            problems.append("No platform (YouTube or Facebook).")
+        elif platform is None:
+            problems.append(f"Platform “{platform_text}” not understood — use YouTube or Facebook.")
+
+        cms = None
+        cms_name = cell(cells, "cms")
+        if not cms_name:
+            problems.append("No CMS.")
+        else:
+            cms = cms_by_name.get(cms_name.lower())
+            if cms is None:
+                problems.append(f"CMS “{cms_name}” is not in the tool — add it in CMS & Finance.")
+            elif platform and cms.platform != platform:
+                problems.append(f"{cms.name} is a {cms.platform.title()} CMS.")
+            elif not cms.is_active:
+                problems.append(f"{cms.name} is inactive.")
+            else:
+                row.cms = cms.name
+
+        status = cell(cells, "status").lower()
+        if not status:
+            problems.append("No status (Active or Inactive).")
+        elif status in INACTIVE:
+            row.status = "inactive"
+        elif status not in ACTIVE:
+            problems.append(
+                f"Status “{cell(cells, 'status')}” not understood — use Active or Inactive."
+            )
+
+        url = cell(cells, "url")
+        if not url:
+            problems.append("No link.")
+        elif not url.startswith(("http://", "https://")):
+            problems.append("Link must start with https://")
+
+        if problems:
+            row.result = "error"
+            row.cms = None
+            row.notes = [*problems, "Line skipped."]
+            out.append(row)
+            continue
+
+        assert platform is not None  # checked above
         key = (platform, external_id)
         if key in existing:
             row.result = "exists"
@@ -219,27 +268,6 @@ def import_channels(db: Session, org: Organization, table: Table, *, commit: boo
             out.append(row)
             continue
         seen.add(key)
-
-        status = cell(cells, "status").lower()
-        if status in ("inactive", "closed", "stopped", "terminated", "demonetized", "no"):
-            row.status = "inactive"
-
-        cms = None
-        cms_name = cell(cells, "cms")
-        if cms_name:
-            cms = cms_by_name.get(cms_name.lower())
-            if cms is None:
-                row.notes.append(f"CMS “{cms_name}” is not in the tool — added without a CMS.")
-            elif cms.platform != platform:
-                row.notes.append(
-                    f"{cms.name} is a {cms.platform.title()} CMS — added without a CMS."
-                )
-                cms = None
-            elif not cms.is_active:
-                row.notes.append(f"{cms.name} is inactive — added without a CMS.")
-                cms = None
-            else:
-                row.cms = cms.name
 
         manager = None
         who = cell(cells, "manager")
@@ -273,9 +301,6 @@ def import_channels(db: Session, org: Organization, table: Table, *, commit: boo
             else:
                 row.partner = partner.name
 
-        url = cell(cells, "url") or None
-        if url and not url.startswith(("http://", "https://")):
-            url = None
         notes = cell(cells, "notes") or None
         out.append(row)
 

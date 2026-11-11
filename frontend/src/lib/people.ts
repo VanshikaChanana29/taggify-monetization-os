@@ -8,7 +8,7 @@ export const PLATFORM_LABELS: Record<Platform, string> = {
 
 export const PLATFORM_TONES: Record<Platform, string> = {
   youtube:
-    "border-red-200 bg-red-50 text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-400",
+    "border-slate-200 bg-slate-50 text-slate-700 dark:border-slate-500/30 dark:bg-slate-500/10 dark:text-slate-300",
   facebook:
     "border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-500/30 dark:bg-blue-500/10 dark:text-blue-400",
 };

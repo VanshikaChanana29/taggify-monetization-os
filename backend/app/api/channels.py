@@ -27,6 +27,8 @@ from app.schemas.channels import (
     ChannelIn,
     ChannelListItem,
     ChannelMetricsOut,
+    ChannelRevenueMonth,
+    ChannelRevenueOut,
     ChannelSlotRef,
     ImportLineOut,
     ImportOut,
@@ -39,6 +41,7 @@ from app.services.assignments import AssignmentError, open_managers, set_manager
 from app.services.audit import record_audit
 from app.services.channel_import import TEMPLATE_HEADERS, TEMPLATE_ROWS, import_channels
 from app.services.channel_performance import Metrics, period_metrics, team_names, youtube_info
+from app.services.channel_revenue import channel_revenue
 from app.services.cms_sheet import read_table
 from app.services.deals import company_today
 from app.services.month_close import MonthClosedError, ensure_open
@@ -412,7 +415,7 @@ def import_template(_: Auth) -> Response:
     ws.append(TEMPLATE_HEADERS)
     for row in TEMPLATE_ROWS:
         ws.append(row)
-    for col, width in zip("ABCDEFGH", (30, 28, 12, 18, 22, 10, 40, 30), strict=True):
+    for col, width in zip("ABCDEFGHI", (30, 28, 12, 18, 22, 10, 40, 30, 18), strict=True):
         ws.column_dimensions[col].width = width
     buf = io.BytesIO()
     wb.save(buf)
@@ -481,6 +484,18 @@ async def import_file(
     )
     db.commit()
     return out
+
+
+@router.get("/{channel_id}/revenue")
+def channel_revenue_months(channel_id: uuid.UUID, ctx: Auth, db: DbSession) -> ChannelRevenueOut:
+    """The channel's money for every month it earned: gross, tax, CMS fee, what the CMS pays."""
+    channel = get_channel(db, ctx, channel_id)
+    return ChannelRevenueOut(
+        base_currency=ctx.organization.base_currency,
+        months=[
+            ChannelRevenueMonth(**vars(m)) for m in channel_revenue(db, ctx.organization, channel)
+        ],
+    )
 
 
 @router.get("/{channel_id}")

@@ -88,7 +88,18 @@ def test_deactivated_user_cannot_log_in(client, make_founder, db):
     response = client.post("/api/auth/login", json={"email": "a@taggify.in", "password": PASSWORD})
 
     assert response.status_code == 401
-    assert response.json()["detail"] == "Your access has been deactivated."
+    assert "was removed by the super admin" in response.json()["detail"]
+
+
+def test_user_with_no_company_is_told_why(client, make_founder, db):
+    user = make_founder("a@taggify.in")
+    db.delete(db.scalar(select(Membership).where(Membership.user_id == user.id)))
+    db.commit()
+
+    response = client.post("/api/auth/login", json={"email": "a@taggify.in", "password": PASSWORD})
+
+    assert response.status_code == 401
+    assert "not added to any company" in response.json()["detail"]
 
 
 def test_switch_organization_only_to_own_companies(make_founder, login, db):

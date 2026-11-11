@@ -201,7 +201,11 @@ def test_import_marks_partner_channels(founder, setup):
         files={
             "file": (
                 "c.csv",
-                b"Channel ID,Channel name,Partner\nUCV2,Vanshika Two,vanshika\nUCX9,Ours,Nobody\n",
+                (
+                    b"Channel ID,Channel name,Platform,CMS,Status,Link,Partner\n"
+                    b"UCV2,Vanshika Two,YouTube,Giri CMS,Active,https://youtube.com/c/v2,vanshika\n"
+                    b"UCX9,Ours,YouTube,Giri CMS,Active,https://youtube.com/c/x9,Nobody\n"
+                ),
                 "text/csv",
             )
         },
@@ -209,3 +213,35 @@ def test_import_marks_partner_channels(founder, setup):
     lines = {x["external_id"]: x for x in r.json()["lines"]}
     assert lines["UCV2"]["partner"] == "Vanshika"
     assert lines["UCX9"]["partner"] is None and "not in the tool" in lines["UCX9"]["notes"][0]
+
+
+def test_unused_partner_can_be_deleted(founder):
+    pid = founder.post("/api/partners", json={"name": "Added by mistake"}).json()["id"]
+
+    assert founder.delete(f"/api/partners/{pid}").status_code == 204
+
+    assert founder.get("/api/partners").json() == []
+
+
+def test_partner_on_a_deal_or_with_channels_is_not_deleted(founder, setup):
+    r = founder.delete(f"/api/partners/{setup['vanshika']}")
+
+    assert r.status_code == 409
+    detail_text = r.json()["detail"]
+    assert "take them off 1 deal" in detail_text and "1 channel" in detail_text
+    assert len(founder.get("/api/partners").json()) == 1
+
+
+def test_partner_with_money_is_never_deleted(founder, setup):
+    pid = setup["vanshika"]
+    founder.post(
+        f"/api/partners/{pid}/contributions",
+        json={"deal_id": setup["deal"]["id"], "amount": "1000", "received_on": str(TODAY)},
+    )
+    founder.put(f"/api/deals/{setup['deal']['id']}/partners", json={"partners": []})
+    founder.put(f"/api/channels/{setup['hers']}", json={"partner_id": None})
+
+    r = founder.delete(f"/api/partners/{pid}")
+
+    assert r.status_code == 409
+    assert "mark them inactive" in r.json()["detail"]

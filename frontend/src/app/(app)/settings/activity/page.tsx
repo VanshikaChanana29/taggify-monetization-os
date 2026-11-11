@@ -43,6 +43,7 @@ const ACTION_LABELS: Record<string, string> = {
   "channel.manager_changed": "Changed a channel's manager",
   "cms.created": "Added a CMS partner",
   "cms.updated": "Edited a CMS partner",
+  "cms.deleted": "Deleted a CMS partner",
   "employee.created": "Added a person",
   "employee.updated": "Edited a person",
   "role.created": "Added a role",
@@ -121,6 +122,7 @@ const ACTION_GROUPS: Record<string, { label: string; actions: string[] }> = {
       "channel.manager_changed",
       "cms.created",
       "cms.updated",
+      "cms.deleted",
     ],
   },
   finance: {

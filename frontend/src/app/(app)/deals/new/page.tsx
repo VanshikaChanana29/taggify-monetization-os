@@ -13,7 +13,7 @@ export default function NewDealPage() {
         <ArrowLeft className="h-4 w-4" />
         All deals
       </Link>
-      <PageHeader title="New deal" description="Record a content licence and the slots it allows. The sections on the right tick off as you fill them." />
+      <PageHeader title="New deal" description="Record a content licence and the slots it allows. The bar at the top turns green as you fill each section." />
       <DealForm deal={null} />
     </div>
   );

@@ -252,3 +252,114 @@ def test_layout_with_swapped_headers_and_a_rate_column():
     p = parse_sheet(t, m, [], rate)
     assert len(p.lines) == 3 and p.skipped == 2
     assert (p.lines[0].net, p.lines[0].fee) == (Decimal("608.79"), Decimal("152.20"))  # 20%
+
+
+def test_a_total_row_with_total_written_in_the_id_column_is_not_a_channel():
+    """Giri's May-26 sheet: "Total" sits in the Channel ID column under each block of channels,
+    and "-" stands for no tax. Neither may become a channel or an error."""
+    from app.services.cms_sheet import detect_rate, guess_mapping, parse_sheet
+
+    radar, patrol, gazab = (
+        "UCSv4AlxQqHKDvCVrAhy5HRg",
+        "UCRSK7R2T7HfWH0nt3i_puhA",
+        "UCGle8kCT760GInWJLlhK6AA",
+    )
+    head = ["Service", "Channel Name", "Channel ID", "Total USD", "U.S Tax Deduction in $",
+            "Subtotal USD", "Super chat & Stickers", "Final USD", "USD", "Billable by Label",
+            "Month"]  # fmt: skip
+    t = table_of(
+        [
+            head,
+            [
+                "Channel",
+                "Crime Radar",
+                radar,
+                490.43,
+                2.58,
+                487.85,
+                "-",
+                487.85,
+                45979.86,
+                36783.89,
+                "May-26",
+            ],  # fmt: skip
+            [
+                "Subscription-Channel",
+                "Crime Radar",
+                radar,
+                4.99,
+                "-",
+                4.99,
+                None,
+                4.99,
+                470.31,
+                376.25,
+                "May-26",
+            ],  # fmt: skip
+            [None, None, "Total", 495.42, 2.58, 492.84, "-", 492.84, 46450.17, 37160.14, None],
+            [],
+            [],
+            [
+                "Channel",
+                "Crime Patrol Dial 112",
+                patrol,
+                1519.70,
+                32.15,
+                1487.55,
+                "-",
+                1487.55,
+                140201.59,
+                112161.27,
+                "May-26",
+            ],  # fmt: skip
+            [
+                "Channel",
+                "GazabHindi TV",
+                gazab,
+                620.85,
+                12.03,
+                608.82,
+                "-",
+                608.82,
+                57381.29,
+                45905.03,
+                "May-26",
+            ],  # fmt: skip
+            [
+                "Subscription-Channel",
+                "Crime Patrol Dial 112",
+                patrol,
+                30.40,
+                "-",
+                30.40,
+                None,
+                30.40,
+                2865.20,
+                2292.16,
+                "May-26",
+            ],  # fmt: skip
+            [
+                "Subscription-Channel",
+                "GazabHindi TV",
+                gazab,
+                12.29,
+                "-",
+                12.29,
+                None,
+                12.29,
+                1158.33,
+                926.67,
+                "May-26",
+            ],  # fmt: skip
+            [],
+            [None] * 8 + [201606.41, None, None],
+        ]
+    )
+    m = guess_mapping(t)
+    rate = detect_rate(t, m)
+    assert rate == Decimal("94.25")
+    p = parse_sheet(t, m, [], rate)
+    assert [(x.external_id, x.rows) for x in p.lines] == [(radar, 2), (patrol, 2), (gazab, 2)]
+    assert sum(x.gross for x in p.lines) == Decimal("2678.66")  # not 3,174.08 with the Total
+    assert sum(x.tax for x in p.lines) == Decimal("46.76")
+    assert p.errors == []

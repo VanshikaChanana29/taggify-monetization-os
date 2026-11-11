@@ -1,11 +1,19 @@
 import uuid
 
 from fastapi import APIRouter, HTTPException, Request, status
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 
 from app.api.deps import Auth, client_ip
 from app.core.database import DbSession
-from app.models import Channel, CmsFeeSchedule, CmsPartner, RevenueFact
+from app.models import (
+    BankReceipt,
+    Channel,
+    CmsAdjustment,
+    CmsFeeSchedule,
+    CmsPartner,
+    CmsStatement,
+    RevenueFact,
+)
 from app.schemas.channels import CmsIn, CmsOut, CmsSlabs
 from app.services.audit import record_audit
 from app.services.deals import company_today
@@ -160,3 +168,55 @@ def update_cms(
     db.commit()
     db.refresh(cms)
     return _out(cms, _counts(db, ctx.organization.id).get(cms.id, 0))
+
+
+@router.delete("/{cms_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_cms(cms_id: uuid.UUID, ctx: Auth, request: Request, db: DbSession) -> None:
+    """Delete a CMS that nothing uses yet (e.g. one added by mistake), with its fee slabs.
+
+    A CMS with channels or any money on it (revenue, statements, bank receipts, adjustments)
+    cannot be deleted: those records are the company's books. Mark it inactive instead.
+    """
+    cms = db.scalar(
+        select(CmsPartner).where(
+            CmsPartner.id == cms_id, CmsPartner.organization_id == ctx.organization.id
+        )
+    )
+    if cms is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "CMS partner not found")
+
+    def count(model, column) -> int:
+        return db.scalar(select(func.count()).select_from(model).where(column == cms.id)) or 0
+
+    in_use = [
+        (count(Channel, Channel.cms_partner_id), "channel", "channels"),
+        (count(RevenueFact, RevenueFact.cms_partner_id), "revenue row", "revenue rows"),
+        (count(CmsStatement, CmsStatement.cms_partner_id), "statement", "statements"),
+        (count(BankReceipt, BankReceipt.cms_partner_id), "bank receipt", "bank receipts"),
+        (count(CmsAdjustment, CmsAdjustment.cms_partner_id), "adjustment", "adjustments"),
+    ]
+    used = [f"{n} {one if n == 1 else many}" for n, one, many in in_use if n]
+    if used:
+        hint = (
+            " Move its channels to another CMS first."
+            if in_use[0][0] and len(used) == 1
+            else " Its money records must stay, so mark it inactive instead (Edit → untick Active)."
+        )
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"{cms.name} cannot be deleted: it has {', '.join(used)}.{hint}",
+        )
+
+    db.execute(delete(CmsFeeSchedule).where(CmsFeeSchedule.cms_partner_id == cms.id))
+    record_audit(
+        db,
+        "cms.deleted",
+        organization_id=ctx.organization.id,
+        user_id=ctx.user.id,
+        entity_type="cms_partner",
+        entity_id=cms.id,
+        details={"name": cms.name},
+        ip=client_ip(request),
+    )
+    db.delete(cms)
+    db.commit()

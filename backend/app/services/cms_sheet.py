@@ -186,7 +186,8 @@ def _is_number(value: str) -> bool:
 
 
 def _amount(value: object, what: str) -> Decimal:
-    if value is None or _text(value) == "":
+    # Accounting sheets write a dash for nothing (e.g. no US tax on subscription revenue).
+    if value is None or _text(value) in ("", "-", "–", "—"):
         return Decimal("0.00")
     if isinstance(value, int | float | Decimal):
         return money(Decimal(str(value)))
@@ -387,6 +388,14 @@ def check_mapping(table: Table, mapping: dict[str, str]) -> list[str]:
     return problems
 
 
+SUMMARY = re.compile(r"^(grand\s*|sub\s*-?\s*)?totals?\b|^sum$|^net\s+total\b", re.IGNORECASE)
+
+
+def _is_summary(text: str) -> bool:
+    """A totals row's label, e.g. "Total", "Grand Total", "Sub-total", "TOTAL:"."""
+    return bool(SUMMARY.search(text.strip()))
+
+
 def parse_sheet(
     table: Table,
     mapping: dict[str, str],
@@ -405,11 +414,11 @@ def parse_sheet(
             return cells[index[key]] if key in index else None
 
         raw_id = _text(cell("channel_id"))
-        if not raw_id:
-            # Blank rows and the totals row at the bottom have no channel.
+        found = UC_ID.search(raw_id)
+        if not raw_id or (not found and _is_summary(raw_id)):
+            # Blank rows, and total rows — with no ID, or "Total" written in the ID column.
             result.skipped += 1
             continue
-        found = UC_ID.search(raw_id)
         external_id = (found.group(0) if found else raw_id.rstrip("/").split("/")[-1])[:100]
         try:
             gross = _amount(cell("gross"), "Gross")

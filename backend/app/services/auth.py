@@ -84,7 +84,17 @@ def authenticate(
     if not active and not user.is_superadmin:
         record_audit(db, "auth.login_denied", organization_id=first_org_id, user_id=user.id, ip=ip)
         db.commit()
-        raise LoginError("Your access has been deactivated.")
+        # The password was right, so say plainly why they cannot get in and who can fix it.
+        if user.memberships:
+            names = ", ".join(sorted(m.organization.name for m in user.memberships))
+            raise LoginError(
+                f"Your access to {names} was removed by the super admin. "
+                "Ask them to restore it from All users."
+            )
+        raise LoginError(
+            "Your account is not added to any company yet. "
+            "Ask the super admin to add you to one from All users."
+        )
 
     user.failed_login_count = 0
     user.locked_until = None

@@ -4,13 +4,13 @@ import uuid
 
 from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session, selectinload
 
 from app.api.deps import SuperAdmin, client_ip
 from app.core.database import DbSession
 from app.core.security import hash_password
-from app.models import Membership, Organization, User
+from app.models import Membership, Organization, User, UserSession
 from app.schemas.admin import (
     AddMembershipRequest,
     AdminCreateUserRequest,
@@ -272,12 +272,20 @@ def _set_membership_active(
     request: Request,
     db: Session,
 ) -> AdminUserOut:
-    if not active and user_id == ctx.user.id:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "You cannot remove your own access")
-
     membership = _get_membership(db, user_id, organization_id)
     membership.is_active = active
-    if not active:
+    if not active and user_id == ctx.user.id:
+        # A super admin stepping out of a company stays logged in, in the Admin workspace
+        # (super admins need no company to log in or to use the Admin pages).
+        db.execute(
+            update(UserSession)
+            .where(
+                UserSession.user_id == user_id,
+                UserSession.active_organization_id == organization_id,
+            )
+            .values(active_organization_id=None)
+        )
+    elif not active:
         revoke_sessions(db, user_id, organization_id=organization_id)
     record_audit(
         db,

@@ -82,7 +82,7 @@ cd backend
 
 Log in as the super admin, then in the app:
 1. **Super admin → Companies**: create Taggify, Sociodoor, …
-2. **Super admin → All users**: create each company's founders (with a temporary password),
+2. **Super admin → All users**: create each company's founders (with a password),
    or add an existing user to another company (a company switcher then appears for them).
 
 `python -m app.cli list` prints every company and its users. `create-org`, `create-user` and

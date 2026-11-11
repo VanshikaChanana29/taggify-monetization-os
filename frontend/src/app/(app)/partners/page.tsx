@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowRight, ChevronRight, Pencil, Plus } from "lucide-react";
+import { ArrowRight, ChevronRight, Pencil, Plus, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
@@ -12,7 +12,7 @@ import { PageHeader } from "@/components/page-header";
 import { PartnerForm } from "@/components/partner-form";
 import { StatusPill } from "@/components/status-pill";
 import { Button } from "@/components/ui/button";
-import { Dialog } from "@/components/ui/dialog";
+import { Dialog, DialogFooter } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { api } from "@/lib/api";
 import { compactInr } from "@/lib/finance";
@@ -24,6 +24,9 @@ export default function PartnersPage() {
   const [editing, setEditing] = useState<DealPartner | "new" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<DealPartner | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
   const load = useCallback(() => {
     api<DealPartner[]>("/partners")
@@ -31,6 +34,28 @@ export default function PartnersPage() {
       .catch((err: Error) => setError(err.message));
   }, []);
   useEffect(load, [load]);
+
+  // Arriving from "Create a deal partner" on the new-deal form opens the popup straight away.
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("new") === "1") setEditing("new");
+  }, []);
+
+  async function confirmDelete() {
+    if (!deleting) return;
+    setBusy(true);
+    setDeleteError(null);
+    try {
+      await api(`/partners/${deleting.id}`, { method: "DELETE" });
+      setError(null);
+      setNotice(`${deleting.name} deleted.`);
+      setDeleting(null);
+      load();
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : "Could not delete");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   if (!rows) return error ? <Notice kind="error">{error}</Notice> : <PageLoader />;
 
@@ -116,6 +141,19 @@ export default function PartnersPage() {
                     <Button variant="outline" size="icon" aria-label={`Edit ${p.name}`} onClick={() => setEditing(p)}>
                       <Pencil />
                     </Button>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      aria-label={`Delete ${p.name}`}
+                      title="Delete partner"
+                      className="border-red-200 text-red-600 hover:bg-red-50 dark:border-red-500/30 dark:hover:bg-red-500/10"
+                      onClick={() => {
+                        setDeleting(p);
+                        setDeleteError(null);
+                      }}
+                    >
+                      <Trash2 />
+                    </Button>
                   </div>
                 </TableCell>
               </TableRow>
@@ -144,6 +182,51 @@ export default function PartnersPage() {
             }}
           />
         )}
+      </Dialog>
+
+      <Dialog
+        open={Boolean(deleting)}
+        onClose={() => setDeleting(null)}
+        title={`Delete ${deleting?.name ?? "partner"}?`}
+        description="This removes the partner for good. It cannot be undone."
+      >
+        {deleting && (
+          <div className="space-y-4 text-sm">
+            {deleting.deals.length > 0 || deleting.channel_count > 0 ? (
+              <Notice kind="error">
+                First{" "}
+                {[
+                  deleting.deals.length > 0 &&
+                    `take them off ${deleting.deals.map((d) => d.title).join(", ")} (Deal → Partners tab)`,
+                  deleting.channel_count > 0 &&
+                    `change the owner of their ${deleting.channel_count} channel${deleting.channel_count === 1 ? "" : "s"} (Channels → Edit → Owned by partner)`,
+                ]
+                  .filter(Boolean)
+                  .join(" and ")}
+                .
+              </Notice>
+            ) : (
+              <p className="text-muted-foreground">
+                A partner who has paid in or been paid cannot be deleted — those records stay in the books. Mark them inactive instead (Edit →
+                untick Active).
+              </p>
+            )}
+            {deleteError && <Notice kind="error">{deleteError}</Notice>}
+          </div>
+        )}
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={() => setDeleting(null)}>
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            variant="destructive"
+            onClick={confirmDelete}
+            disabled={busy || Boolean(deleting && (deleting.deals.length > 0 || deleting.channel_count > 0))}
+          >
+            {busy ? "Deleting…" : "Delete partner"}
+          </Button>
+        </DialogFooter>
       </Dialog>
     </div>
   );

@@ -1,6 +1,7 @@
 "use client";
 
 import { Check, FileUp, Play, X } from "lucide-react";
+import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import { Notice } from "@/components/notice";
@@ -137,6 +138,9 @@ export function ChannelForm({
   }
 
   const yt = form.platform === "youtube";
+  // A new channel needs every field except Notes (founders' rule); older channels can still be
+  // edited without a link or CMS. Platform, owner and status always have a value.
+  const isNew = !channel;
   const section = "text-xs font-semibold uppercase tracking-wider text-muted-foreground";
 
   return (
@@ -266,10 +270,11 @@ export function ChannelForm({
             />
           </div>
           <div className="space-y-2 md:col-span-2">
-            <Label htmlFor="ch-url">Link</Label>
+            <Label htmlFor="ch-url">Link{isNew && " *"}</Label>
             <Input
               id="ch-url"
               type="url"
+              required={isNew}
               placeholder={yt ? "https://www.youtube.com/channel/UC…" : "https://www.facebook.com/…"}
               value={form.url}
               onChange={(e) => set({ url: e.target.value })}
@@ -283,16 +288,31 @@ export function ChannelForm({
         <div className="grid gap-4 md:grid-cols-2">
           <div className="space-y-2">
             <Label htmlFor="ch-cms">
-              {yt ? "CMS" : "Business portfolio"} <InfoTip text={HELP.cms} />
+              {yt ? "CMS" : "Business portfolio"}
+              {isNew && " *"} <InfoTip text={HELP.cms} />
             </Label>
-            <NativeSelect id="ch-cms" value={form.cms_partner_id} onChange={(e) => set({ cms_partner_id: e.target.value })}>
-              <option value="">None yet</option>
+            <NativeSelect
+              id="ch-cms"
+              required={isNew}
+              value={form.cms_partner_id}
+              onChange={(e) => set({ cms_partner_id: e.target.value })}
+            >
+              <option value="">{isNew ? "Choose…" : "None yet"}</option>
               {cmsOptions.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.name}
                 </option>
               ))}
             </NativeSelect>
+            {isNew && cmsList.length > 0 && cmsOptions.length === 0 && (
+              <p className="text-xs text-muted-foreground">
+                No {yt ? "YouTube CMS" : "Facebook portfolio"} yet —{" "}
+                <Link href="/finance/partners" className="text-primary hover:underline">
+                  add one in CMS &amp; Finance
+                </Link>{" "}
+                first.
+              </p>
+            )}
           </div>
           <div className="space-y-2">
             <Label htmlFor="ch-partner">Owned by</Label>

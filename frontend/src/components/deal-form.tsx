@@ -14,11 +14,11 @@ import { InfoTip } from "@/components/ui/info-tip";
 import { HELP } from "@/lib/help";
 import { api } from "@/lib/api";
 import { COUNTRIES, DEAL_TYPE_LABELS, SCOPE_LABELS } from "@/lib/deals";
-import { money } from "@/lib/finance";
-import type { ContentOwner, Deal, DealType, EpisodeScope, Exclusivity, StoredDealStatus } from "@/lib/types";
+import type { ContentOwner, Deal, DealPartner, DealType, EpisodeScope, Exclusivity, StoredDealStatus } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 type RangeRow = { season: string; from: string; to: string };
+type PartnerRow = { partner_id: string; share_pct: string };
 
 type Form = {
   owner_id: string;
@@ -167,6 +167,7 @@ type FieldKey =
   | "slots"
   | "contract_url"
   | "notice_period_days"
+  | "partners"
   | "form";
 
 type Errors = { fields: Partial<Record<FieldKey, string>>; ranges: Record<number, string> };
@@ -260,7 +261,7 @@ function Section({
   children: React.ReactNode;
 }) {
   return (
-    <section id={id} className="scroll-mt-24 rounded-2xl border bg-card shadow-sm">
+    <section id={id} className="scroll-mt-40 rounded-2xl border bg-card shadow-sm">
       <header className="flex items-start gap-4 border-b px-6 py-4">
         <span
           className={cn(
@@ -312,12 +313,20 @@ export function DealForm({ deal }: { deal: Deal | null }) {
   const [submitted, setSubmitted] = useState(false);
   const err = errors.fields;
   const [saving, setSaving] = useState(false);
+  // Optional, new deals only: who bought this licence with Taggify (the deal page manages them afterwards).
+  const [partners, setPartners] = useState<DealPartner[]>([]);
+  const [partnerRows, setPartnerRows] = useState<PartnerRow[]>([{ partner_id: "", share_pct: "50" }]);
 
   useEffect(() => {
     api<ContentOwner[]>("/content-owners")
       .then(setOwners)
       .catch(() => {});
-  }, []);
+    if (!deal) {
+      api<DealPartner[]>("/partners")
+        .then((list) => setPartners(list.filter((p) => p.is_active)))
+        .catch(() => {});
+    }
+  }, [deal]);
 
   // After the first submit, re-check as the founder edits so fixed fields clear right away.
   useEffect(() => {
@@ -339,6 +348,7 @@ export function DealForm({ deal }: { deal: Deal | null }) {
     event.preventDefault();
     setSubmitted(true);
     const problems = clientErrors(form);
+    if (partnersTotal >= 100) problems.fields.partners = "Partners together must hold less than 100%.";
     if (hasErrors(problems)) return showErrors(problems);
     setErrors(NO_ERRORS);
     setSaving(true);
@@ -347,6 +357,16 @@ export function DealForm({ deal }: { deal: Deal | null }) {
         method: deal ? "PUT" : "POST",
         json: toPayload(form),
       });
+      const picked = partnerRows.filter((r) => r.partner_id && Number(r.share_pct) > 0);
+      if (!deal && picked.length) {
+        try {
+          await api(`/deals/${saved.id}/partners`, { method: "PUT", json: { partners: picked } });
+        } catch {
+          // The deal is saved; open it so the partners can be fixed there.
+          router.push(`/deals/${saved.id}`);
+          return;
+        }
+      }
       // A new deal goes back to the list (like every other "New …"); an edit returns to the deal.
       router.push(deal ? `/deals/${saved.id}` : `/deals?added=${encodeURIComponent(saved.title)}`);
     } catch (err) {
@@ -355,7 +375,9 @@ export function DealForm({ deal }: { deal: Deal | null }) {
     }
   }
 
-  const owner = owners.find((o) => o.id === form.owner_id);
+  const partnersTotal = partnerRows.reduce((t, r) => t + (r.partner_id ? Number(r.share_pct) || 0 : 0), 0);
+
+  const freePartners = (current: string) => partners.filter((p) => p.id === current || !partnerRows.some((r) => r.partner_id === p.id));
   const slots = Number(form.yt_slot_limit || 0) + Number(form.fb_slot_limit || 0);
   const done = {
     deal:
@@ -379,12 +401,35 @@ export function DealForm({ deal }: { deal: Deal | null }) {
     ["terms", "Contract terms"],
     ["docs", "Documents & notes"],
   ];
-  const fmtDate = (d: string) =>
-    d ? new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", year: "numeric" }).format(new Date(d)) : "—";
-
   return (
-    <form onSubmit={submit} className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_18rem]">
-      <div className="min-w-0 space-y-6">
+    <form onSubmit={submit} className="space-y-6">
+      {/* Small progress bar: each section turns green with a tick once it is filled. */}
+      <nav aria-label="Form progress" className="sticky top-20 z-20 rounded-2xl border bg-card/95 px-4 py-3 shadow-sm backdrop-blur">
+        <ol className="flex items-center gap-1 overflow-x-auto">
+          {steps.map(([key, label], i) => (
+            <li key={key} className="flex min-w-0 flex-1 items-center gap-1 last:flex-none">
+              <a href={`#${key}`} className="flex shrink-0 items-center gap-2 rounded-lg px-1.5 py-1 text-sm hover:bg-muted">
+                <span
+                  className={cn(
+                    "flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold transition-colors",
+                    done[key] ? "bg-emerald-600 text-white" : "bg-muted text-muted-foreground",
+                  )}
+                  aria-hidden
+                >
+                  {done[key] ? <Check className="h-3.5 w-3.5" /> : i + 1}
+                </span>
+                <span className={cn("whitespace-nowrap", done[key] ? "font-medium text-emerald-700 dark:text-emerald-400" : "text-muted-foreground")}>
+                  {label}
+                </span>
+                <span className="sr-only">{done[key] ? "(done)" : "(not done)"}</span>
+              </a>
+              {i < steps.length - 1 && (
+                <span className={cn("h-0.5 min-w-3 flex-1 rounded-full", done[key] ? "bg-emerald-500" : "bg-border")} aria-hidden />
+              )}
+            </li>
+          ))}
+        </ol>
+      </nav>
         <Section
           id="deal"
           step={1}
@@ -434,19 +479,27 @@ export function DealForm({ deal }: { deal: Deal | null }) {
             <FieldError message={err.title} />
           </div>
           <div className="space-y-2 md:col-span-2">
-            <Label>
+            <Label htmlFor="deal-type">
               Deal type * <InfoTip text={HELP.dealType} />
             </Label>
-            <Choice
+            <NativeSelect
+              id="deal-type"
+              className="md:max-w-[calc(50%-0.5rem)]"
               value={form.deal_type}
-              options={DEAL_TYPE_LABELS}
-              onChange={(deal_type) =>
+              onChange={(e) => {
+                const deal_type = e.target.value as DealType;
                 set({
                   deal_type,
                   ...(deal_type === "partnership" && !form.revenue_share_pct ? { revenue_share_pct: "50" } : {}),
-                })
-              }
-            />
+                });
+              }}
+            >
+              {(Object.keys(DEAL_TYPE_LABELS) as DealType[]).map((key) => (
+                <option key={key} value={key}>
+                  {DEAL_TYPE_LABELS[key]}
+                </option>
+              ))}
+            </NativeSelect>
           </div>
           {form.deal_type === "hybrid" && (
             <p className="text-sm text-muted-foreground md:col-span-2">
@@ -515,6 +568,91 @@ export function DealForm({ deal }: { deal: Deal | null }) {
             </Label>
             <Choice value={form.status} options={STATUS_CHOICES} onChange={(status) => set({ status })} />
           </div>
+          {!deal && (
+            <div className="space-y-2 md:col-span-2">
+              <Label htmlFor="partner-0">
+                Deal partner <span className="ml-1 text-xs font-normal text-muted-foreground">(optional)</span>
+              </Label>
+              {partners.length > 0 &&
+                partnerRows.map((r, i) => (
+                  <div key={i} className="flex flex-wrap items-center gap-2">
+                    <NativeSelect
+                      id={`partner-${i}`}
+                      aria-label="Partner"
+                      className="w-full md:w-[calc(50%-0.5rem)]"
+                      value={r.partner_id}
+                      onChange={(e) => setPartnerRows(partnerRows.map((x, j) => (j === i ? { ...x, partner_id: e.target.value } : x)))}
+                    >
+                      <option value="">No partner</option>
+                      {freePartners(r.partner_id).map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name}
+                        </option>
+                      ))}
+                    </NativeSelect>
+                    {r.partner_id && (
+                      <div className="flex items-center gap-1">
+                        <Input
+                          aria-label="Partner's share %"
+                          className="w-24"
+                          type="number"
+                          min="0.01"
+                          max="99.99"
+                          step="0.01"
+                          value={r.share_pct}
+                          onChange={(e) => setPartnerRows(partnerRows.map((x, j) => (j === i ? { ...x, share_pct: e.target.value } : x)))}
+                        />
+                        <span className="text-sm text-muted-foreground">% share</span>
+                      </div>
+                    )}
+                    {partnerRows.length > 1 && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        aria-label="Remove partner"
+                        onClick={() => setPartnerRows(partnerRows.filter((_, j) => j !== i))}
+                      >
+                        <Trash2 />
+                      </Button>
+                    )}
+                  </div>
+                ))}
+
+              {partners.length === 0 ? (
+                <div>
+                  <Button type="button" variant="outline" size="sm" asChild>
+                    <Link href="/partners?new=1">
+                      <Plus />
+                      Create a deal partner
+                    </Link>
+                  </Button>
+                </div>
+              ) : (
+                (partnersTotal > 0 || (partnerRows.every((r) => r.partner_id) && freePartners("").length > 0)) && (
+                  <div className="flex flex-wrap items-center gap-2">
+                    {partnerRows.every((r) => r.partner_id) && freePartners("").length > 0 && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setPartnerRows([...partnerRows, { partner_id: "", share_pct: "50" }])}
+                      >
+                        <Plus />
+                        Another partner
+                      </Button>
+                    )}
+                    {partnersTotal > 0 && (
+                      <span className={cn("text-sm", partnersTotal >= 100 ? "text-red-600 dark:text-red-400" : "text-muted-foreground")}>
+                        Taggify keeps {Math.round((100 - partnersTotal) * 100) / 100}%
+                      </span>
+                    )}
+                  </div>
+                )
+              )}
+              <FieldError message={err.partners} />
+            </div>
+          )}
         </Section>
 
         <Section id="rights" step={2} done={done.rights} title="Rights" hint="What may be published, until when, and where.">
@@ -789,66 +927,6 @@ export function DealForm({ deal }: { deal: Deal | null }) {
             {saving ? "Saving…" : deal ? "Save changes" : "Create deal"}
           </Button>
         </div>
-      </div>
-
-      <aside className="space-y-4 lg:sticky lg:top-24">
-        <nav className="rounded-2xl border bg-card p-4 shadow-sm" aria-label="Form sections">
-          <p className="px-2 pb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Sections</p>
-          <ol className="space-y-1">
-            {steps.map(([key, label], i) => (
-              <li key={key}>
-                <a href={`#${key === "terms" ? "terms" : key}`} className="flex items-center gap-3 rounded-lg px-2 py-1.5 text-sm hover:bg-muted">
-                  <span
-                    className={cn(
-                      "flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold",
-                      done[key] ? "bg-emerald-600 text-white" : "bg-muted text-muted-foreground",
-                    )}
-                    aria-hidden
-                  >
-                    {done[key] ? <Check className="h-3.5 w-3.5" /> : i + 1}
-                  </span>
-                  <span className={done[key] ? "text-foreground" : "text-muted-foreground"}>{label}</span>
-                  {i >= 3 && <span className="ml-auto text-[11px] text-muted-foreground">optional</span>}
-                </a>
-              </li>
-            ))}
-          </ol>
-        </nav>
-
-        <div className="rounded-2xl border bg-card p-5 shadow-sm">
-          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Summary</p>
-          <p className="mt-2 text-base font-semibold leading-snug">{form.title.trim() || "Untitled deal"}</p>
-          <p className="text-sm text-muted-foreground">{owner?.name ?? "No owner chosen"}</p>
-          <dl className="mt-4 space-y-2 text-sm">
-            {(
-              [
-                ["Type", DEAL_TYPE_LABELS[form.deal_type]],
-                [
-                  form.deal_type === "hybrid" ? "Guarantee" : "Licence fee",
-                  PAYS_FEE.includes(form.deal_type) ? (form.fee_amount ? money(form.fee_amount, form.currency) : "—") : "None",
-                ],
-                ...(SHARES.includes(form.deal_type)
-                  ? [
-                      [
-                        form.deal_type === "partnership" ? "Partner share" : "Owner share",
-                        form.revenue_share_pct ? `${form.revenue_share_pct}%` : "—",
-                      ],
-                    ]
-                  : []),
-                ["Term", form.term_start || form.term_end ? `${fmtDate(form.term_start)} – ${fmtDate(form.term_end)}` : "—"],
-                ["Episodes", SCOPE_LABELS[form.episode_scope]],
-                ["Slots", slots ? `${form.yt_slot_limit || 0} YouTube · ${form.fb_slot_limit || 0} Facebook` : "—"],
-                ["Territory", form.is_worldwide ? "Worldwide" : form.territories.length ? `${form.territories.length} countries` : "—"],
-              ] as [string, string][]
-            ).map(([k, v]) => (
-              <div key={k} className="flex justify-between gap-3">
-                <dt className="text-muted-foreground">{k}</dt>
-                <dd className="text-right font-medium">{v}</dd>
-              </div>
-            ))}
-          </dl>
-        </div>
-      </aside>
     </form>
   );
 }
