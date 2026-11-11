@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { api } from "@/lib/api";
 import type { DealPartner } from "@/lib/types";
 
-/** New / edit a deal partner (name, contact; TDS % only when editing). Used inside a Dialog. */
+/** New / edit a deal partner (name, contact, notes). Used inside a Dialog. No TDS (founders). */
 export function PartnerForm({
   partner,
   onSaved,
@@ -23,7 +23,6 @@ export function PartnerForm({
     name: partner?.name ?? "",
     email: partner?.email ?? "",
     phone: partner?.phone ?? "",
-    tds_pct: partner?.tds_pct ? String(Number(partner.tds_pct)) : "",
     notes: partner?.notes ?? "",
     is_active: partner?.is_active ?? true,
   });
@@ -37,7 +36,7 @@ export function PartnerForm({
     try {
       const saved = await api<DealPartner>(partner ? `/partners/${partner.id}` : "/partners", {
         method: partner ? "PUT" : "POST",
-        json: { ...form, tds_pct: form.tds_pct === "" ? null : form.tds_pct },
+        json: form,
       });
       onSaved(saved);
     } catch (err) {
@@ -68,24 +67,7 @@ export function PartnerForm({
         <Label htmlFor="pt-phone">Phone</Label>
         <Input id="pt-phone" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
       </div>
-      {/* TDS is not asked when creating a partner for now; it can still be set by editing them. */}
-      {partner && (
-        <div className="space-y-1">
-          <Label htmlFor="pt-tds">TDS % on payments to them</Label>
-          <Input
-            id="pt-tds"
-            type="number"
-            min="0"
-            max="100"
-            step="0.01"
-            placeholder="e.g. 10"
-            value={form.tds_pct}
-            onChange={(e) => setForm({ ...form, tds_pct: e.target.value })}
-          />
-          <p className="text-xs text-muted-foreground">Taken off each payment. Leave empty until the founders confirm the rate.</p>
-        </div>
-      )}
-      <div className={partner ? "space-y-1" : "space-y-1 sm:col-span-2"}>
+      <div className="space-y-1 sm:col-span-2">
         <Label htmlFor="pt-notes">Notes</Label>
         <Input id="pt-notes" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
       </div>

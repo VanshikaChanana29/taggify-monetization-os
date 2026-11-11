@@ -79,12 +79,15 @@ export function CmsSheetUpload({
   month,
   cmsList,
   onImported,
+  onMonthChange,
 }: {
   open: boolean;
   onClose: () => void;
   month: string;
   cmsList: CmsPartner[];
   onImported: () => void;
+  /** Given: the month is chosen in the popup (e.g. from a partner's page), not beforehand. */
+  onMonthChange?: (month: string) => void;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [cms, setCms] = useState("");
@@ -193,6 +196,25 @@ export function CmsSheetUpload({
         </div>
       ) : (
         <div className="space-y-5">
+          {onMonthChange && (
+            <div className="space-y-2 sm:w-1/2 sm:pr-2">
+              <Label htmlFor="sheet-month">Which month is it for? *</Label>
+              <Input
+                id="sheet-month"
+                type="month"
+                required
+                value={month}
+                onChange={(e) => {
+                  if (!e.target.value) return;
+                  onMonthChange(e.target.value);
+                  setFile(null);
+                  setMapping(null);
+                  setPreview(null);
+                  if (fileRef.current) fileRef.current.value = "";
+                }}
+              />
+            </div>
+          )}
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="sheet-cms">Which CMS sent it? *</Label>

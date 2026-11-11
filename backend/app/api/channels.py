@@ -3,7 +3,17 @@ import uuid
 from datetime import date, timedelta
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, File, HTTPException, Query, Request, Response, UploadFile, status
+from fastapi import (
+    APIRouter,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    Request,
+    Response,
+    UploadFile,
+    status,
+)
 from sqlalchemy import exists, func, or_, select
 from sqlalchemy.orm import Session
 
@@ -426,7 +436,13 @@ def import_template(_: Auth) -> Response:
     )
 
 
-async def _import(file: UploadFile, ctx: AuthContext, db: Session, commit: bool) -> ImportOut:
+async def _import(
+    file: UploadFile,
+    ctx: AuthContext,
+    db: Session,
+    commit: bool,
+    partner_id: uuid.UUID | None = None,
+) -> ImportOut:
     content = await file.read(MAX_IMPORT_BYTES + 1)
     if len(content) > MAX_IMPORT_BYTES:
         raise HTTPException(
@@ -436,7 +452,16 @@ async def _import(file: UploadFile, ctx: AuthContext, db: Session, commit: bool)
         table = read_table(content, file.filename or "channels")
     except ValueError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
-    result = import_channels(db, ctx.organization, table, commit=commit)
+    partner = None
+    if partner_id:
+        partner = db.scalar(
+            select(DealPartner).where(
+                DealPartner.id == partner_id, DealPartner.organization_id == ctx.organization.id
+            )
+        )
+        if partner is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Partner not found")
+    result = import_channels(db, ctx.organization, table, commit=commit, for_partner=partner)
     return ImportOut(
         added=result.count("new"),
         exists=result.count("exists"),
@@ -450,19 +475,26 @@ async def _import(file: UploadFile, ctx: AuthContext, db: Session, commit: bool)
 
 @router.post("/import/preview")
 async def import_preview(
-    ctx: Auth, db: DbSession, file: Annotated[UploadFile, File()]
+    ctx: Auth,
+    db: DbSession,
+    file: Annotated[UploadFile, File()],
+    partner_id: Annotated[uuid.UUID | None, Form()] = None,
 ) -> ImportOut:
     """What would happen, line by line. Nothing is saved."""
-    out = await _import(file, ctx, db, commit=False)
+    out = await _import(file, ctx, db, commit=False, partner_id=partner_id)
     db.rollback()
     return out
 
 
 @router.post("/import", status_code=status.HTTP_201_CREATED)
 async def import_file(
-    request: Request, ctx: Auth, db: DbSession, file: Annotated[UploadFile, File()]
+    request: Request,
+    ctx: Auth,
+    db: DbSession,
+    file: Annotated[UploadFile, File()],
+    partner_id: Annotated[uuid.UUID | None, Form()] = None,
 ) -> ImportOut:
-    out = await _import(file, ctx, db, commit=True)
+    out = await _import(file, ctx, db, commit=True, partner_id=partner_id)
     if out.missing_columns:
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY,

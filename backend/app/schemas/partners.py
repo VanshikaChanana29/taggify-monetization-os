@@ -48,6 +48,8 @@ class PartnerOut(BaseModel):
     deals: list[PartnerDealRef] = []
     channel_count: int = 0
     earned: Decimal = Decimal("0.00")
+    commission: Decimal = Decimal("0.00")  # what Taggify earned from them, base currency
+    commission_pct: Decimal | None = None  # their rate for all channels, this month
     paid: Decimal = Decimal("0.00")
     outstanding: Decimal = Decimal("0.00")
     waiting: Decimal = Decimal("0.00")
@@ -60,6 +62,8 @@ class PartnerMonthOut(BaseModel):
     gross: Decimal
     tax: Decimal
     cms_fee: Decimal
+    commission: Decimal
+    commission_base: Decimal | None
     share: Decimal
     share_base: Decimal | None
     tds: Decimal | None
@@ -88,6 +92,42 @@ class PartnerChannelOut(BaseModel):
     external_id: str
     cms_name: str | None
     status: str
+    commission_pct: Decimal | None = None  # the channel's own rate this month, if set
+
+
+class PartnerChannelMonthOut(BaseModel):
+    channel_id: uuid.UUID
+    month: str
+    cms_name: str | None
+    currency: str
+    gross: Decimal
+    tax: Decimal
+    cms_fee: Decimal | None
+    source: str | None
+    commission_pct: Decimal | None
+    commission: Decimal | None
+    share: Decimal | None
+    fx_rate: Decimal | None
+    commission_base: Decimal | None
+    share_base: Decimal | None
+    views: int | None
+
+
+class CommissionOut(BaseModel):
+    id: uuid.UUID
+    channel_id: uuid.UUID | None
+    channel_name: str | None
+    pct: Decimal
+    effective_from: str
+
+
+class CommissionIn(BaseModel):
+    """Set Taggify's % for all the partner's channels (channel_id empty) or for one channel,
+    from a month on. pct empty on a channel = back to the partner's rate from that month."""
+
+    channel_id: uuid.UUID | None = None
+    pct: Decimal | None = Field(default=None, ge=0, le=100, decimal_places=2)
+    month: str = Field(pattern=r"^\d{4}-\d{2}$")
 
 
 class ContributionOut(BaseModel):
@@ -114,6 +154,8 @@ class PartnerDetail(BaseModel):
     months: list[PartnerMonthOut]
     deals: list[PartnerDealOut]
     channels: list[PartnerChannelOut]
+    channel_months: list[PartnerChannelMonthOut]
+    commissions: list[CommissionOut]
     contributions: list[ContributionOut]
     payouts: list[PayoutOut]
     warnings: list[str]

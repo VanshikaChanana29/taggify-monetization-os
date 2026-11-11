@@ -3,7 +3,8 @@ the Sony deal).
 
 The content owner (Sony) is unchanged. The partner pays Taggify their % of the licence fee,
 runs their own channels under the deal, and is paid those channels' earnings after the CMS
-fee once the CMS has paid Taggify, less TDS. Only founders see any of it.
+fee — and after Taggify's own commission, if the owner sets one — once the CMS has paid
+Taggify. Only founders see any of it.
 """
 
 import uuid
@@ -44,6 +45,28 @@ class DealPartnerShare(UUIDPrimaryKeyMixin, OrgScopedMixin, TimestampMixin, Base
     share_pct: Mapped[Decimal] = mapped_column(Numeric(5, 2))
 
     partner: Mapped[DealPartner] = relationship(lazy="joined")
+
+
+class PartnerCommission(UUIDPrimaryKeyMixin, OrgScopedMixin, TimestampMixin, Base):
+    """Taggify's own commission on a partner's channels, in % — taken on top of the CMS fee,
+    on the same amount the CMS charges its fee on (e.g. CMS 10% + Taggify 5% = 15% off).
+
+    channel_id empty = the partner's rate for all their channels; a channel's own row wins.
+    Nothing is set by default: no row means no commission. Each row applies from its month
+    on, so months before it keep what they had (founders, 11 Nov 2026).
+    """
+
+    __tablename__ = "partner_commissions"
+    __table_args__ = (UniqueConstraint("partner_id", "channel_id", "effective_from"),)
+
+    partner_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("deal_partners.id", ondelete="CASCADE"), index=True
+    )
+    channel_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("channels.id", ondelete="CASCADE"), index=True
+    )
+    pct: Mapped[Decimal] = mapped_column(Numeric(5, 2))
+    effective_from: Mapped[date] = mapped_column(Date)  # first of the month
 
 
 class PartnerContribution(UUIDPrimaryKeyMixin, OrgScopedMixin, TimestampMixin, Base):

@@ -16,14 +16,18 @@ from app.models import (
     ContentDeal,
     DealPartner,
     DealPartnerShare,
+    PartnerCommission,
     PartnerContribution,
     PartnerPayout,
 )
 from app.schemas.partners import (
+    CommissionIn,
+    CommissionOut,
     ContributionIn,
     ContributionOut,
     DealPartnerOut,
     DealPartnersIn,
+    PartnerChannelMonthOut,
     PartnerChannelOut,
     PartnerDealOut,
     PartnerDealRef,
@@ -36,8 +40,16 @@ from app.schemas.partners import (
     PayoutOut,
 )
 from app.services.audit import record_audit
+from app.services.deals import company_today
 from app.services.month_close import MonthClosedError, ensure_open
-from app.services.partners import month_summary, statement
+from app.services.partners import (
+    commission_pct,
+    commissions,
+    deal_earnings,
+    leaderboard,
+    month_summary,
+    statement,
+)
 
 router = APIRouter(tags=["partners"])
 
@@ -100,15 +112,26 @@ def _out(db: Session, ctx: AuthContext, p: DealPartner, with_money: bool = True)
         deals=deals,
         channel_count=channels,
     )
+    this_month = company_today(ctx.organization).replace(day=1)
+    out.commission_pct = commission_pct(
+        [r for r in commissions(db, [p.id]).get(p.id, []) if r.channel_id is None],
+        uuid.uuid4(),
+        this_month,
+    )
     if with_money:
         st = statement(db, ctx.organization, p)
-        out.earned, out.paid, out.outstanding, out.waiting = (
+        out.earned, out.paid, out.outstanding, out.waiting, out.commission = (
             st.earned,
             st.paid,
             st.outstanding,
             st.waiting,
+            st.commission,
         )
     return out
+
+
+def _month(value: str | None) -> date | None:
+    return date(int(value[:4]), int(value[5:]), 1) if value else None
 
 
 def _unique(db: Session, ctx: AuthContext, name: str, exclude: uuid.UUID | None = None) -> None:
@@ -206,17 +229,118 @@ def partners_month(
     return [PartnerMonthSummary(**r) for r in month_summary(db, ctx.organization, m)]
 
 
+@router.get("/partners/leaderboard")
+def partners_leaderboard(
+    ctx: Auth,
+    db: DbSession,
+    start: str | None = Query(default=None, alias="from", pattern=r"^\d{4}-\d{2}$"),
+    end: str | None = Query(default=None, alias="to", pattern=r"^\d{4}-\d{2}$"),
+) -> dict:
+    """Dashboard: partners and their channels by what they earned Taggify, for a period."""
+    return leaderboard(db, ctx.organization, _month(start), _month(end))
+
+
+@router.get("/deals/{deal_id}/earnings")
+def deal_earnings_view(
+    deal_id: uuid.UUID,
+    ctx: Auth,
+    db: DbSession,
+    start: str | None = Query(default=None, alias="from", pattern=r"^\d{4}-\d{2}$"),
+    end: str | None = Query(default=None, alias="to", pattern=r"^\d{4}-\d{2}$"),
+) -> dict:
+    """What a deal's channels earned Taggify: its own channels, and its commission on
+    partners' channels, channel by channel."""
+    deal = _deal(db, ctx, deal_id)
+    return deal_earnings(db, ctx.organization, deal, _month(start), _month(end))
+
+
+@router.put("/partners/{partner_id}/commission")
+def set_commission(
+    partner_id: uuid.UUID, body: CommissionIn, ctx: Auth, request: Request, db: DbSession
+) -> list[CommissionOut]:
+    """Taggify's % on top of the CMS fee, for all the partner's channels or one channel, from
+    a month on. Earlier months keep what they had."""
+    p = _partner(db, ctx, partner_id)
+    month = _month(body.month)
+    assert month is not None
+    channel = None
+    if body.channel_id:
+        channel = db.scalar(
+            select(Channel).where(Channel.id == body.channel_id, Channel.partner_id == p.id)
+        )
+        if channel is None:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY, f"That channel is not {p.name}'s"
+            )
+    elif body.pct is None:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Enter the %")
+    try:
+        ensure_open(db, ctx.organization, month, "This commission")
+    except MonthClosedError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
+    channel_id = channel.id if channel else None
+    same = db.scalars(
+        select(PartnerCommission).where(
+            PartnerCommission.partner_id == p.id,
+            PartnerCommission.channel_id.is_(None)
+            if channel_id is None
+            else PartnerCommission.channel_id == channel_id,
+            PartnerCommission.effective_from >= month,
+        )
+    ).all()
+    # A new rate from this month replaces any set for this month or later.
+    for row in same:
+        db.delete(row)
+    if body.pct is not None:
+        db.add(
+            PartnerCommission(
+                organization_id=ctx.organization.id,
+                partner_id=p.id,
+                channel_id=channel_id,
+                pct=body.pct,
+                effective_from=month,
+            )
+        )
+    _audit(
+        db,
+        ctx,
+        request,
+        "partner.commission_set",
+        p.id,
+        {
+            "channel": channel.name if channel else "all channels",
+            "pct": None if body.pct is None else str(body.pct),
+            "from": body.month,
+        },
+    )
+    db.commit()
+    names = {c.id: c.name for c in db.scalars(select(Channel).where(Channel.partner_id == p.id))}
+    return [
+        CommissionOut(
+            id=r.id,
+            channel_id=r.channel_id,
+            channel_name=names.get(r.channel_id) if r.channel_id else None,
+            pct=r.pct,
+            effective_from=f"{r.effective_from:%Y-%m}",
+        )
+        for r in commissions(db, [p.id]).get(p.id, [])
+    ]
+
+
 @router.get("/partners/{partner_id}")
 def partner_detail(partner_id: uuid.UUID, ctx: Auth, db: DbSession) -> PartnerDetail:
     p = _partner(db, ctx, partner_id)
     st = statement(db, ctx.organization, p)
     head = _out(db, ctx, p, with_money=False)
-    head.earned, head.paid, head.outstanding, head.waiting = (
+    head.earned, head.paid, head.outstanding, head.waiting, head.commission = (
         st.earned,
         st.paid,
         st.outstanding,
         st.waiting,
+        st.commission,
     )
+    rates = commissions(db, [p.id]).get(p.id, [])
+    this_month = company_today(ctx.organization).replace(day=1)
     channels = db.scalars(
         select(Channel).where(Channel.partner_id == p.id).order_by(Channel.name)
     ).all()
@@ -244,8 +368,30 @@ def partner_detail(partner_id: uuid.UUID, ctx: Auth, db: DbSession) -> PartnerDe
                 external_id=c.external_id,
                 cms_name=c.cms_partner.name if c.cms_partner else None,
                 status=c.status,
+                commission_pct=next(
+                    (
+                        r.pct
+                        for r in rates
+                        if r.channel_id == c.id and r.effective_from <= this_month
+                    ),
+                    None,
+                ),
             )
             for c in channels
+        ],
+        channel_months=[
+            PartnerChannelMonthOut(**{**vars(x), "month": f"{x.month:%Y-%m}"})
+            for x in st.channel_months
+        ],
+        commissions=[
+            CommissionOut(
+                id=r.id,
+                channel_id=r.channel_id,
+                channel_name=next((c.name for c in channels if c.id == r.channel_id), None),
+                pct=r.pct,
+                effective_from=f"{r.effective_from:%Y-%m}",
+            )
+            for r in rates
         ],
         contributions=[
             ContributionOut(

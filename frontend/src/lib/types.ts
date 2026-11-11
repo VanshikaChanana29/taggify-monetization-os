@@ -841,6 +841,10 @@ export type DealPartner = {
   deals: { deal_id: string; title: string; share_pct: string }[];
   channel_count: number;
   earned: string;
+  /** What Taggify earned from them (its commission), base currency. */
+  commission: string;
+  /** Their rate for all channels this month; null = not set. */
+  commission_pct: string | null;
   paid: string;
   outstanding: string;
   waiting: string;
@@ -853,6 +857,8 @@ export type PartnerMonth = {
   gross: string;
   tax: string;
   cms_fee: string;
+  commission: string;
+  commission_base: string | null;
   share: string;
   share_base: string | null;
   tds: string | null;
@@ -877,10 +883,68 @@ export type PartnerDetail = {
     contributed: string;
     contribution_due: string | null;
   }[];
-  channels: { id: string; name: string; platform: Platform; external_id: string; cms_name: string | null; status: string }[];
+  channels: {
+    id: string;
+    name: string;
+    platform: Platform;
+    external_id: string;
+    cms_name: string | null;
+    status: string;
+    commission_pct: string | null;
+  }[];
+  channel_months: PartnerChannelMonth[];
+  commissions: { id: string; channel_id: string | null; channel_name: string | null; pct: string; effective_from: string }[];
   contributions: { id: string; deal_id: string; deal_title: string; amount: string; received_on: string; reference: string | null }[];
   payouts: { id: string; month: string; amount: string; tds_amount: string; paid_on: string; reference: string | null }[];
   warnings: string[];
+};
+
+export type PartnerChannelMonth = {
+  channel_id: string;
+  month: string; // YYYY-MM
+  cms_name: string | null;
+  currency: string;
+  gross: string;
+  tax: string;
+  cms_fee: string | null;
+  source: "sheet" | "slabs" | null;
+  commission_pct: string | null;
+  commission: string | null;
+  share: string | null;
+  fx_rate: string | null;
+  commission_base: string | null;
+  share_base: string | null;
+  views: number | null;
+};
+
+export type PartnerLeaderboard = {
+  base_currency: string;
+  partners: { id: string; name: string; channels: number; earning_channels: number; gross: string; commission: string; share: string }[];
+  top_channels: { channel_id: string; name: string; partner_id: string; partner_name: string; gross: string; commission: string; share: string }[];
+  gross: string;
+  commission: string;
+  share: string;
+  missing: number;
+};
+
+export type DealEarnings = {
+  base_currency: string;
+  channels: {
+    channel_id: string;
+    name: string;
+    partner_name: string | null;
+    months: number;
+    gross: string;
+    cms_fee: string;
+    taggify: string;
+    partner: string;
+  }[];
+  own: string;
+  commission: string;
+  partners_share: string;
+  gross: string;
+  licence_cost: string | null;
+  missing: number;
 };
 
 export type DealPartnerShare = { partner_id: string; name: string; share_pct: string };

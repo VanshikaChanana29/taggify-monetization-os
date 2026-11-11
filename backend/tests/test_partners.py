@@ -1,6 +1,7 @@
-"""Deal partners (founders' rules, 26 Oct 2026): Vanshika holds 50% of the Sony deal, pays
-Taggify half the licence fee, runs her own channels and is paid their earnings after the
-CMS fee — once the CMS has paid Taggify — less TDS."""
+"""Deal partners (founders' rules, 26 Oct and 11 Nov 2026): Vanshika holds 50% of the Sony
+deal, pays Taggify half the licence fee, runs her own channels and is paid their earnings
+after the CMS fee and Taggify's own commission (none unless set) — once the CMS has paid
+Taggify. No TDS."""
 
 from datetime import timedelta
 from decimal import Decimal
@@ -65,17 +66,19 @@ def detail(c, pid):
     return c.get(f"/api/partners/{pid}").json()
 
 
-def test_partner_gets_her_channels_after_cms_fee_once_the_cms_pays_less_tds(founder, setup):
+def test_partner_gets_her_channels_after_cms_fee_once_the_cms_pays(founder, setup):
     d = detail(founder, setup["vanshika"])
     m = d["months"][0]
-    # $1,000 − 10% CMS fee = $900 → ₹72,000; TDS 10% = ₹7,200; ₹64,800 to pay.
-    assert (m["share"], m["share_base"], m["tds"], m["to_pay"]) == (
+    # $1,000 − 10% CMS fee = $900 → ₹72,000, all of it to pay: no commission set, no TDS.
+    assert (m["share"], m["share_base"], m["commission"], m["tds"], m["to_pay"]) == (
         "900.00",
         "72000.00",
-        "7200.00",
-        "64800.00",
+        "0.00",
+        "0.00",
+        "72000.00",
     )
-    assert m["status"] == "waiting_cms" and d["partner"]["waiting"] == "64800.00"
+    assert d["partner"]["commission_pct"] is None and d["partner"]["commission"] == "0.00"
+    assert m["status"] == "waiting_cms" and d["partner"]["waiting"] == "72000.00"
     assert d["partner"]["outstanding"] == "0.00"
 
     # The CMS pays Taggify for both channels: $1,800 → now due.
@@ -89,17 +92,11 @@ def test_partner_gets_her_channels_after_cms_fee_once_the_cms_pays_less_tds(foun
         },
     )
     d = detail(founder, setup["vanshika"])
-    assert d["months"][0]["status"] == "due" and d["partner"]["outstanding"] == "64800.00"
+    assert d["months"][0]["status"] == "due" and d["partner"]["outstanding"] == "72000.00"
 
     r = founder.post(
         f"/api/partners/{setup['vanshika']}/payouts",
-        json={
-            "month": MONTH,
-            "amount": "64800",
-            "tds_amount": "7200",
-            "paid_on": str(TODAY),
-            "reference": "UTR9",
-        },
+        json={"month": MONTH, "amount": "72000", "paid_on": str(TODAY), "reference": "UTR9"},
     )
     assert r.status_code == 201, r.text
     d = detail(founder, setup["vanshika"])
@@ -245,3 +242,101 @@ def test_partner_with_money_is_never_deleted(founder, setup):
 
     assert r.status_code == 409
     assert "mark them inactive" in r.json()["detail"]
+
+
+def set_pct(c, pid, pct, month=MONTH, channel_id=None):
+    r = c.put(
+        f"/api/partners/{pid}/commission",
+        json={"pct": pct, "month": month, "channel_id": channel_id},
+    )
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def test_taggify_commission_on_top_of_the_cms_fee(founder, setup):
+    pid = setup["vanshika"]
+    # 5% for all her channels from last month: CMS 10% + Taggify 5% = 15% off the $1,000.
+    set_pct(founder, pid, "5")
+    d = detail(founder, pid)
+    m = d["months"][0]
+    assert (m["cms_fee"], m["commission"], m["share"], m["share_base"]) == (
+        "100.00",
+        "50.00",
+        "850.00",
+        "68000.00",
+    )
+    assert m["commission_base"] == "4000.00" and d["partner"]["commission"] == "4000.00"
+    (line,) = d["channel_months"]
+    assert (line["commission_pct"], line["commission"], line["share"]) == (
+        "5.00",
+        "50.00",
+        "850.00",
+    )
+
+    # Her channel gets its own 3%: it wins over her 5%.
+    set_pct(founder, pid, "3", channel_id=setup["hers"])
+    d = detail(founder, pid)
+    assert d["months"][0]["commission"] == "30.00"
+    assert d["channels"][0]["commission_pct"] == "3.00"
+    assert {(c["channel_name"], c["pct"]) for c in d["commissions"]} == {
+        (None, "5.00"),
+        ("Vanshika Comedy", "3.00"),
+    }
+    # Clearing the channel's rate goes back to her 5%.
+    set_pct(founder, pid, None, channel_id=setup["hers"])
+    assert detail(founder, pid)["months"][0]["commission"] == "50.00"
+
+
+def test_commission_from_a_later_month_leaves_earlier_months_as_they_were(founder, setup):
+    set_pct(founder, setup["vanshika"], "5", month=f"{TODAY:%Y-%m}")
+    assert detail(founder, setup["vanshika"])["months"][0]["commission"] == "0.00"
+    # Only her channels; a Taggify channel cannot be given her rate.
+    r = founder.put(
+        f"/api/partners/{setup['vanshika']}/commission",
+        json={"pct": "5", "month": MONTH, "channel_id": setup["ours"]},
+    )
+    assert r.status_code == 422
+
+
+def test_dashboard_leaderboard_and_deal_earnings(founder, setup):
+    set_pct(founder, setup["vanshika"], "5")
+    board = founder.get(f"/api/partners/leaderboard?from={MONTH}&to={MONTH}").json()
+    (row,) = board["partners"]
+    assert (row["name"], row["gross"], row["commission"], row["share"]) == (
+        "Vanshika",
+        "80000.00",
+        "4000.00",
+        "68000.00",
+    )
+    assert board["top_channels"][0]["name"] == "Vanshika Comedy"
+    assert (
+        founder.get("/api/partners/leaderboard?from=2001-01&to=2001-02").json()["commission"]
+        == "0.00"
+    )
+
+    e = founder.get(f"/api/deals/{setup['deal']['id']}/earnings").json()
+    rows = {r["name"]: r for r in e["channels"]}
+    # Taggify's own channel: all $900 after the CMS fee; hers: Taggify's 5% only.
+    assert rows["Taggify Comedy"]["taggify"] == "72000.00"
+    assert (rows["Vanshika Comedy"]["taggify"], rows["Vanshika Comedy"]["partner"]) == (
+        "4000.00",
+        "68000.00",
+    )
+    assert (e["own"], e["commission"], e["licence_cost"]) == ("72000.00", "4000.00", "2500000.00")
+
+
+def test_import_from_a_partners_page_makes_every_line_theirs(founder, setup):
+    text = (
+        b"Channel ID,Channel name,Platform,CMS,Status,Link,Partner\n"
+        b"UCV7,Hers Too,YouTube,Giri CMS,Active,https://youtube.com/c/v7,\n"
+        b"UCV8,Also Hers,YouTube,Giri CMS,Active,https://youtube.com/c/v8,Someone Else\n"
+    )
+    r = founder.post(
+        "/api/channels/import",
+        data={"partner_id": setup["vanshika"]},
+        files={"file": ("c.csv", text, "text/csv")},
+    )
+    assert r.status_code == 201, r.text
+    assert {x["partner"] for x in r.json()["lines"]} == {"Vanshika"}
+    names = {c["name"] for c in detail(founder, setup["vanshika"])["channels"]}
+    assert {"Hers Too", "Also Hers"} <= names

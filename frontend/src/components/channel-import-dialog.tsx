@@ -43,7 +43,18 @@ const COLUMNS: [string, string, boolean][] = [
   ["Partner", "Deal partner who owns it (e.g. Vanshika) — empty for Taggify's own", false],
 ];
 
-export function ChannelImportDialog({ open, onClose, onImported }: { open: boolean; onClose: () => void; onImported: (added: number) => void }) {
+export function ChannelImportDialog({
+  open,
+  onClose,
+  onImported,
+  partner,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onImported: (added: number) => void;
+  /** Opened from a deal partner's page: every channel in the file becomes theirs. */
+  partner?: { id: string; name: string };
+}) {
   const input = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<ImportOut | null>(null);
@@ -67,6 +78,7 @@ export function ChannelImportDialog({ open, onClose, onImported }: { open: boole
     try {
       const form = new FormData();
       form.append("file", f);
+      if (partner) form.append("partner_id", partner.id);
       setPreview(await api<ImportOut>("/channels/import/preview", { method: "POST", form }));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not read the file");
@@ -82,6 +94,7 @@ export function ChannelImportDialog({ open, onClose, onImported }: { open: boole
     try {
       const form = new FormData();
       form.append("file", file);
+      if (partner) form.append("partner_id", partner.id);
       const out = await api<ImportOut>("/channels/import", { method: "POST", form });
       onImported(out.added);
       reset();
@@ -106,10 +119,15 @@ export function ChannelImportDialog({ open, onClose, onImported }: { open: boole
         onClose();
       }}
       wide
-      title="Import channels"
+      title={partner ? `Import ${partner.name}'s channels` : "Import channels"}
       description="Add many channels at once from an Excel or CSV file. Every column is required except Manager, Notes and Partner."
     >
       <div className="space-y-5">
+        {partner && (
+          <p className="rounded-xl border border-primary/30 bg-primary/5 px-4 py-2.5 text-sm">
+            Every channel in this file is added as <b>{partner.name}</b>&apos;s — the Partner column is not needed.
+          </p>
+        )}
         {!preview && (
           <>
             <div className="rounded-xl border">

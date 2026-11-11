@@ -1,13 +1,16 @@
 "use client";
 
-import { AlertTriangle, ArrowLeft, Pencil, Plus, Trash2 } from "lucide-react";
+import { AlertTriangle, ArrowLeft, FileSpreadsheet, FileUp, Pencil, Plus, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useState } from "react";
 
+import { ChannelImportDialog } from "@/components/channel-import-dialog";
 import { EmptyRow } from "@/components/data-table";
+import { CmsSheetUpload } from "@/components/finance/cms-sheet-upload";
 import { PageLoader } from "@/components/loader";
 import { Notice } from "@/components/notice";
+import { PartnerChannels } from "@/components/partner-channels";
 import { PartnerForm } from "@/components/partner-form";
 import { Pill } from "@/components/pill";
 import { Button } from "@/components/ui/button";
@@ -20,8 +23,14 @@ import { Tabs } from "@/components/ui/tabs";
 import { api } from "@/lib/api";
 import { DEAL_STATUS_TONES, formatDate, todayISO } from "@/lib/deals";
 import { compactInr, formatMonth, money } from "@/lib/finance";
-import { PLATFORM_LABELS, PLATFORM_TONES } from "@/lib/people";
-import type { PartnerDetail, PartnerMonth } from "@/lib/types";
+import type { CmsPartner, PartnerDetail, PartnerMonth } from "@/lib/types";
+
+function lastMonth() {
+  const d = new Date();
+  d.setDate(1);
+  d.setMonth(d.getMonth() - 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
 
 type Tab = "statement" | "channels" | "deals" | "payments";
 const TABS: Tab[] = ["statement", "channels", "deals", "payments"];
@@ -45,7 +54,11 @@ function PartnerPage() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
-  const [pay, setPay] = useState<{ month: string; amount: string; tds_amount: string; paid_on: string; reference: string } | null>(null);
+  const [pay, setPay] = useState<{ month: string; amount: string; paid_on: string; reference: string } | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [sheetMonth, setSheetMonth] = useState(lastMonth());
+  const [cmsList, setCmsList] = useState<CmsPartner[]>([]);
   const [money_in, setMoneyIn] = useState<{ deal_id: string; amount: string; received_on: string; reference: string } | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -55,6 +68,11 @@ function PartnerPage() {
       .catch((err: Error) => setError(err.message));
   }, [id]);
   useEffect(load, [load]);
+  useEffect(() => {
+    api<CmsPartner[]>("/cms-partners")
+      .then(setCmsList)
+      .catch(() => {});
+  }, []);
 
   function go(next: Tab) {
     router.replace(`/partners/${id}${next === "statement" ? "" : `?tab=${next}`}`, { scroll: false });
@@ -91,7 +109,8 @@ function PartnerPage() {
     ["Still to pay", compactInr(p.outstanding), "CMS has paid us for these months"],
     ["After the CMS pays", compactInr(p.waiting), "Earned, but the CMS has not paid us yet"],
     ["Paid so far", compactInr(p.paid)],
-    ["Earned in all", compactInr(p.earned), "Their channels, after the CMS fee"],
+    ["Earned in all", compactInr(p.earned), "Their channels, after the CMS fee and our commission"],
+    ["We earned from them", compactInr(p.commission), p.commission_pct !== null ? `Our ${Number(p.commission_pct)}% on top of the CMS fee` : Number(p.commission) > 0 ? "Set per channel (Channels tab)" : "Commission not set"],
     ["Licence money still owed to us", compactInr(licenceOwed), "Their % of the licence fee, less what they paid in"],
   ];
 
@@ -110,16 +129,24 @@ function PartnerPage() {
           <div>
             <h1 className="text-2xl font-bold tracking-tight">{p.name}</h1>
             <p className="text-sm text-muted-foreground">
-              {[p.email, p.phone].filter(Boolean).join(" · ") || "No contact details"} · TDS{" "}
-              {p.tds_pct === null ? "not set" : `${Number(p.tds_pct)}%`} ·{" "}
+              {[p.email, p.phone].filter(Boolean).join(" · ") || "No contact details"} · Our commission{" "}
+              {p.commission_pct === null ? "not set" : `${Number(p.commission_pct)}%`} ·{" "}
               {p.deals.map((d) => `${d.title} ${Number(d.share_pct)}%`).join(", ") || "not on a deal yet"}
             </p>
           </div>
-          <Button variant="outline" onClick={() => setEditing(true)}>
-            <Pencil /> Edit
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" onClick={() => setImporting(true)}>
+              <FileSpreadsheet /> Import channels
+            </Button>
+            <Button variant="outline" onClick={() => setUploading(true)}>
+              <FileUp /> Upload CMS sheet
+            </Button>
+            <Button variant="outline" onClick={() => setEditing(true)}>
+              <Pencil /> Edit
+            </Button>
+          </div>
         </div>
-        <dl className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+        <dl className="grid gap-2 sm:grid-cols-2 lg:grid-cols-6">
           {facts.map(([k, v, hint], i) => (
             <div
               key={k}
@@ -160,7 +187,7 @@ function PartnerPage() {
           <div className="p-5 pb-3">
             <h3 className="text-lg font-semibold">What {p.name} earns, month by month</h3>
             <p className="text-sm text-muted-foreground">
-              Their channels&apos; earnings after the CMS fee. A month becomes payable once the CMS has paid you for it; TDS is taken off.
+              Their channels&apos; earnings after the CMS fee and our commission. A month becomes payable once the CMS has paid you for it.
             </p>
           </div>
           <Table>
@@ -169,8 +196,8 @@ function PartnerPage() {
                 <TableHead>Month</TableHead>
                 <TableHead className="text-right">Gross</TableHead>
                 <TableHead className="text-right">CMS fee &amp; tax</TableHead>
+                <TableHead className="text-right">Our commission</TableHead>
                 <TableHead className="text-right">Their share</TableHead>
-                <TableHead className="text-right">TDS</TableHead>
                 <TableHead className="text-right">To pay</TableHead>
                 <TableHead className="text-right">Paid</TableHead>
                 <TableHead>Status</TableHead>
@@ -189,13 +216,15 @@ function PartnerPage() {
                     </TableCell>
                     <TableCell className="text-right tabular-nums">{money(m.gross, cur)}</TableCell>
                     <TableCell className="text-right tabular-nums text-muted-foreground">−{money(Number(m.cms_fee) + Number(m.tax), cur)}</TableCell>
+                    <TableCell className="text-right tabular-nums text-emerald-700 dark:text-emerald-400">
+                      {Number(m.commission) ? `−${money(m.commission, cur)}` : "—"}
+                    </TableCell>
                     <TableCell className="text-right tabular-nums">
                       {money(m.share, cur)}
                       {m.share_base !== null && cur !== base && (
                         <span className="block text-xs text-muted-foreground">{money(m.share_base, base)}</span>
                       )}
                     </TableCell>
-                    <TableCell className="text-right tabular-nums text-muted-foreground">{m.tds === null ? "—" : `−${money(m.tds, base)}`}</TableCell>
                     <TableCell className="text-right font-semibold tabular-nums">{m.to_pay === null ? "—" : money(m.to_pay, base)}</TableCell>
                     <TableCell className="text-right tabular-nums text-emerald-700 dark:text-emerald-400">{money(m.paid, base)}</TableCell>
                     <TableCell>
@@ -210,7 +239,6 @@ function PartnerPage() {
                             setPay({
                               month: m.month,
                               amount: String(Number(m.balance)),
-                              tds_amount: String(Math.max(0, Number(m.tds ?? 0) - Number(m.tds_paid))),
                               paid_on: todayISO(),
                               reference: "",
                             });
@@ -230,45 +258,14 @@ function PartnerPage() {
       )}
 
       {tab === "channels" && (
-        <section className="overflow-hidden rounded-2xl border bg-card shadow-sm">
-          <div className="flex flex-wrap items-start justify-between gap-3 p-5 pb-3">
-            <div>
-              <h3 className="text-lg font-semibold">{p.name}&apos;s channels</h3>
-              <p className="text-sm text-muted-foreground">
-                To add one: open the channel → Edit → <b>Owned by partner</b>, or use the <b>Partner</b> column in Channels → Import channels.
-              </p>
-            </div>
-            <Button variant="outline" size="sm" asChild>
-              <Link href="/channels">Go to Channels</Link>
-            </Button>
-          </div>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-14">S.No.</TableHead>
-                <TableHead>Channel</TableHead>
-                <TableHead>Channel ID</TableHead>
-                <TableHead>CMS</TableHead>
-                <TableHead>Status</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {data.channels.map((c, idx) => (
-                <TableRow key={c.id} className="cursor-pointer" onClick={() => router.push(`/channels/${c.id}`)}>
-                  <TableCell className="w-14 tabular-nums text-muted-foreground">{idx + 1}</TableCell>
-                  <TableCell>
-                    <p className="font-medium text-primary">{c.name}</p>
-                    <Pill tone={PLATFORM_TONES[c.platform]}>{PLATFORM_LABELS[c.platform]}</Pill>
-                  </TableCell>
-                  <TableCell className="font-mono text-xs text-muted-foreground">{c.external_id}</TableCell>
-                  <TableCell>{c.cms_name ?? "—"}</TableCell>
-                  <TableCell className="capitalize">{c.status}</TableCell>
-                </TableRow>
-              ))}
-              {data.channels.length === 0 && <EmptyRow colSpan={5}>No channels marked as {p.name}&apos;s yet.</EmptyRow>}
-            </TableBody>
-          </Table>
-        </section>
+        <PartnerChannels
+          key={data.commissions.map((c) => c.id).join()}
+          data={data}
+          onChanged={(message) => {
+            setNotice(message);
+            load();
+          }}
+        />
       )}
 
       {tab === "deals" && (
@@ -356,7 +353,7 @@ function PartnerPage() {
         <section className="overflow-hidden rounded-2xl border bg-card shadow-sm">
           <div className="p-5 pb-3">
             <h3 className="text-lg font-semibold">Payments to {p.name}</h3>
-            <p className="text-sm text-muted-foreground">Record a payment from the Monthly statement tab (Record payment on a month).</p>
+            <p className="text-sm text-muted-foreground">Paying them is recorded from the Monthly statement tab: a month gets a Record payment button once the CMS has paid you for it (CMS &amp; Finance → the CMS → Bank receipts).</p>
           </div>
           <Table>
             <TableHeader>
@@ -364,7 +361,6 @@ function PartnerPage() {
                 <TableHead>Paid on</TableHead>
                 <TableHead>For month</TableHead>
                 <TableHead>Reference</TableHead>
-                <TableHead className="text-right">TDS kept</TableHead>
                 <TableHead className="text-right">Paid</TableHead>
                 <TableHead />
               </TableRow>
@@ -375,7 +371,6 @@ function PartnerPage() {
                   <TableCell>{formatDate(x.paid_on)}</TableCell>
                   <TableCell>{formatMonth(x.month)}</TableCell>
                   <TableCell className="text-muted-foreground">{x.reference ?? "—"}</TableCell>
-                  <TableCell className="text-right tabular-nums text-muted-foreground">{money(x.tds_amount, base)}</TableCell>
                   <TableCell className="text-right font-semibold tabular-nums">{money(x.amount, base)}</TableCell>
                   <TableCell className="w-12 text-right">
                     <Button
@@ -389,11 +384,32 @@ function PartnerPage() {
                   </TableCell>
                 </TableRow>
               ))}
-              {data.payouts.length === 0 && <EmptyRow colSpan={6}>Nothing paid yet.</EmptyRow>}
+              {data.payouts.length === 0 && <EmptyRow colSpan={5}>Nothing paid yet.</EmptyRow>}
             </TableBody>
           </Table>
         </section>
       )}
+
+      <ChannelImportDialog
+        open={importing}
+        partner={{ id: p.id, name: p.name }}
+        onClose={() => setImporting(false)}
+        onImported={(added) => {
+          setNotice(`${added} channel${added === 1 ? "" : "s"} added as ${p.name}'s.`);
+          load();
+        }}
+      />
+      <CmsSheetUpload
+        open={uploading}
+        onClose={() => {
+          setUploading(false);
+          load();
+        }}
+        month={sheetMonth}
+        onMonthChange={setSheetMonth}
+        cmsList={cmsList}
+        onImported={load}
+      />
 
       <Dialog open={editing} onClose={() => setEditing(false)} wide title={`Edit ${p.name}`}>
         {editing && (
@@ -433,17 +449,6 @@ function PartnerPage() {
                 required
                 value={pay.amount}
                 onChange={(e) => setPay({ ...pay, amount: e.target.value })}
-              />
-            </div>
-            <div className="space-y-1">
-              <Label htmlFor="po-tds">TDS kept ({base})</Label>
-              <Input
-                id="po-tds"
-                type="number"
-                step="0.01"
-                min="0"
-                value={pay.tds_amount}
-                onChange={(e) => setPay({ ...pay, tds_amount: e.target.value })}
               />
             </div>
             <div className="space-y-1">

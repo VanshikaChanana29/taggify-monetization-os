@@ -5,6 +5,7 @@ import {
   Banknote,
   Building2,
   Coins,
+  HandCoins,
   Landmark,
   LayoutGrid,
   MonitorPlay,
@@ -19,6 +20,7 @@ import { useOrganization, useSession } from "@/components/session-provider";
 import { StatCard } from "@/components/stat-card";
 import { DashboardChannelsSection } from "@/components/dashboard-channels";
 import { DashboardOverview } from "@/components/dashboard-overview";
+import { DashboardPartners } from "@/components/dashboard-partners";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -105,7 +107,7 @@ function GroupView({ month, onMonth }: { month: string | null; onMonth: (m: stri
   );
 }
 
-type Tab = "overview" | "channels" | "group";
+type Tab = "overview" | "channels" | "partners" | "group";
 type Range = "month" | "last30" | "custom";
 
 function DashboardPage() {
@@ -114,7 +116,13 @@ function DashboardPage() {
   const { me } = useSession();
   const organization = useOrganization();
   const tab: Tab =
-    params.get("view") === "group" || params.get("tab") === "group" ? "group" : params.get("tab") === "channels" ? "channels" : "overview";
+    params.get("view") === "group" || params.get("tab") === "group"
+      ? "group"
+      : params.get("tab") === "channels"
+        ? "channels"
+        : params.get("tab") === "partners"
+          ? "partners"
+          : "overview";
   const view = tab === "group" ? "group" : "company";
   const range = (params.get("range") as Range | null) ?? "month";
   const [from, setFrom] = useState(params.get("start") ?? "");
@@ -163,6 +171,7 @@ function DashboardPage() {
   const tabs: [Tab, string, React.ComponentType<{ className?: string }>][] = [
     ["overview", "Overview", LayoutGrid],
     ["channels", "Channels", MonitorPlay],
+    ["partners", "Deal partners", HandCoins],
     ...(me.organizations.length > 1 ? ([["group", "All companies", Building2]] as [Tab, string, React.ComponentType<{ className?: string }>][]) : []),
   ];
 
@@ -214,7 +223,9 @@ function DashboardPage() {
               </Button>
             </>
           ) : (
-            (tab !== "channels" || range === "month") && month && <MonthPicker month={month} onChange={(m) => go({ month: m })} />
+            tab !== "partners" &&
+            (tab !== "channels" || range === "month") &&
+            month && <MonthPicker month={month} onChange={(m) => go({ month: m })} />
           )}
         </div>
       </div>
@@ -222,6 +233,8 @@ function DashboardPage() {
 
       {tab === "group" ? (
         <GroupView month={requested} onMonth={setGroupMonth} />
+      ) : tab === "partners" ? (
+        <DashboardPartners />
       ) : tab === "channels" ? (
         <DashboardChannelsSection
           month={month}

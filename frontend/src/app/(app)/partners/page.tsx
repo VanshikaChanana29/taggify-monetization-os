@@ -63,7 +63,7 @@ export default function PartnersPage() {
     <div className="space-y-6">
       <PageHeader
         title="Deal partners"
-        description="People who buy a licence together with you (e.g. Vanshika takes 50% of a Sony deal). They pay their % of the licence fee, run their own channels, and are paid those channels' earnings after the CMS fee — once the CMS pays you — less TDS."
+        description="People who buy a licence together with you (e.g. Vanshika takes 50% of a Sony deal). They pay their % of the licence fee, run their own channels, and are paid those channels' earnings after the CMS fee and your commission — once the CMS pays you."
         actions={
           <Button size="lg" onClick={() => setEditing("new")}>
             <Plus />
@@ -82,8 +82,9 @@ export default function PartnersPage() {
               <TableHead>Partner</TableHead>
               <TableHead>Deals</TableHead>
               <TableHead className="text-right">Channels</TableHead>
-              <TableHead className="text-right">TDS</TableHead>
-              <TableHead className="text-right">Earned</TableHead>
+              <TableHead className="text-right">Our %</TableHead>
+              <TableHead className="text-right">We earned</TableHead>
+              <TableHead className="text-right">They earned</TableHead>
               <TableHead className="text-right">Paid</TableHead>
               <TableHead className="whitespace-nowrap text-right">Still to pay</TableHead>
               <TableHead>Status</TableHead>
@@ -118,8 +119,9 @@ export default function PartnersPage() {
                 </TableCell>
                 <TableCell className="text-right tabular-nums">{p.channel_count}</TableCell>
                 <TableCell className="text-right tabular-nums">
-                  {p.tds_pct === null ? <span className="text-xs text-amber-700 dark:text-amber-400">Not set</span> : `${Number(p.tds_pct)}%`}
+                  {p.commission_pct === null ? <span className="text-xs text-muted-foreground">Not set</span> : `${Number(p.commission_pct)}%`}
                 </TableCell>
+                <TableCell className="text-right tabular-nums text-emerald-700 dark:text-emerald-400">{compactInr(p.commission)}</TableCell>
                 <TableCell className="text-right tabular-nums">{compactInr(p.earned)}</TableCell>
                 <TableCell className="text-right tabular-nums text-emerald-700 dark:text-emerald-400">{compactInr(p.paid)}</TableCell>
                 <TableCell className="text-right font-semibold tabular-nums">
@@ -159,7 +161,7 @@ export default function PartnersPage() {
               </TableRow>
             ))}
             {rows.length === 0 && (
-              <EmptyRow colSpan={10}>No deal partners yet. Add one, then give them a % on a deal (Deal → Partners tab).</EmptyRow>
+              <EmptyRow colSpan={11}>No deal partners yet. Add one, then give them a % on a deal (Deal → Partners tab).</EmptyRow>
             )}
           </TableBody>
         </Table>

@@ -63,7 +63,7 @@ export function DealPartners({ deal, onChange }: { deal: Deal; onChange: (messag
           </h3>
           <p className="max-w-3xl text-sm text-muted-foreground">
             Someone who bought this licence with you. They pay you their % of the licence fee, run their own channels, and are paid those
-            channels&apos; earnings after the CMS fee (once the CMS pays you), less TDS. {deal.owner_name} stays the content owner.
+            channels&apos; earnings after the CMS fee and your commission (once the CMS pays you). {deal.owner_name} stays the content owner.
           </p>
         </div>
         <Button variant="outline" size="sm" asChild>

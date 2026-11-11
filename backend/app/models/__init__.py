@@ -21,7 +21,13 @@ from app.models.finance import (
     RevenueImport,
 )
 from app.models.organization import Organization
-from app.models.partners import DealPartner, DealPartnerShare, PartnerContribution, PartnerPayout
+from app.models.partners import (
+    DealPartner,
+    DealPartnerShare,
+    PartnerCommission,
+    PartnerContribution,
+    PartnerPayout,
+)
 from app.models.payouts import (
     DealExpense,
     DealInstallment,
@@ -46,6 +52,7 @@ __all__ = [
     "DealPartner",
     "DealPartnerShare",
     "PartnerContribution",
+    "PartnerCommission",
     "PartnerPayout",
     "ChannelDailyStat",
     "YouTubeConnection",

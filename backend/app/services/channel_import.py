@@ -169,7 +169,16 @@ def _day(value: object) -> date | None:
     return None
 
 
-def import_channels(db: Session, org: Organization, table: Table, *, commit: bool) -> ImportResult:
+def import_channels(
+    db: Session,
+    org: Organization,
+    table: Table,
+    *,
+    commit: bool,
+    for_partner: DealPartner | None = None,
+) -> ImportResult:
+    """for_partner: imported from that partner's page — every line is theirs, whatever
+    the Partner column says."""
     cols = _columns(table)
     missing = [label for key, label in REQUIRED if key not in cols]
     if missing:
@@ -290,9 +299,11 @@ def import_channels(db: Session, org: Organization, table: Table, *, commit: boo
                 manager = matches[0]
                 row.manager = manager.full_name
 
-        partner = None
-        partner_name = cell(cells, "partner")
-        if partner_name:
+        partner = for_partner
+        partner_name = "" if for_partner else cell(cells, "partner")
+        if for_partner:
+            row.partner = for_partner.name
+        elif partner_name:
             partner = partners_by_name.get(partner_name.lower())
             if partner is None:
                 row.notes.append(
