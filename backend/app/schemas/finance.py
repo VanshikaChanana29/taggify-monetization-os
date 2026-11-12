@@ -125,6 +125,8 @@ class CmsMonthOut(BaseModel):
     net: Decimal | None
     fee_rule: str | None
     fx_rate: Decimal | None
+    fx_source: str | None = None  # manual / sheet / company
+    sheet_fx_rate: Decimal | None = None
     gross_base: Decimal | None
     tax_base: Decimal | None = None
     fee_base: Decimal | None
@@ -138,6 +140,41 @@ class CmsMonthOut(BaseModel):
     outstanding: Decimal | None
     channel_count: int
     warnings: list[str]
+
+
+class CmsMonthRowOut(BaseModel):
+    """One month of a CMS in the month-by-month view; amounts in the CMS's currency and,
+    once the month has a rate, in the company's base currency."""
+
+    month: str
+    fx_rate: Decimal | None
+    fx_source: str | None = None
+    gross: Decimal
+    gross_base: Decimal | None
+    tax: Decimal
+    tax_base: Decimal | None
+    fee: Decimal | None
+    fee_base: Decimal | None
+    net: Decimal | None
+    net_base: Decimal | None
+    received: Decimal
+    outstanding: Decimal | None
+
+
+class CmsMonthsOut(BaseModel):
+    cms_name: str
+    currency: str | None
+    base_currency: str
+    start: str
+    end: str
+    rows: list[CmsMonthRowOut]
+    # Sums over the rows; base-currency sums leave out months without a rate.
+    totals: CmsMonthRowOut
+    months_without_rate: list[str]
+
+
+class CmsRateIn(_MonthField):
+    rate: Decimal = Field(gt=0, max_digits=18, decimal_places=6)
 
 
 class FinanceMonthOut(BaseModel):

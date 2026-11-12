@@ -21,6 +21,8 @@ import { Suspense, useCallback, useEffect, useState } from "react";
 import { EmptyRow, TablePagination } from "@/components/data-table";
 import { Field, INVALID, fieldFor } from "@/components/deal/form-bits";
 import { slabSummary } from "@/components/fee-slabs";
+import { CmsMonthsPanel } from "@/components/finance/cms-months";
+import { CmsRateLine } from "@/components/finance/cms-rate";
 import { CmsSlabsPanel } from "@/components/finance/cms-slabs-panel";
 import { useFinanceMonth } from "@/components/finance/finance-shell";
 import { isPaid, sheetOk } from "@/components/finance/lifecycle";
@@ -49,8 +51,8 @@ import { YT_STATUS } from "@/lib/youtube";
 
 // The CMS page as the working document lays it out: a header with the contract, currency, channels
 // and latest statement, then one tab per part of the CMS's money.
-type Tab = "channels" | "slabs" | "gross" | "allocation" | "statements" | "reconciliation" | "receipts" | "outstanding" | "disputes";
-const TABS: Tab[] = ["channels", "slabs", "gross", "allocation", "statements", "reconciliation", "receipts", "outstanding", "disputes"];
+type Tab = "channels" | "slabs" | "gross" | "allocation" | "statements" | "reconciliation" | "receipts" | "outstanding" | "disputes" | "months";
+const TABS: Tab[] = ["channels", "slabs", "gross", "allocation", "statements", "reconciliation", "receipts", "outstanding", "disputes", "months"];
 // Old links (?tab=statement / cash / adjustments) still land on the right tab.
 const OLD: Record<string, Tab> = { statement: "statements", cash: "receipts", adjustments: "disputes" };
 type Errors = Partial<Record<string, string>>;
@@ -245,6 +247,8 @@ function CmsMonthPage() {
   const preview = payCurrency === cur && s.fx_rate && receipt.amount && cur !== base ? Number(receipt.amount) * Number(s.fx_rate) : null;
   const fxGap = preview !== null && receipt.amount_base ? Number(receipt.amount_base) - preview : null;
   const rateMissing = s.warnings.some((w) => w.includes("rate"));
+  // Show base-currency (INR) figures under the CMS-currency ones once the month has a rate.
+  const inBase = Boolean(cur && cur !== base && s.fx_rate);
   const differs = s.statement_net !== null && Number(s.variance ?? 0) !== 0;
   const grossTotal = data.channels.reduce((t, c) => t + Number(c.gross), 0);
 
@@ -442,13 +446,28 @@ function CmsMonthPage() {
           </p>
         ))}
 
+        {hasCms && cur !== base && (
+          <CmsRateLine
+            cmsId={cmsId}
+            month={month}
+            currency={cur}
+            base={base}
+            summary={s}
+            onChanged={(message) => {
+              setNotice(message);
+              setError(null);
+              load();
+            }}
+          />
+        )}
+
         <MoneyFlow
           compact
           steps={[
-            { label: "Gross", value: money(s.gross, cur), info: HELP.grossRevenue },
-            ...(hasTax ? [{ label: "Tax withheld", value: money(s.tax, cur), op: "−", tone: "minus" as const, info: HELP.taxWithheld }] : []),
-            { label: "CMS fee", value: s.fee === null ? "—" : money(s.fee, cur), op: "−", tone: "minus", info: HELP.feeTiers },
-            { label: "Net receivable", value: s.net === null ? "—" : money(s.net, cur), op: "=", info: HELP.netReceivable },
+            { label: "Gross", value: money(s.gross, cur), sub: inBase ? money(s.gross_base, base) : undefined, info: HELP.grossRevenue },
+            ...(hasTax ? [{ label: "Tax withheld", value: money(s.tax, cur), sub: inBase ? money(s.tax_base, base) : undefined, op: "−", tone: "minus" as const, info: HELP.taxWithheld }] : []),
+            { label: "CMS fee", value: s.fee === null ? "—" : money(s.fee, cur), sub: inBase && s.fee !== null ? money(s.fee_base, base) : undefined, op: "−", tone: "minus", info: HELP.feeTiers },
+            { label: "Net receivable", value: s.net === null ? "—" : money(s.net, cur), sub: inBase && s.net !== null ? money(s.net_base, base) : undefined, op: "=", info: HELP.netReceivable },
             { label: "Received", value: money(s.received, base), op: "−", tone: "minus", info: HELP.cashReceived },
             {
               label: "Outstanding",
@@ -476,6 +495,7 @@ function CmsMonthPage() {
                 { key: "receipts", label: "Bank receipts", count: data.receipts.length },
                 { key: "outstanding", label: "Outstanding", alert: !rateMissing && Number(s.outstanding ?? 0) > 0 },
                 { key: "disputes", label: "Disputes", count: data.adjustments.length },
+                { key: "months", label: "Month by month" },
               ]
             : [
                 { key: "channels", label: "Channels", count: data.channels.length },
@@ -635,6 +655,8 @@ function CmsMonthPage() {
           }}
         />
       )}
+
+      {tab === "months" && hasCms && <CmsMonthsPanel cmsId={cmsId} month={month} />}
 
       {tab === "outstanding" && hasCms && (
         <section className="overflow-hidden rounded-2xl border bg-card shadow-sm">

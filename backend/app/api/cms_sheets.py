@@ -24,9 +24,11 @@ from app.api.finance import (
 from app.core.database import DbSession
 from app.models import (
     Channel,
+    CmsFxRate,
     CmsPartner,
     CmsStatement,
     CmsStatementLine,
+    FxRate,
     RevenueFact,
     RevenueImport,
 )
@@ -314,6 +316,62 @@ async def import_sheet(
                 import_id=record.id,
             )
         )
+
+    # The sheet's own rate (e.g. "INR@86.10") is this CMS's rate for the month; a rate set
+    # by hand for the CMS still wins. It also becomes the company's monthly rate when that is
+    # not set yet, for figures that are not per CMS.
+    if s.sheet_rate and org.base_currency == "INR" and s.currency != org.base_currency:
+        own = db.scalar(
+            select(CmsFxRate).where(
+                CmsFxRate.cms_partner_id == cms.id,
+                CmsFxRate.month == s.month,
+                CmsFxRate.currency == s.currency,
+            )
+        )
+        if own is None:
+            own = CmsFxRate(
+                organization_id=org.id, cms_partner_id=cms.id, month=s.month, currency=s.currency
+            )
+            db.add(own)
+        own.sheet_rate = s.sheet_rate
+        rate_text = f"{s.sheet_rate.normalize():f}"
+        if own.manual_rate is not None and own.manual_rate != s.sheet_rate:
+            warnings.append(
+                f"The sheet's rate is {rate_text}, but {cms.name}'s {s.month:%B %Y} rate was set "
+                f"by hand to {own.manual_rate.normalize():f}, which is kept. Use the sheet's "
+                "rate from the CMS page if you want it."
+            )
+        else:
+            warnings.append(
+                f"{cms.name}'s {s.month:%B %Y} rate is {rate_text} "
+                f"({s.currency}→{org.base_currency}), from this sheet."
+            )
+        rate = db.scalar(
+            select(FxRate).where(
+                FxRate.organization_id == org.id,
+                FxRate.month == s.month,
+                FxRate.currency == s.currency,
+            )
+        )
+        if rate is None:
+            rate = FxRate(
+                organization_id=org.id, month=s.month, currency=s.currency, rate=s.sheet_rate
+            )
+            db.add(rate)
+            db.flush()
+            _audit(
+                db,
+                ctx,
+                request,
+                "fx.set",
+                "fx_rate",
+                rate.id,
+                {
+                    "name": f"{s.currency} {s.month:%Y-%m}",
+                    "changes": {"rate": [None, str(s.sheet_rate)]},
+                    "from": s.file_name,
+                },
+            )
 
     statement = None
     old_key = None

@@ -22,6 +22,7 @@ from app.models import (
     BankReceipt,
     Channel,
     CmsAdjustment,
+    CmsFxRate,
     CmsPartner,
     CmsStatement,
     ContentDeal,
@@ -49,6 +50,10 @@ class CmsMonth:
     net: Decimal | None = None
     fee_rule: str | None = None
     fx_rate: Decimal | None = None
+    # Where fx_rate came from: "manual" (set for this CMS), "sheet" (the CMS's own sheet) or
+    # "company" (the company's monthly rate); and the sheet's rate, when there is one.
+    fx_source: str | None = None
+    sheet_fx_rate: Decimal | None = None
     gross_base: Decimal | None = None
     tax_base: Decimal | None = None
     fee_base: Decimal | None = None
@@ -99,12 +104,40 @@ def _gross_by_channel(db: Session, org: Organization, month: date, cms_id: uuid.
     return {(c, cur): (g or Decimal(0), v, t or Decimal(0)) for c, cur, g, v, t in db.execute(stmt)}
 
 
+def cms_rate(
+    db: Session, org: Organization, cms_id: uuid.UUID | None, month: date, currency: str
+) -> tuple[Decimal | None, str | None, Decimal | None]:
+    """(rate, source, the sheet's rate) for a CMS's month: the rate set by hand for this CMS,
+    else the one on its sheet, else the company's monthly rate."""
+    if currency == org.base_currency:
+        return Decimal(1), "company", None
+    own = (
+        db.scalar(
+            select(CmsFxRate).where(
+                CmsFxRate.cms_partner_id == cms_id,
+                CmsFxRate.month == month,
+                CmsFxRate.currency == currency,
+            )
+        )
+        if cms_id
+        else None
+    )
+    sheet = own.sheet_rate if own else None
+    if own and own.manual_rate is not None:
+        return own.manual_rate, "manual", sheet
+    if sheet is not None:
+        return sheet, "sheet", sheet
+    rate = fx_rate(db, org, month, currency)
+    return rate, ("company" if rate is not None else None), None
+
+
 def receipt_value(db: Session, org: Organization, receipt: BankReceipt) -> Decimal | None:
-    """A receipt at the settlement month's FX rate, so $15,000 clears $15,000 of the
-    receivable whatever rate the bank used (that difference is FX gain/loss)."""
+    """A receipt at the settlement month's FX rate (the CMS's own rate when it has one), so
+    $15,000 clears $15,000 of the receivable whatever rate the bank used (that difference is
+    FX gain/loss)."""
     if receipt.currency == org.base_currency:
         return receipt.amount
-    rate = fx_rate(db, org, receipt.month, receipt.currency)
+    rate, _, _ = cms_rate(db, org, receipt.cms_partner_id, receipt.month, receipt.currency)
     return money(receipt.amount * rate) if rate is not None else None
 
 
@@ -141,7 +174,9 @@ def cms_month(db: Session, org: Organization, cms: CmsPartner | None, month: dat
         result.fee, result.net = Decimal("0.00"), result.gross - result.tax
 
     if currency:
-        result.fx_rate = fx_rate(db, org, month, currency)
+        result.fx_rate, result.fx_source, result.sheet_fx_rate = cms_rate(
+            db, org, cms_id, month, currency
+        )
         if result.fx_rate is None:
             result.warnings.append(f"No {currency}→{org.base_currency} rate for this month.")
         else:

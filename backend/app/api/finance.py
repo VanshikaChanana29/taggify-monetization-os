@@ -1,5 +1,7 @@
 """Revenue import, FX rates, CMS fee schedules and the monthly CMS settlement (Part 4A)."""
 
+import csv
+import io
 import uuid
 from dataclasses import asdict
 from decimal import Decimal
@@ -28,6 +30,7 @@ from app.models import (
     Channel,
     CmsAdjustment,
     CmsFeeSchedule,
+    CmsFxRate,
     CmsPartner,
     CmsStatement,
     FxRate,
@@ -41,6 +44,9 @@ from app.schemas.finance import (
     ChannelLineOut,
     CmsMonthDetail,
     CmsMonthOut,
+    CmsMonthRowOut,
+    CmsMonthsOut,
+    CmsRateIn,
     FeeScheduleIn,
     FeeScheduleOut,
     FinanceMonthOut,
@@ -253,6 +259,19 @@ def undo_import(import_id: uuid.UUID, ctx: Auth, request: Request, db: DbSession
             ensure_open(db, org, month, "This upload")
         except MonthClosedError as exc:
             raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
+
+    # The rate a CMS sheet brought in goes with it; a rate set by hand stays.
+    sheet_months = {
+        (f.cms_partner_id, f.day.replace(day=1)) for f in facts if f.source == "cms_sheet"
+    }
+    for cms_id, month in sheet_months:
+        for own in db.scalars(
+            select(CmsFxRate).where(CmsFxRate.cms_partner_id == cms_id, CmsFxRate.month == month)
+        ):
+            if own.manual_rate is None:
+                db.delete(own)
+            else:
+                own.sheet_rate = None
 
     keys = [s.storage_key for s in statements if s.storage_key]
     _audit(
@@ -529,6 +548,237 @@ def finance_month(ctx: Auth, db: DbSession, month: MonthQuery) -> FinanceMonthOu
         outstanding=money(sum((r.outstanding or zero for r in rows), zero)),
         incomplete=any(r.warnings for r in rows),
         rows=[CmsMonthOut(**asdict(r)) for r in rows],
+    )
+
+
+def _cms_rate_row(
+    db: Session, ctx: AuthContext, cms: CmsPartner, month
+) -> tuple[CmsFxRate | None, str]:
+    currency = cms_month(db, ctx.organization, cms, month).currency or "USD"
+    return db.scalar(
+        select(CmsFxRate).where(
+            CmsFxRate.cms_partner_id == cms.id,
+            CmsFxRate.month == month,
+            CmsFxRate.currency == currency,
+        )
+    ), currency
+
+
+def _rate_month_open(db: Session, ctx: AuthContext, month) -> None:
+    try:
+        ensure_open(db, ctx.organization, month, "This rate")
+    except MonthClosedError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
+
+
+@router.put("/finance/settlements/{cms_id}/rate")
+def set_cms_rate(
+    cms_id: uuid.UUID, body: CmsRateIn, ctx: Auth, request: Request, db: DbSession
+) -> CmsMonthOut:
+    """Set this CMS's rate for the month by hand; it wins over the rate on its sheet."""
+    cms = _cms(db, ctx, cms_id)
+    month = _month(body.month)
+    _rate_month_open(db, ctx, month)
+    row, currency = _cms_rate_row(db, ctx, cms, month)
+    if currency == ctx.organization.base_currency:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            f"{cms.name} settles in {currency}, the company's currency; no rate needed",
+        )
+    if row is None:
+        row = CmsFxRate(
+            organization_id=ctx.organization.id,
+            cms_partner_id=cms.id,
+            month=month,
+            currency=currency,
+        )
+        db.add(row)
+    before = str(row.manual_rate) if row.manual_rate is not None else None
+    row.manual_rate = body.rate
+    db.flush()
+    _audit(
+        db,
+        ctx,
+        request,
+        "cms.rate_set",
+        "cms_partner",
+        cms.id,
+        {
+            "name": f"{cms.name} {month:%Y-%m}",
+            "changes": {"rate": [before, str(body.rate)]},
+            "currency": currency,
+        },
+    )
+    db.commit()
+    return CmsMonthOut(**asdict(cms_month(db, ctx.organization, cms, month)))
+
+
+@router.delete("/finance/settlements/{cms_id}/rate")
+def clear_cms_rate(
+    cms_id: uuid.UUID, ctx: Auth, request: Request, db: DbSession, month: MonthQuery
+) -> CmsMonthOut:
+    """Drop the rate set by hand: the sheet's rate (or the company's) applies again."""
+    cms = _cms(db, ctx, cms_id)
+    m = _month(month)
+    _rate_month_open(db, ctx, m)
+    row, _ = _cms_rate_row(db, ctx, cms, m)
+    if row is not None and row.manual_rate is not None:
+        _audit(
+            db,
+            ctx,
+            request,
+            "cms.rate_cleared",
+            "cms_partner",
+            cms.id,
+            {"name": f"{cms.name} {m:%Y-%m}", "changes": {"rate": [str(row.manual_rate), None]}},
+        )
+        if row.sheet_rate is None:
+            db.delete(row)
+        else:
+            row.manual_rate = None
+        db.commit()
+    return CmsMonthOut(**asdict(cms_month(db, ctx.organization, cms, m)))
+
+
+MAX_RANGE_MONTHS = 36
+
+
+def _cms_months(ctx: AuthContext, db: Session, cms_id: uuid.UUID, start: str, end: str):
+    cms = _cms(db, ctx, cms_id)
+    first, last = _month(start), _month(end)
+    if first > last:
+        first, last = last, first
+    count = (last.year - first.year) * 12 + last.month - first.month + 1
+    if count > MAX_RANGE_MONTHS:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY, f"Pick at most {MAX_RANGE_MONTHS} months"
+        )
+    zero = Decimal("0.00")
+    rows: list[CmsMonthRowOut] = []
+    currency = None
+    for i in range(count):
+        y, mo = divmod(first.month - 1 + i, 12)
+        m = first.replace(year=first.year + y, month=mo + 1)
+        r = cms_month(db, ctx.organization, cms, m)
+        if not (r.gross or r.received):
+            continue
+        currency = currency or r.currency
+        rows.append(
+            CmsMonthRowOut(
+                month=f"{m:%Y-%m}",
+                fx_rate=r.fx_rate,
+                fx_source=r.fx_source,
+                gross=r.gross,
+                gross_base=r.gross_base,
+                tax=r.tax,
+                tax_base=r.tax_base,
+                fee=r.fee,
+                fee_base=r.fee_base,
+                net=r.net,
+                net_base=r.net_base,
+                received=r.received,
+                outstanding=r.outstanding,
+            )
+        )
+
+    def total(key: str) -> Decimal:
+        return money(sum((getattr(x, key) or zero for x in rows), zero))
+
+    totals = CmsMonthRowOut(
+        month="total",
+        fx_rate=None,
+        **{
+            k: total(k)
+            for k in (
+                "gross",
+                "gross_base",
+                "tax",
+                "tax_base",
+                "fee",
+                "fee_base",
+                "net",
+                "net_base",
+                "received",
+                "outstanding",
+            )
+        },
+    )
+    return CmsMonthsOut(
+        cms_name=cms.name,
+        currency=currency,
+        base_currency=ctx.organization.base_currency,
+        start=f"{first:%Y-%m}",
+        end=f"{last:%Y-%m}",
+        rows=rows,
+        totals=totals,
+        months_without_rate=[x.month for x in rows if x.fx_rate is None],
+    )
+
+
+@router.get("/finance/settlements/{cms_id}/months")
+def finance_cms_months(
+    cms_id: uuid.UUID, ctx: Auth, db: DbSession, start: MonthQuery, end: MonthQuery
+) -> CmsMonthsOut:
+    """A CMS month by month over a range: each month's rate, and gross, tax, CMS fee and
+    net in the CMS's currency and in the company's, with totals."""
+    return _cms_months(ctx, db, cms_id, start, end)
+
+
+@router.get("/finance/settlements/{cms_id}/months.csv")
+def finance_cms_months_csv(
+    cms_id: uuid.UUID, ctx: Auth, db: DbSession, start: MonthQuery, end: MonthQuery
+) -> Response:
+    out = _cms_months(ctx, db, cms_id, start, end)
+    cur, base = out.currency or "USD", out.base_currency
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(
+        [
+            "Month",
+            f"Rate ({cur} to {base})",
+            f"Gross ({cur})",
+            f"Gross ({base})",
+            f"Tax withheld ({cur})",
+            f"Tax withheld ({base})",
+            f"CMS fee ({cur})",
+            f"CMS fee ({base})",
+            f"Net receivable ({cur})",
+            f"Net receivable ({base})",
+            f"Received ({base})",
+            f"Outstanding ({base})",
+        ]
+    )
+    for r in [*out.rows, out.totals]:
+        w.writerow(
+            [
+                "Total" if r.month == "total" else r.month,
+                *(
+                    "" if v is None else str(v)
+                    for v in (
+                        r.fx_rate,
+                        r.gross,
+                        r.gross_base,
+                        r.tax,
+                        r.tax_base,
+                        r.fee,
+                        r.fee_base,
+                        r.net,
+                        r.net_base,
+                        r.received,
+                        r.outstanding,
+                    )
+                ),
+            ]
+        )
+    name = f"{out.cms_name} {out.start} to {out.end}.csv"
+    ascii_name = name.encode("ascii", "replace").decode().replace('"', "").replace("?", "_")
+    return Response(
+        buf.getvalue(),
+        media_type="text/csv",
+        headers={
+            "Content-Disposition": f'attachment; filename="{ascii_name}"; '
+            f"filename*=UTF-8''{quote(name)}"
+        },
     )
 
 

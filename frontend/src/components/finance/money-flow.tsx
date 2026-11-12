@@ -45,7 +45,7 @@ export function MoneyFlow({ steps, compact = false }: { steps: FlowStep[]; compa
               {s.info && <InfoTip text={s.info} />}
             </p>
             <p className={cn("mt-1 font-bold", compact ? "text-lg" : i === steps.length - 1 ? "text-2xl" : "text-xl")}>{s.value}</p>
-            {s.sub && !compact && <p className="mt-0.5 text-xs text-muted-foreground">{s.sub}</p>}
+            {s.sub && <p className={cn("text-muted-foreground", compact ? "text-xs font-medium" : "mt-0.5 text-xs")}>{s.sub}</p>}
           </div>
         </Fragment>
       ))}

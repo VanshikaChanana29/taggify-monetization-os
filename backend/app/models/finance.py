@@ -80,6 +80,23 @@ class FxRate(UUIDPrimaryKeyMixin, OrgScopedMixin, TimestampMixin, Base):
     rate: Mapped[Decimal] = mapped_column(Numeric(18, 6))
 
 
+class CmsFxRate(UUIDPrimaryKeyMixin, OrgScopedMixin, TimestampMixin, Base):
+    """A CMS's own rate for a month: each CMS converts at its own rate on its sheet (e.g.
+    "INR@86.10"). The rate set by hand wins over the sheet's; without either, the company's
+    monthly rate is used."""
+
+    __tablename__ = "cms_fx_rates"
+    __table_args__ = (UniqueConstraint("cms_partner_id", "month", "currency"),)
+
+    cms_partner_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("cms_partners.id", ondelete="CASCADE"), index=True
+    )
+    month: Mapped[date] = mapped_column(Date)
+    currency: Mapped[str] = mapped_column(String(3))
+    sheet_rate: Mapped[Decimal | None] = mapped_column(Numeric(18, 6))
+    manual_rate: Mapped[Decimal | None] = mapped_column(Numeric(18, 6))
+
+
 class CmsFeeSchedule(UUIDPrimaryKeyMixin, OrgScopedMixin, TimestampMixin, Base):
     """A CMS's commission tiers from a date onward (PDF slide 9, slide 16 step 3).
 

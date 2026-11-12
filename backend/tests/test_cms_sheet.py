@@ -5,7 +5,10 @@ import json
 from decimal import Decimal
 
 from openpyxl import Workbook
+from sqlalchemy import delete
 
+from app.core.database import SessionLocal
+from app.models import FxRate
 from tests.test_channels_people import channel, cms
 from tests.test_finance import MONTH, founder, schedule  # noqa: F401
 
@@ -123,7 +126,10 @@ def test_import_books_revenue_and_statement_and_remembers_the_mapping(founder): 
     detail = founder.get(f"/api/finance/settlements/{cms_s}?month={MONTH}").json()
     s = detail["summary"]
     assert (s["gross"], s["tax"], s["fee"], s["net"]) == ("1500.00", "30.00", "117.60", "1352.40")
-    assert s["net_base"] == "129830.40"  # 144,000 − 2,880 − 11,289.60 at 96
+    # At the CMS's own rate from its sheet (95.92), not the company's 96:
+    # 143,880 − 2,877.60 − 11,280.19.
+    assert (s["fx_rate"], s["fx_source"]) == ("95.920000", "sheet")
+    assert s["net_base"] == "129722.21"
     recon = {line["channel_name"]: line for line in detail["reconciliation"]}
     assert recon["Channel A"]["status"] == "match" and recon["Channel A"]["their_tax"] == "30.00"
     assert recon["Channel B"]["status"] == "match"
@@ -408,3 +414,64 @@ def test_undo_also_removes_the_statement_of_a_sheet_uploaded_before_the_link(fou
     assert founder.delete(f"/api/revenue/imports/{imp['id']}").status_code == 204
     detail = founder.get(f"/api/finance/settlements/{cms_s}?month={MONTH}").json()
     assert detail["statement"] is None
+
+
+def _rate(c) -> str | None:
+    rows = c.get(f"/api/fx-rates?month={MONTH}").json()
+    rows = rows["items"] if isinstance(rows, dict) else rows
+    return next((r["rate"] for r in rows if r["currency"] == "USD" and r["month"] == MONTH), None)
+
+
+def test_each_cms_uses_its_sheets_rate_and_a_rate_set_by_hand_wins(founder):  # noqa: F811
+    cms_s = setup_cms(founder)  # company rate 96
+    with SessionLocal() as db:  # start with no company rate for the month
+        db.execute(delete(FxRate))
+        db.commit()
+
+    def summary():
+        return founder.get(f"/api/finance/settlements/{cms_s}?month={MONTH}").json()["summary"]
+
+    imp = post(founder, "import", cms_s, sheet()).json()
+    assert any("rate is 95.92" in w and "from this sheet" in w for w in imp["warnings"])
+    assert Decimal(_rate(founder)) == Decimal("95.92")  # the company's rate was empty: filled
+    s = summary()
+    assert (s["fx_rate"], s["fx_source"], s["fee_base"]) == ("95.920000", "sheet", "11280.19")
+
+    # Set by hand: wins, and a new upload keeps it.
+    r = founder.put(f"/api/finance/settlements/{cms_s}/rate", json={"month": MONTH, "rate": "97"})
+    assert r.status_code == 200, r.text
+    assert (Decimal(r.json()["fx_rate"]), r.json()["fx_source"]) == (97, "manual")
+    out = post(founder, "import", cms_s, sheet()).json()
+    assert any("set by hand to 97" in w for w in out["warnings"])
+    s = summary()
+    assert (s["fx_source"], s["sheet_fx_rate"]) == ("manual", "95.920000")
+    assert s["fee_base"] == "11407.20"  # 117.60 at 97
+
+    # Back to the sheet's rate.
+    r = founder.delete(f"/api/finance/settlements/{cms_s}/rate?month={MONTH}")
+    assert (r.json()["fx_rate"], r.json()["fx_source"]) == ("95.920000", "sheet")
+
+    # Undoing the upload takes its rate away: the company's rate applies.
+    founder.put("/api/fx-rates", json={"month": MONTH, "currency": "USD", "rate": "96"})
+    assert founder.delete(f"/api/revenue/imports/{out['revenue_import']['id']}").status_code == 204
+    s = summary()
+    assert (s["fx_rate"], s["fx_source"]) == ("96.000000", "company")
+
+
+def test_month_by_month_shows_each_rate_and_totals_in_both_currencies(founder):  # noqa: F811
+    cms_s = setup_cms(founder)  # rate 96
+    post(founder, "import", cms_s, sheet())
+    r = founder.get(f"/api/finance/settlements/{cms_s}/months?start={MONTH}&end={MONTH}")
+    assert r.status_code == 200, r.text
+    out = r.json()
+    assert [x["month"] for x in out["rows"]] == [MONTH] and out["months_without_rate"] == []
+    row, totals = out["rows"][0], out["totals"]
+    assert Decimal(row["fx_rate"]) == Decimal("95.92") and row["fx_source"] == "sheet"
+    assert (totals["gross"], totals["fee"], totals["fee_base"]) == ("1500.00", "117.60", "11280.19")
+
+    csv_text = founder.get(
+        f"/api/finance/settlements/{cms_s}/months.csv?start={MONTH}&end={MONTH}"
+    ).text
+    assert "CMS fee (INR)" in csv_text and "Total" in csv_text and "11280.19" in csv_text
+    too_long = founder.get(f"/api/finance/settlements/{cms_s}/months?start=2020-01&end={MONTH}")
+    assert too_long.status_code == 422

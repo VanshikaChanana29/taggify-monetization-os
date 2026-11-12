@@ -389,6 +389,8 @@ export type CmsMonth = {
   net: string | null;
   fee_rule: string | null;
   fx_rate: string | null;
+  fx_source: "manual" | "sheet" | "company" | null;
+  sheet_fx_rate: string | null;
   gross_base: string | null;
   tax_base: string | null;
   fee_base: string | null;
@@ -967,3 +969,30 @@ export type DealEarnings = {
 };
 
 export type DealPartnerShare = { partner_id: string; name: string; share_pct: string };
+
+export interface CmsMonthRow {
+  month: string;
+  fx_rate: string | null;
+  fx_source: "manual" | "sheet" | "company" | null;
+  gross: string;
+  gross_base: string | null;
+  tax: string;
+  tax_base: string | null;
+  fee: string | null;
+  fee_base: string | null;
+  net: string | null;
+  net_base: string | null;
+  received: string;
+  outstanding: string | null;
+}
+
+export interface CmsMonths {
+  cms_name: string;
+  currency: string | null;
+  base_currency: string;
+  start: string;
+  end: string;
+  rows: CmsMonthRow[];
+  totals: CmsMonthRow;
+  months_without_rate: string[];
+}

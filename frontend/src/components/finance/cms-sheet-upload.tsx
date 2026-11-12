@@ -343,7 +343,7 @@ export function CmsSheetUpload({
                     <Stat label="CMS pays you" value={money(preview.totals.net, cur)} />
                     <Stat label="CMS fee (from the sheet)" value={money(preview.totals.fee, cur)} />
                     <Stat label={`In the sheet (${base})`} value={money(preview.totals.net_local, base)} />
-                    <Stat label={`Gross at your rate`} value={preview.company_rate ? money(preview.gross_base, base) : "Add the month's rate"} />
+                    <Stat label={`Gross at your rate`} value={preview.company_rate ? money(preview.gross_base, base) : preview.sheet_rate && base === "INR" ? `${money(Number(preview.totals.gross) * Number(preview.sheet_rate), base)} · sheet's rate` : "Add the month's rate"} />
                     <Stat label="Rates" value={`Sheet ${preview.sheet_rate ? Number(preview.sheet_rate) : "—"} · yours ${preview.company_rate ? Number(preview.company_rate) : "—"}`} />
                   </section>
 
