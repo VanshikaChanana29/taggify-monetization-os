@@ -1,10 +1,12 @@
-from datetime import date, timedelta
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import pytest
 
 from tests.test_deals import deal_body, owner
 
-TODAY = date.today()
+# "Today" as the app sees it: in the company's timezone (CI runs in UTC).
+TODAY = datetime.now(ZoneInfo("Asia/Kolkata")).date()
 
 
 @pytest.fixture

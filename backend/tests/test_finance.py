@@ -1,11 +1,13 @@
-from datetime import date, timedelta
+from datetime import datetime, timedelta
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
 import pytest
 
 from tests.test_channels_people import channel, cms
 
-TODAY = date.today()
+# "Today" as the app sees it: in the company's timezone (CI runs in UTC).
+TODAY = datetime.now(ZoneInfo("Asia/Kolkata")).date()
 LAST = (TODAY.replace(day=1) - timedelta(days=1)).replace(day=1)  # first day of last month
 MONTH = f"{LAST:%Y-%m}"
 TIERS = [{"from_amount": "0", "rate_pct": "20"}, {"from_amount": "20000", "rate_pct": "15"}]

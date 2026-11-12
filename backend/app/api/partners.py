@@ -545,7 +545,7 @@ def add_payout(
 ) -> PayoutOut:
     p = _partner(db, ctx, partner_id)
     month = date(int(body.month[:4]), int(body.month[5:]), 1)
-    if body.paid_on > date.today():
+    if body.paid_on > company_today(ctx.organization):
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY, "The paid date cannot be in the future"
         )

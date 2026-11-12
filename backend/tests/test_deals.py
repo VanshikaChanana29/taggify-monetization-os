@@ -1,11 +1,13 @@
-from datetime import date, timedelta
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import pytest
 from sqlalchemy import select
 
 from app.models import AuditLog
 
-TODAY = date.today()
+# "Today" as the app sees it: in the company's timezone (CI runs in UTC).
+TODAY = datetime.now(ZoneInfo("Asia/Kolkata")).date()
 
 
 def owner(c, name="Sony", owner_type="licensor", **extra) -> str:

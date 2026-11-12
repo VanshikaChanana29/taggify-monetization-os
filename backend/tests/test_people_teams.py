@@ -1,10 +1,12 @@
-from datetime import date, timedelta
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import pytest
 
 from tests.test_channels_people import channel, employee, post, role_id, team
 
-TODAY = date.today()
+# "Today" as the app sees it: in the company's timezone (CI runs in UTC).
+TODAY = datetime.now(ZoneInfo("Asia/Kolkata")).date()
 
 
 @pytest.fixture
