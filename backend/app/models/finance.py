@@ -129,6 +129,10 @@ class CmsStatement(UUIDPrimaryKeyMixin, OrgScopedMixin, TimestampMixin, Base):
     )
     # Goes up each time the statement is replaced; earlier versions stay in the activity log.
     version: Mapped[int] = mapped_column(server_default="1")
+    # The CMS-sheet upload that wrote this statement, so undoing the upload removes it too.
+    import_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("revenue_imports.id", ondelete="SET NULL")
+    )
 
     lines: Mapped[list["CmsStatementLine"]] = relationship(
         cascade="all, delete-orphan", order_by="CmsStatementLine.line_no"

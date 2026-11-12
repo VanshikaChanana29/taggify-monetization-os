@@ -348,6 +348,7 @@ async def import_sheet(
             ctx, "cms-statements", s.file_name, s.content
         )
         statement.uploaded_by_id = ctx.user.id
+        statement.import_id = record.id
         statement.lines = [
             CmsStatementLine(
                 id=uuid.uuid4(),

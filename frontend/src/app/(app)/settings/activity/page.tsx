@@ -53,6 +53,7 @@ const ACTION_LABELS: Record<string, string> = {
   "team.updated": "Edited a team",
   "team.lead_changed": "Changed a team lead",
   "revenue.imported": "Imported revenue",
+  "revenue.import_undone": "Undid a revenue upload",
   "fx.set": "Set an FX rate",
   "cms.fee_schedule_added": "Added CMS fee tiers",
   "cms.fee_schedule_deleted": "Deleted CMS fee tiers",
@@ -129,6 +130,7 @@ const ACTION_GROUPS: Record<string, { label: string; actions: string[] }> = {
     label: "Revenue & finance",
     actions: [
       "revenue.imported",
+      "revenue.import_undone",
       "fx.set",
       "cms.fee_schedule_added",
       "cms.fee_schedule_deleted",

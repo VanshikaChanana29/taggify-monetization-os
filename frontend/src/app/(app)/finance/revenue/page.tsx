@@ -1,6 +1,6 @@
 "use client";
 
-import { Download, FileSpreadsheet, FileUp, Upload } from "lucide-react";
+import { Download, FileSpreadsheet, FileUp, Undo2, Upload } from "lucide-react";
 import Link from "next/link";
 import { Fragment, Suspense, useCallback, useEffect, useRef, useState } from "react";
 
@@ -92,6 +92,9 @@ function RevenueTab() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [facts, setFacts] = useState<Page<RevenueFact> | null>(null);
+  const [undoing, setUndoing] = useState<RevenueImport | null>(null);
+  const [undoBusy, setUndoBusy] = useState(false);
+  const [undoError, setUndoError] = useState<string | null>(null);
 
   const loadImports = useCallback(() => {
     api<Page<RevenueImport>>("/revenue/imports?page_size=10").then(setImports).catch(() => {});
@@ -124,6 +127,23 @@ function RevenueTab() {
     } finally {
       setUploading(false);
       if (fileRef.current) fileRef.current.value = "";
+    }
+  }
+
+  async function undo() {
+    if (!undoing) return;
+    setUndoBusy(true);
+    setUndoError(null);
+    try {
+      await api(`/revenue/imports/${undoing.id}`, { method: "DELETE" });
+      setUndoing(null);
+      setResult(null);
+      loadImports();
+      loadFacts();
+    } catch (err) {
+      setUndoError(err instanceof Error ? err.message : "Could not undo the upload");
+    } finally {
+      setUndoBusy(false);
     }
   }
 
@@ -245,7 +265,11 @@ function RevenueTab() {
                   <TableCell className="text-right">{i.rows_created}</TableCell>
                   <TableCell className="text-right">{i.rows_updated}</TableCell>
                   <TableCell className={i.rows_failed ? "text-right font-semibold text-red-600" : "text-right"}>{i.rows_failed}</TableCell>
-                  <TableCell className="text-right">
+                  <TableCell className="whitespace-nowrap text-right">
+                    <Button variant="ghost" size="sm" className="text-red-600 hover:text-red-700 dark:text-red-400" onClick={() => { setUndoError(null); setUndoing(i); }}>
+                      <Undo2 />
+                      Undo
+                    </Button>
                     {i.errors.length > 0 && (
                       <Button variant="ghost" size="sm" onClick={() => setExpanded(expanded === i.id ? null : i.id)}>
                         {expanded === i.id ? "Hide problems" : "See problems"}
@@ -284,6 +308,27 @@ function RevenueTab() {
           api<CmsPartner[]>("/cms-partners").then(setCmsList).catch(() => {});
         }}
       />
+
+      <Dialog
+        open={undoing !== null}
+        onClose={() => !undoBusy && setUndoing(null)}
+        title="Undo this upload?"
+        description={undoing ? `${undoing.file_name} · ${formatDateTime(undoing.created_at)}` : undefined}
+      >
+        <div className="space-y-3 text-sm">
+          <p>Every revenue line this file added or updated will be removed. If it was a CMS sheet, the CMS statement it saved is removed too.</p>
+          <p className="text-muted-foreground">Figures that were there before this upload are not brought back — upload the right file afterwards. Months that are already closed can&apos;t be undone.</p>
+          {undoError && <Notice kind="error">{undoError}</Notice>}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" disabled={undoBusy} onClick={() => setUndoing(null)}>
+            Cancel
+          </Button>
+          <Button variant="destructive" disabled={undoBusy} onClick={undo}>
+            {undoBusy ? "Undoing…" : "Undo upload"}
+          </Button>
+        </DialogFooter>
+      </Dialog>
 
       <Dialog open={open} onClose={() => setOpen(false)} title="Import a daily CSV" description="Three steps. The file can hold any month — each line carries its own date." wide>
         <ol className="space-y-5">

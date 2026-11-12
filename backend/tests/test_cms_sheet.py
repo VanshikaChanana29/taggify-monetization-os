@@ -363,3 +363,48 @@ def test_a_total_row_with_total_written_in_the_id_column_is_not_a_channel():
     assert sum(x.gross for x in p.lines) == Decimal("2678.66")  # not 3,174.08 with the Total
     assert sum(x.tax for x in p.lines) == Decimal("46.76")
     assert p.errors == []
+
+
+def test_undo_a_sheet_upload_removes_its_revenue_and_statement(founder):  # noqa: F811
+    cms_s = setup_cms(founder)
+    imp = post(founder, "import", cms_s, sheet()).json()["revenue_import"]
+
+    assert founder.delete(f"/api/revenue/imports/{imp['id']}").status_code == 204
+    detail = founder.get(f"/api/finance/settlements/{cms_s}?month={MONTH}").json()
+    assert detail["summary"]["gross"] == "0.00" and detail["statement"] is None
+    assert founder.get(f"/api/revenue/facts?month={MONTH}").json()["total"] == 0
+    assert founder.get("/api/revenue/imports").json()["total"] == 0
+    assert founder.delete(f"/api/revenue/imports/{imp['id']}").status_code == 404
+
+    # The right file goes in cleanly afterwards.
+    post(founder, "import", cms_s, sheet())
+    s = founder.get(f"/api/finance/settlements/{cms_s}?month={MONTH}").json()["summary"]
+    assert s["gross"] == "1500.00"
+
+
+def test_an_upload_in_a_closed_month_cannot_be_undone(founder):  # noqa: F811
+    cms_s = setup_cms(founder)
+    imp = post(founder, "import", cms_s, sheet()).json()["revenue_import"]
+    for step in ("compute", "approve"):
+        founder.post(f"/api/finance/incentives/{step}", json={"month": MONTH})
+    assert founder.post("/api/finance/close", json={"month": MONTH}).status_code == 200
+
+    r = founder.delete(f"/api/revenue/imports/{imp['id']}")
+    assert r.status_code == 409 and "closed" in r.json()["detail"]
+
+
+def test_undo_also_removes_the_statement_of_a_sheet_uploaded_before_the_link(founder):  # noqa: F811
+    from sqlalchemy import update
+
+    from app.core.database import SessionLocal
+    from app.models import CmsStatement
+
+    cms_s = setup_cms(founder)
+    imp = post(founder, "import", cms_s, sheet()).json()["revenue_import"]
+    with SessionLocal() as db:  # as if uploaded before statements remembered their upload
+        db.execute(update(CmsStatement).values(import_id=None))
+        db.commit()
+
+    assert founder.delete(f"/api/revenue/imports/{imp['id']}").status_code == 204
+    detail = founder.get(f"/api/finance/settlements/{cms_s}?month={MONTH}").json()
+    assert detail["statement"] is None

@@ -63,7 +63,7 @@ from app.services.audit import record_audit
 from app.services.cms_fees import money
 from app.services.dashboard import activity_months
 from app.services.deals import company_today
-from app.services.month_close import closed_months, latest_closed
+from app.services.month_close import MonthClosedError, closed_months, ensure_open, latest_closed
 from app.services.revenue_import import TEMPLATE, import_revenue
 from app.services.settlement import (
     channel_lines,
@@ -206,6 +206,77 @@ def list_imports(ctx: Auth, db: DbSession, pagination: Pagination) -> Page[Reven
         page=pagination.page,
         page_size=pagination.page_size,
     )
+
+
+@router.delete("/revenue/imports/{import_id}", status_code=status.HTTP_204_NO_CONTENT)
+def undo_import(import_id: uuid.UUID, ctx: Auth, request: Request, db: DbSession) -> None:
+    """Take back an upload: remove the revenue lines it wrote and, for a CMS sheet, the
+    statement it saved. Lines it overwrote are not brought back — upload the right file."""
+    org = ctx.organization
+    record = db.scalar(
+        select(RevenueImport).where(
+            RevenueImport.id == import_id, RevenueImport.organization_id == org.id
+        )
+    )
+    if record is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Upload not found")
+    facts = db.scalars(
+        select(RevenueFact).where(
+            RevenueFact.organization_id == org.id, RevenueFact.import_id == record.id
+        )
+    ).all()
+    statements = db.scalars(
+        select(CmsStatement).where(
+            CmsStatement.organization_id == org.id, CmsStatement.import_id == record.id
+        )
+    ).all()
+    # Sheets uploaded before statements remembered their upload: the statement of the same
+    # CMS and month that still carries this file's name.
+    for cms_id, month in {
+        (f.cms_partner_id, f.day.replace(day=1)) for f in facts if f.source == "cms_sheet"
+    }:
+        legacy = db.scalar(
+            select(CmsStatement).where(
+                CmsStatement.organization_id == org.id,
+                CmsStatement.cms_partner_id == cms_id,
+                CmsStatement.month == month,
+                CmsStatement.import_id.is_(None),
+                CmsStatement.source == "file",
+                CmsStatement.file_name == record.file_name,
+            )
+        )
+        if legacy is not None and legacy not in statements:
+            statements = [*statements, legacy]
+    months = sorted({f.day.replace(day=1) for f in facts} | {s.month for s in statements})
+    for month in months:
+        try:
+            ensure_open(db, org, month, "This upload")
+        except MonthClosedError as exc:
+            raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
+
+    keys = [s.storage_key for s in statements if s.storage_key]
+    _audit(
+        db,
+        ctx,
+        request,
+        "revenue.import_undone",
+        "revenue_import",
+        record.id,
+        {
+            "name": record.file_name,
+            "lines": len(facts),
+            "statements": len(statements),
+            "months": [f"{m:%Y-%m}" for m in months],
+        },
+    )
+    for fact in facts:
+        db.delete(fact)
+    for statement in statements:
+        db.delete(statement)
+    db.delete(record)
+    db.commit()
+    for key in keys:
+        file_store.remove(key)
 
 
 @router.get("/revenue/facts")
