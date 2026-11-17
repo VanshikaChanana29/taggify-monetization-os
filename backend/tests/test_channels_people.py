@@ -223,6 +223,59 @@ def test_slot_status_must_match_channel(founder):
     assert patch("active").status_code == 200
 
 
+def test_bulk_assign_then_bulk_approve(founder):
+    deal = new_deal(founder, yt_slot_limit=3, fb_slot_limit=0)
+    a, b = channel(founder, "Alpha"), channel(founder, "Beta")
+    s1, s2 = slot_id(deal, "YT-01"), slot_id(deal, "YT-02")
+    base = f"/api/deals/{deal['id']}/slots"
+
+    r = founder.post(
+        f"{base}/bulk-assign",
+        json={"assignments": [{"slot_id": s1, "channel_id": a}, {"slot_id": s2, "channel_id": b}]},
+    )
+    assert r.status_code == 200, r.text
+    assert [(s["code"], s["channel_name"], s["status"]) for s in r.json()] == [
+        ("YT-01", "Alpha", "pending_whitelist"),
+        ("YT-02", "Beta", "pending_whitelist"),
+    ]
+
+    r = founder.post(f"{base}/bulk-status", json={"slot_ids": [s1, s2], "status": "active"})
+    assert r.status_code == 200, r.text
+    assert {s["status"] for s in r.json()} == {"active"}
+
+
+def test_bulk_assign_is_all_or_nothing(founder):
+    deal = new_deal(founder, yt_slot_limit=3, fb_slot_limit=0)
+    good = channel(founder, "Alpha")
+    page = channel(founder, "Page", platform="facebook")
+    base = f"/api/deals/{deal['id']}/slots"
+    pairs = [
+        {"slot_id": slot_id(deal, "YT-01"), "channel_id": good},
+        {"slot_id": slot_id(deal, "YT-02"), "channel_id": page},
+    ]
+
+    r = founder.post(f"{base}/bulk-assign", json={"assignments": pairs})
+    assert r.status_code == 409 and "Facebook channel" in r.text
+    slots = founder.get(f"/api/deals/{deal['id']}").json()["slots"]
+    assert all(s["channel_id"] is None for s in slots)
+
+    dup = [pairs[0], {"slot_id": slot_id(deal, "YT-03"), "channel_id": good}]
+    assert founder.post(f"{base}/bulk-assign", json={"assignments": dup}).status_code == 422
+
+
+def test_bulk_status_rejects_empty_slot_for_active(founder):
+    deal = new_deal(founder, yt_slot_limit=2, fb_slot_limit=0)
+    s1, s2 = slot_id(deal, "YT-01"), slot_id(deal, "YT-02")
+    base = f"/api/deals/{deal['id']}/slots"
+    post(founder, f"{base}/{s1}/assign", channel_id=channel(founder))
+
+    r = founder.post(f"{base}/bulk-status", json={"slot_ids": [s1, s2], "status": "active"})
+    assert r.status_code == 409 and "YT-02" in r.text
+    assert (
+        founder.get(f"/api/deals/{deal['id']}").json()["slots"][0]["status"] == "pending_whitelist"
+    )
+
+
 def test_cannot_lower_limit_below_a_slot_with_a_channel(founder):
     deal = new_deal(founder, yt_slot_limit=2, fb_slot_limit=0)
     post(

@@ -35,6 +35,9 @@ const FIELD_LABELS: Record<string, string> = {
   clip_restrictions: "Clip restrictions",
   agreement_version: "Agreement version",
   channel: "Channel",
+  due_date: "Due date",
+  amount: "Amount",
+  reference: "Reference",
 };
 
 const VALUE_LABELS: Record<string, string> = {
@@ -141,6 +144,8 @@ function describe(log: AuditLog, cur: string): Entry {
       };
     case "deal.installment_unpaid":
       return { kind: "payments", title: "Installment marked as not paid", lines: [`Due ${show(s("due"))}`] };
+    case "deal.installment_edited":
+      return { kind: "payments", title: "Installment edited", lines: changeLines };
     case "deal.installment_deleted":
       return { kind: "payments", title: `Installment of ${amt("amount")} deleted`, lines: [`Was due ${show(s("due"))}`] };
     case "deal.expense_added":

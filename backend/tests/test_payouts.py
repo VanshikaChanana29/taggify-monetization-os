@@ -295,6 +295,47 @@ def test_installments_reduce_payable_not_rights_cost(founder, setup):
     assert founder.delete(f"/api/installments/{first['id']}").status_code == 409
 
 
+def test_edit_unpaid_installment_only(founder, setup):
+    d = make_deal(founder, setup["channel"])
+    i = founder.post(
+        f"/api/deals/{d['id']}/installments", json={"due_date": str(LAST), "amount": "2000000"}
+    ).json()
+    url = f"/api/installments/{i['id']}"
+    new_due = str(TODAY + timedelta(days=30))
+
+    r = founder.put(url, json={"due_date": new_due, "amount": "5000000", "reference": "INV-9"})
+    assert r.status_code == 200, r.text
+    assert (r.json()["due_date"], r.json()["amount"], r.json()["reference"]) == (
+        new_due,
+        "5000000.00",
+        "INV-9",
+    )
+    e = founder.get(f"/api/deals/{d['id']}/economics").json()
+    assert e["installments_total"] == "5000000.00"
+
+    founder.patch(url, json={"paid_on": str(TODAY)})
+    r = founder.put(url, json={"due_date": new_due, "amount": "1"})
+    assert r.status_code == 409 and "mark it unpaid" in r.text
+
+
+def test_bulk_add_installments_all_or_none(founder, setup):
+    d = make_deal(founder, setup["channel"])
+    url = f"/api/deals/{d['id']}/installments/bulk"
+    plan = [
+        {"due_date": str(TODAY + timedelta(days=30 * n)), "amount": "1000000"} for n in range(5)
+    ]
+
+    r = founder.post(url, json={"installments": plan})
+    assert r.status_code == 201, r.text
+    assert [x["amount"] for x in r.json()] == ["1000000.00"] * 5
+    e = founder.get(f"/api/deals/{d['id']}/economics").json()
+    assert (e["installments_total"], len(e["installments"])) == ("5000000.00", 5)
+
+    bad = [{"due_date": str(TODAY), "amount": "100"}, {"due_date": str(TODAY), "amount": "0"}]
+    assert founder.post(url, json={"installments": bad}).status_code == 422
+    assert len(founder.get(f"/api/deals/{d['id']}/economics").json()["installments"]) == 5
+
+
 def test_revenue_share_owner_cut(founder, setup):
     d = make_deal(founder, setup["channel"], deal_type="revenue_share", revenue_share_pct="40")
     revenue(founder, [(day(2), 1000)])

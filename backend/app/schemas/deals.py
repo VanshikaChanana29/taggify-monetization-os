@@ -204,6 +204,13 @@ class SlotUpdate(BaseModel):
     notes: str | None = Field(default=None, max_length=500)
 
 
+class SlotBulkStatus(BaseModel):
+    """Set the same status on several slots at once (e.g. approve a batch)."""
+
+    slot_ids: list[uuid.UUID] = Field(min_length=1, max_length=500)
+    status: SlotStatus
+
+
 class DealListItem(BaseModel):
     id: uuid.UUID
     title: str

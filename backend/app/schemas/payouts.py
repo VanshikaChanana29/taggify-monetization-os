@@ -104,6 +104,12 @@ class InstallmentIn(BaseModel):
     notes: str | None = Field(default=None, max_length=2000)
 
 
+class InstallmentBulkIn(BaseModel):
+    """A whole payment plan at once (e.g. the same amount every month); all or none are saved."""
+
+    installments: list[InstallmentIn] = Field(min_length=1, max_length=120)
+
+
 class InstallmentPaidIn(BaseModel):
     paid_on: date | None
     paid_amount: Decimal | None = Field(default=None, gt=0, max_digits=18, decimal_places=2)

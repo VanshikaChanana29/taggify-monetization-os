@@ -2,8 +2,9 @@
 
 import { Pencil } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
+import { BulkAssignPanel } from "@/components/bulk-assign-panel";
 import { EmptyRow, PAGE_SIZES, SortableHead, TablePagination } from "@/components/data-table";
 import { Field, TEXTAREA } from "@/components/deal/form-bits";
 import { Notice } from "@/components/notice";
@@ -72,21 +73,74 @@ function SlotHistory({ dealId, refreshKey }: { dealId: string; refreshKey: numbe
   );
 }
 
+function SelectBox({
+  checked,
+  indeterminate = false,
+  label,
+  onChange,
+}: {
+  checked: boolean;
+  indeterminate?: boolean;
+  label: string;
+  onChange: (on: boolean) => void;
+}) {
+  const ref = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (ref.current) ref.current.indeterminate = indeterminate;
+  }, [indeterminate]);
+  return (
+    <input
+      ref={ref}
+      type="checkbox"
+      aria-label={label}
+      className="h-4 w-4 cursor-pointer accent-[hsl(var(--primary))]"
+      checked={checked}
+      onChange={(e) => onChange(e.target.checked)}
+    />
+  );
+}
+
+const byNumber = (a: Slot, b: Slot) => a.number - b.number;
+
 function SlotTable({
   title,
   slots,
   status,
+  refreshKey,
+  busy,
   onAct,
   onEdit,
+  onBulkAssign,
+  onBulkStatus,
 }: {
   title: string;
   slots: Slot[];
   status: string;
+  refreshKey: number;
+  busy: boolean;
   onAct: (slot: Slot, action: SlotAction) => void;
   onEdit: (slot: Slot) => void;
+  onBulkAssign: (slots: Slot[]) => void;
+  onBulkStatus: (slots: Slot[], status: SlotStatus) => void;
 }) {
   const rows = slots.filter((s) => !status || s.status === status);
   const table = useClientTable({ rows, sortBy: SLOT_SORT, initialSort: { key: "code", dir: "asc" }, resetKey: status });
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  // Fresh data (after any save) or a new filter starts a clean selection.
+  useEffect(() => setSelected(new Set()), [refreshKey, status]);
+
+  const picked = rows.filter((s) => selected.has(s.id));
+  const pickedEmpty = picked.filter((s) => !s.channel_id).sort(byNumber);
+  const toApprove = picked.filter((s) => s.channel_id && s.status !== "active");
+  const toPending = picked.filter((s) => s.channel_id && s.status !== "pending_whitelist");
+  const allOn = rows.length > 0 && picked.length === rows.length;
+  const toggle = (id: string, on: boolean) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (on) next.add(id);
+      else next.delete(id);
+      return next;
+    });
   const used = slots.filter((s) => s.status !== "unassigned").length;
   const active = slots.filter((s) => s.status === "active").length;
   const pending = slots.filter((s) => s.status === "pending_whitelist").length;
@@ -102,9 +156,47 @@ function SlotTable({
           {active} active · {pending} pending whitelist · {slots.length - used} empty
         </p>
       </div>
+      {picked.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 border-y bg-muted/40 px-6 py-3 text-sm">
+          <span className="mr-auto font-medium">
+            {picked.length} selected
+            {picked.length < rows.length && (
+              <button type="button" className="ml-3 font-normal text-primary hover:underline" onClick={() => setSelected(new Set(rows.map((s) => s.id)))}>
+                Select all {rows.length}
+              </button>
+            )}
+          </span>
+          {pickedEmpty.length > 0 && (
+            <Button size="sm" disabled={busy} onClick={() => onBulkAssign(pickedEmpty)}>
+              Assign channels ({pickedEmpty.length})
+            </Button>
+          )}
+          {toApprove.length > 0 && (
+            <Button size="sm" disabled={busy} onClick={() => onBulkStatus(toApprove, "active")}>
+              Approve ({toApprove.length})
+            </Button>
+          )}
+          {toPending.length > 0 && (
+            <Button size="sm" variant="outline" disabled={busy} onClick={() => onBulkStatus(toPending, "pending_whitelist")}>
+              Mark pending whitelist ({toPending.length})
+            </Button>
+          )}
+          <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
+            Clear
+          </Button>
+        </div>
+      )}
       <Table>
         <TableHeader>
           <TableRow>
+            <TableHead className="w-10">
+              <SelectBox
+                label={`Select all ${title}`}
+                checked={allOn}
+                indeterminate={picked.length > 0 && !allOn}
+                onChange={(on) => setSelected(on ? new Set(rows.map((s) => s.id)) : new Set())}
+              />
+            </TableHead>
             <SortableHead label="Slot" sortKey="code" sort={table.sort} onSort={table.toggleSort} />
             <TableHead>Channel</TableHead>
             <TableHead>CMS</TableHead>
@@ -115,7 +207,10 @@ function SlotTable({
         </TableHeader>
         <TableBody>
           {table.pageRows.map((s) => (
-            <TableRow key={s.id}>
+            <TableRow key={s.id} className={selected.has(s.id) ? "bg-primary/5" : undefined}>
+              <TableCell>
+                <SelectBox label={`Select ${s.code}`} checked={selected.has(s.id)} onChange={(on) => toggle(s.id, on)} />
+              </TableCell>
               <TableCell className="font-mono font-semibold">{s.code}</TableCell>
               <TableCell>
                 {s.channel_id ? (
@@ -156,7 +251,7 @@ function SlotTable({
               </TableCell>
             </TableRow>
           ))}
-          {table.total === 0 && <EmptyRow colSpan={6}>No slots match this filter.</EmptyRow>}
+          {table.total === 0 && <EmptyRow colSpan={7}>No slots match this filter.</EmptyRow>}
         </TableBody>
       </Table>
       <TablePagination
@@ -179,6 +274,9 @@ export function DealSlots({ deal, refreshKey, onChange }: { deal: Deal; refreshK
   const [editing, setEditing] = useState<Slot | null>(null);
   const [edit, setEdit] = useState<{ status: SlotStatus; notes: string }>({ status: "unassigned", notes: "" });
   const [error, setError] = useState<string | null>(null);
+  const [bulkAssign, setBulkAssign] = useState<Slot[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [bulkError, setBulkError] = useState<string | null>(null);
 
   const yt = deal.slots.filter((s) => s.platform === "youtube");
   const fb = deal.slots.filter((s) => s.platform === "facebook");
@@ -188,6 +286,21 @@ export function DealSlots({ deal, refreshKey, onChange }: { deal: Deal; refreshK
     setEdit({ status: s.status, notes: s.notes ?? "" });
     setError(null);
   };
+
+  async function bulkStatus(slots: Slot[], next: SlotStatus) {
+    setBulkError(null);
+    setBusy(true);
+    try {
+      await api(`/deals/${deal.id}/slots/bulk-status`, { method: "POST", json: { slot_ids: slots.map((s) => s.id), status: next } });
+      onChange(`${slots.length} slot${slots.length === 1 ? "" : "s"} marked ${SLOT_STATUS_LABELS[next].toLowerCase()}.`);
+    } catch (err) {
+      setBulkError(err instanceof Error ? err.message : "Could not update the slots");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const tableProps = { status, refreshKey, busy, onAct: act, onEdit: startEdit, onBulkAssign: setBulkAssign, onBulkStatus: bulkStatus };
 
   async function saveEdit(event: React.FormEvent) {
     event.preventDefault();
@@ -221,8 +334,9 @@ export function DealSlots({ deal, refreshKey, onChange }: { deal: Deal; refreshK
         </NativeSelect>
       </div>
 
-      {yt.length > 0 && <SlotTable title="YouTube channels" slots={yt} status={status} onAct={act} onEdit={startEdit} />}
-      {fb.length > 0 && <SlotTable title="Facebook pages" slots={fb} status={status} onAct={act} onEdit={startEdit} />}
+      {bulkError && <Notice kind="error">{bulkError}</Notice>}
+      {yt.length > 0 && <SlotTable title="YouTube channels" slots={yt} {...tableProps} />}
+      {fb.length > 0 && <SlotTable title="Facebook pages" slots={fb} {...tableProps} />}
 
       <SlotHistory dealId={deal.id} refreshKey={refreshKey} />
 
@@ -241,6 +355,26 @@ export function DealSlots({ deal, refreshKey, onChange }: { deal: Deal; refreshK
             onCancel={() => setActing(null)}
             onDone={(message) => {
               setActing(null);
+              onChange(message);
+            }}
+          />
+        )}
+      </Dialog>
+
+      <Dialog
+        open={bulkAssign !== null}
+        onClose={() => setBulkAssign(null)}
+        title={bulkAssign ? `Assign channels to ${bulkAssign.length} slot${bulkAssign.length === 1 ? "" : "s"}` : ""}
+        description="Tick the channels; they fill the slots in order. If one fails, none are saved."
+        wide
+      >
+        {bulkAssign && (
+          <BulkAssignPanel
+            dealId={deal.id}
+            slots={bulkAssign}
+            onCancel={() => setBulkAssign(null)}
+            onDone={(message) => {
+              setBulkAssign(null);
               onChange(message);
             }}
           />

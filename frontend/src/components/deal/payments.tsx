@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, CalendarClock, CheckCircle2, Plus, Trash2, Wallet } from "lucide-react";
+import { AlertTriangle, CalendarClock, CheckCircle2, Copy, Pencil, Plus, Trash2, Wallet } from "lucide-react";
 import { useState } from "react";
 
 import { EmptyRow } from "@/components/data-table";
@@ -31,12 +31,29 @@ function statusOf(i: Installment, today: string) {
   return { label: `Due in ${days} day${days === 1 ? "" : "s"}`, tone: days <= 30 ? DEAL_STATUS_TONES.draft : DEAL_STATUS_TONES.upcoming };
 }
 
+/** Same day `k` months later ("2025-01-31" +1 → "2025-02-28"), clamped to the month's last day. */
+function addMonths(iso: string, k: number): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  const total = y * 12 + (m - 1) + k;
+  const year = Math.floor(total / 12);
+  const month = (total % 12) + 1;
+  const last = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${year}-${pad(month)}-${pad(Math.min(d, last))}`;
+}
+
+const MAX_REPEAT = 120;
+
 /** What Taggify owes the content owner and when (PDF slide 11: cash payable, not the rights cost). */
 export function DealPayments({ deal, e, onChange }: { deal: Deal; e: DealEconomics; onChange: () => void }) {
   const cur = e.base_currency;
   const today = todayISO();
   const [adding, setAdding] = useState(false);
+  /** Set while the add popup is editing an existing installment instead. */
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<NewForm>({ due_date: "", amount: "", reference: "", notes: "" });
+  /** "Repeat N times, every M months" on the add popup (not when editing). */
+  const [repeat, setRepeat] = useState({ on: false, times: "6", every: "1" });
   const [paying, setPaying] = useState<Installment | null>(null);
   const [paid, setPaid] = useState<PaidForm>({ paid_on: today, paid_amount: "", reference: "" });
   const [errors, setErrors] = useState<Errors>({});
@@ -57,24 +74,56 @@ export function DealPayments({ deal, e, onChange }: { deal: Deal; e: DealEconomi
   const mismatch = e.warnings.find((w) => w.startsWith("Installments add up"));
   const remainingToPlan = Number(deal.fee_amount ?? 0) - Number(e.installments_total);
 
+  const times = Math.min(MAX_REPEAT, Math.max(1, Math.floor(Number(repeat.times) || 1)));
+  const every = Math.min(24, Math.max(1, Math.floor(Number(repeat.every) || 1)));
+  const repeating = !editingId && repeat.on && times > 1;
+  const plan =
+    repeating && form.due_date ? Array.from({ length: times }, (_, k) => ({ due_date: addMonths(form.due_date, k * every) })) : [];
+  const planTotal = Number(form.amount || 0) * plan.length;
+
   async function add(event: React.FormEvent) {
     event.preventDefault();
     setErrors({});
     setSaving(true);
     try {
-      await api(`/deals/${deal.id}/installments`, {
-        method: "POST",
-        json: { due_date: form.due_date, amount: form.amount, reference: form.reference || null, notes: form.notes || null },
-      });
-      setAdding(false);
-      setForm({ due_date: "", amount: "", reference: "", notes: "" });
+      const json = { due_date: form.due_date, amount: form.amount, reference: form.reference || null, notes: form.notes || null };
+      if (editingId) await api(`/installments/${editingId}`, { method: "PUT", json });
+      else if (repeating)
+        await api(`/deals/${deal.id}/installments/bulk`, {
+          method: "POST",
+          json: { installments: plan.map((p) => ({ ...json, due_date: p.due_date })) },
+        });
+      else await api(`/deals/${deal.id}/installments`, { method: "POST", json });
+      closeForm();
       onChange();
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Could not add";
+      const message = err instanceof Error ? err.message : editingId ? "Could not save" : "Could not add";
       setErrors({ [fieldFor(message, [["date", "due_date"], ["amount", "amount"]], "form")]: message });
     } finally {
       setSaving(false);
     }
+  }
+
+  function closeForm() {
+    setAdding(false);
+    setEditingId(null);
+    setRepeat({ on: false, times: "6", every: "1" });
+    setForm({ due_date: "", amount: "", reference: "", notes: "" });
+  }
+
+  function openEdit(i: Installment) {
+    setEditingId(i.id);
+    setForm({ due_date: i.due_date, amount: String(Number(i.amount)), reference: i.reference ?? "", notes: i.notes ?? "" });
+    setErrors({});
+    setAdding(true);
+  }
+
+  /** Prefill a new installment from this one: same amount and note, a month later. Nothing saves until "Add". */
+  function openCopy(i: Installment) {
+    setEditingId(null);
+    setForm({ due_date: addMonths(i.due_date, 1), amount: String(Number(i.amount)), reference: "", notes: i.notes ?? "" });
+    setErrors({});
+    setAdding(true);
   }
 
   function openPay(i: Installment) {
@@ -164,6 +213,8 @@ export function DealPayments({ deal, e, onChange }: { deal: Deal; e: DealEconomi
           </div>
           <Button
             onClick={() => {
+              setEditingId(null);
+              setForm({ due_date: "", amount: "", reference: "", notes: "" });
               setAdding(true);
               setErrors({});
               if (remainingToPlan > 0) setForm((f) => ({ ...f, amount: f.amount || String(remainingToPlan) }));
@@ -206,6 +257,9 @@ export function DealPayments({ deal, e, onChange }: { deal: Deal; e: DealEconomi
                     )}
                   </TableCell>
                   <TableCell className="whitespace-nowrap text-right">
+                    <Button size="icon" variant="ghost" aria-label={`Copy installment ${n + 1}`} title="Copy as a new installment (next month)" onClick={() => openCopy(i)}>
+                      <Copy />
+                    </Button>
                     {i.paid_on ? (
                       <Button
                         size="sm"
@@ -217,10 +271,21 @@ export function DealPayments({ deal, e, onChange }: { deal: Deal; e: DealEconomi
                       >
                         Mark unpaid
                       </Button>
-                    ) : (
+                    ) : null}
+                    {i.paid_on && (
+                      <span title="Paid installments can't be edited. Mark it unpaid first to edit." className="inline-block">
+                        <Button size="icon" variant="ghost" aria-label={`Edit installment ${n + 1} (mark unpaid first)`} disabled>
+                          <Pencil />
+                        </Button>
+                      </span>
+                    )}
+                    {i.paid_on ? null : (
                       <>
                         <Button size="sm" onClick={() => openPay(i)}>
                           Mark paid
+                        </Button>
+                        <Button size="icon" variant="ghost" aria-label={`Edit installment ${n + 1}`} title="Edit" onClick={() => openEdit(i)}>
+                          <Pencil />
                         </Button>
                         <Button
                           size="icon"
@@ -257,7 +322,12 @@ export function DealPayments({ deal, e, onChange }: { deal: Deal; e: DealEconomi
         </Table>
       </section>
 
-      <Dialog open={adding} onClose={() => setAdding(false)} title="Add installment" description={`A payment due to ${deal.owner_name}, in ${cur}.`}>
+      <Dialog
+        open={adding}
+        onClose={closeForm}
+        title={editingId ? "Edit installment" : "Add installment"}
+        description={`A payment due to ${deal.owner_name}, in ${cur}.`}
+      >
         <form onSubmit={add} className="grid gap-4 sm:grid-cols-2">
           <Field id="in-due" label="Due date *" error={errors.due_date}>
             <Input
@@ -287,6 +357,63 @@ export function DealPayments({ deal, e, onChange }: { deal: Deal; e: DealEconomi
           <Field id="in-notes" label="Note" className="sm:col-span-2">
             <textarea id="in-notes" rows={2} className={TEXTAREA} placeholder="e.g. On signing" value={form.notes} onChange={(ev) => setForm({ ...form, notes: ev.target.value })} />
           </Field>
+          {!editingId && (
+            <div className="space-y-3 rounded-lg border bg-muted/30 p-3 sm:col-span-2">
+              <div className="flex flex-wrap items-center gap-2 text-sm">
+                <label className="flex items-center gap-2 font-medium">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 accent-[hsl(var(--primary))]"
+                    checked={repeat.on}
+                    onChange={(ev) => setRepeat({ ...repeat, on: ev.target.checked })}
+                  />
+                  Repeat
+                </label>
+                <Input
+                  aria-label="How many installments"
+                  type="number"
+                  min="2"
+                  max={MAX_REPEAT}
+                  className="h-8 w-20"
+                  disabled={!repeat.on}
+                  value={repeat.times}
+                  onChange={(ev) => setRepeat({ ...repeat, times: ev.target.value })}
+                />
+                <span>times, every</span>
+                <Input
+                  aria-label="Months between installments"
+                  type="number"
+                  min="1"
+                  max="24"
+                  className="h-8 w-16"
+                  disabled={!repeat.on}
+                  value={repeat.every}
+                  onChange={(ev) => setRepeat({ ...repeat, every: ev.target.value })}
+                />
+                <span>month{every === 1 ? "" : "s"}</span>
+              </div>
+              {repeating &&
+                (plan.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">Pick the first due date to see the plan.</p>
+                ) : (
+                  <div className="max-h-48 overflow-y-auto rounded-md border bg-card text-sm">
+                    {plan.map((p, k) => (
+                      <div key={p.due_date} className="flex justify-between gap-3 border-b px-3 py-1.5 last:border-b-0">
+                        <span className="text-muted-foreground">
+                          {k + 1}. {formatDate(p.due_date)}
+                        </span>
+                        <span className="font-medium">{form.amount ? money(form.amount, cur) : "—"}</span>
+                      </div>
+                    ))}
+                    <div className="flex justify-between gap-3 bg-muted/50 px-3 py-1.5 font-semibold">
+                      <span>Total</span>
+                      <span>{form.amount ? money(planTotal, cur) : "—"}</span>
+                    </div>
+                  </div>
+                ))}
+              {repeating && <p className="text-xs text-muted-foreground">The note and reference go on every installment. All are saved together, or none.</p>}
+            </div>
+          )}
           {errors.form && (
             <div className="sm:col-span-2">
               <Notice kind="error">{errors.form}</Notice>
@@ -294,11 +421,11 @@ export function DealPayments({ deal, e, onChange }: { deal: Deal; e: DealEconomi
           )}
           <div className="sm:col-span-2">
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setAdding(false)}>
+              <Button type="button" variant="outline" onClick={closeForm}>
                 Cancel
               </Button>
               <Button type="submit" disabled={saving}>
-                {saving ? "Saving…" : "Add installment"}
+                {saving ? "Saving…" : editingId ? "Save changes" : repeating ? `Add ${times} installments` : "Add installment"}
               </Button>
             </DialogFooter>
           </div>

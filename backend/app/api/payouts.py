@@ -40,6 +40,7 @@ from app.schemas.payouts import (
     IncentiveRateIn,
     IncentiveRateOut,
     IncentiveRunOut,
+    InstallmentBulkIn,
     InstallmentIn,
     InstallmentOut,
     InstallmentPaidIn,
@@ -486,6 +487,105 @@ def add_installment(
         notes=i.notes,
         overdue=i.due_date < company_today(ctx.organization),
     )
+
+
+@router.post("/deals/{deal_id}/installments/bulk", status_code=status.HTTP_201_CREATED)
+def add_installments(
+    deal_id: uuid.UUID, body: InstallmentBulkIn, ctx: Auth, request: Request, db: DbSession
+) -> list[InstallmentOut]:
+    """Add several installments in one go (e.g. 6 monthly payments). All or none are saved."""
+    deal = _deal(db, ctx, deal_id)
+    if deal.deal_type not in ("fixed_fee", "hybrid"):
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, "Installments are for fixed-fee and hybrid deals"
+        )
+    today = company_today(ctx.organization)
+    added = []
+    for item in body.installments:
+        i = DealInstallment(
+            organization_id=ctx.organization.id, deal_id=deal.id, **item.model_dump()
+        )
+        db.add(i)
+        added.append(i)
+        _audit(
+            db,
+            ctx,
+            request,
+            "deal.installment_added",
+            "deal",
+            deal.id,
+            {"title": deal.title, "due": str(item.due_date), "amount": str(item.amount)},
+        )
+    db.commit()
+    for i in added:
+        db.refresh(i)
+    return [
+        InstallmentOut(
+            id=i.id,
+            due_date=i.due_date,
+            amount=i.amount,
+            paid_on=None,
+            paid_amount=None,
+            reference=i.reference,
+            notes=i.notes,
+            overdue=i.due_date < today,
+        )
+        for i in sorted(added, key=lambda x: x.due_date)
+    ]
+
+
+@router.put("/installments/{installment_id}")
+def edit_installment(
+    installment_id: uuid.UUID, body: InstallmentIn, ctx: Auth, request: Request, db: DbSession
+) -> InstallmentOut:
+    """Correct an unpaid installment's due date, amount, reference or note."""
+    i = db.scalar(
+        select(DealInstallment).where(
+            DealInstallment.id == installment_id,
+            DealInstallment.organization_id == ctx.organization.id,
+        )
+    )
+    if i is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Installment not found")
+    if i.paid_on:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, "A paid installment cannot be edited; mark it unpaid first"
+        )
+    new = body.model_dump()
+    changes = {
+        field: [_plain(getattr(i, field)), _plain(value)]
+        for field, value in new.items()
+        if getattr(i, field) != value
+    }
+    for field, value in new.items():
+        setattr(i, field, value)
+    if changes:
+        deal = db.get(ContentDeal, i.deal_id)
+        _audit(
+            db,
+            ctx,
+            request,
+            "deal.installment_edited",
+            "deal",
+            i.deal_id,
+            {"title": deal.title if deal else None, "changes": changes},
+        )
+    db.commit()
+    db.refresh(i)
+    return InstallmentOut(
+        id=i.id,
+        due_date=i.due_date,
+        amount=i.amount,
+        paid_on=None,
+        paid_amount=None,
+        reference=i.reference,
+        notes=i.notes,
+        overdue=i.due_date < company_today(ctx.organization),
+    )
+
+
+def _plain(value):
+    return None if value is None else str(value)
 
 
 @router.patch("/installments/{installment_id}")

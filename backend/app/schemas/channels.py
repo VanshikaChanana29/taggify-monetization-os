@@ -207,6 +207,29 @@ class AssignIn(BaseModel):
     notes: str | None = Field(default=None, max_length=500)
 
 
+class BulkAssignPair(BaseModel):
+    slot_id: uuid.UUID
+    channel_id: uuid.UUID
+
+
+class BulkAssignIn(BaseModel):
+    """Fill several empty slots at once; all succeed or none do."""
+
+    assignments: list[BulkAssignPair] = Field(min_length=1, max_length=500)
+    status: OccupiedStatus = "pending_whitelist"
+    effective_date: date | None = None
+    notes: str | None = Field(default=None, max_length=500)
+
+    @field_validator("assignments")
+    @classmethod
+    def _no_repeats(cls, value: list[BulkAssignPair]) -> list[BulkAssignPair]:
+        if len({a.slot_id for a in value}) != len(value):
+            raise ValueError("A slot appears twice.")
+        if len({a.channel_id for a in value}) != len(value):
+            raise ValueError("A channel appears twice.")
+        return value
+
+
 class UnassignIn(BaseModel):
     effective_date: date | None = None
     notes: str | None = Field(default=None, max_length=500)

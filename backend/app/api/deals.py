@@ -21,7 +21,7 @@ from app.models import (
     DealSlot,
     SlotAssignment,
 )
-from app.schemas.channels import AssignIn, SlotHistoryItem, UnassignIn
+from app.schemas.channels import AssignIn, BulkAssignIn, SlotHistoryItem, UnassignIn
 from app.schemas.deals import (
     CurrencyAmount,
     DealIn,
@@ -33,6 +33,7 @@ from app.schemas.deals import (
     EpisodeRange,
     RightsCheckIn,
     RightsCheckOut,
+    SlotBulkStatus,
     SlotOut,
     SlotUpdate,
 )
@@ -594,6 +595,86 @@ def assign_slot(
     db.commit()
     db.expire_all()
     return _slot_outs(db, [_slot(_get_deal(db, ctx, deal_id), slot_id)])[0]
+
+
+@router.post("/{deal_id}/slots/bulk-assign")
+def bulk_assign_slots(
+    deal_id: uuid.UUID,
+    body: BulkAssignIn,
+    ctx: Auth,
+    request: Request,
+    db: DbSession,
+) -> list[SlotOut]:
+    """Fill several empty slots in one go. One bad pair rolls the whole batch back."""
+    deal = _get_deal(db, ctx, deal_id)
+    today = company_today(ctx.organization)
+    effective = body.effective_date or today
+    _open(db, ctx, effective, "This assignment")
+    done: list[uuid.UUID] = []
+    for pair in body.assignments:
+        slot = _slot(deal, pair.slot_id)
+        channel = _channel(db, ctx, pair.channel_id)
+        try:
+            assign_channel(
+                db,
+                deal,
+                slot,
+                channel,
+                status=body.status,
+                effective=effective,
+                today=today,
+                notes=body.notes,
+            )
+        except AssignmentError as exc:
+            db.rollback()
+            raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
+        db.flush()  # later pairs must see this one (same channel twice, same slot twice)
+        _slot_audit(
+            db, ctx, request, deal, slot, "slot.assigned", None, channel.name, effective, body.notes
+        )
+        done.append(slot.id)
+    db.commit()
+    db.expire_all()
+    fresh = _get_deal(db, ctx, deal_id)
+    return _slot_outs(db, [_slot(fresh, sid) for sid in done])
+
+
+@router.post("/{deal_id}/slots/bulk-status")
+def bulk_slot_status(
+    deal_id: uuid.UUID,
+    body: SlotBulkStatus,
+    ctx: Auth,
+    request: Request,
+    db: DbSession,
+) -> list[SlotOut]:
+    """Set one status on many slots, e.g. approve a batch of pending channels."""
+    deal = _get_deal(db, ctx, deal_id)
+    slots = [_slot(deal, sid) for sid in dict.fromkeys(body.slot_ids)]
+    for slot in slots:
+        if slot.status == body.status:
+            continue
+        try:
+            check_slot_status_change(db, slot, body.status)
+        except AssignmentError as exc:
+            db.rollback()
+            raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
+        record_audit(
+            db,
+            "slot.updated",
+            organization_id=ctx.organization.id,
+            user_id=ctx.user.id,
+            entity_type="deal",
+            entity_id=deal.id,
+            details={
+                "title": deal.title,
+                "slot": slot.code,
+                "changes": {"status": [slot.status, body.status]},
+            },
+            ip=client_ip(request),
+        )
+        slot.status = body.status
+    db.commit()
+    return _slot_outs(db, slots)
 
 
 @router.post("/{deal_id}/slots/{slot_id}/replace")
