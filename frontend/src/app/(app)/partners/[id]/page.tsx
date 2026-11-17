@@ -300,7 +300,7 @@ function PartnerPage() {
               </TableHeader>
               <TableBody>
                 {data.deals.map((d) => (
-                  <TableRow key={d.deal_id} className="cursor-pointer" onClick={() => router.push(`/deals/${d.deal_id}?tab=partners`)}>
+                  <TableRow key={d.deal_id} className="cursor-pointer" onClick={() => router.push(`/parent-deals/${d.deal_id}?tab=partners`)}>
                     <TableCell>
                       <p className="font-medium text-primary">{d.title}</p>
                       <p className="text-xs text-muted-foreground">{d.owner}</p>

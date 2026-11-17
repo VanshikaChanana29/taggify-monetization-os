@@ -10,12 +10,13 @@ import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { api } from "@/lib/api";
 import { money } from "@/lib/finance";
-import type { Deal, DealPartner, DealPartnerShare } from "@/lib/types";
+import type { ContractRef, DealPartner, DealPartnerShare } from "@/lib/types";
 
 type Row = { partner_id: string; share_pct: string };
 
-/** Who holds part of this deal with Taggify (e.g. Vanshika 50%) and their part of the licence fee. */
-export function DealPartners({ deal, onChange }: { deal: Deal; onChange: (message: string) => void }) {
+/** Who holds part of this parent deal with Taggify (e.g. Vanshika 50%) and their part of its
+ * amount. Their share covers every show under the deal. */
+export function DealPartners({ deal, onChange }: { deal: ContractRef; onChange: (message: string) => void }) {
   const [partners, setPartners] = useState<DealPartner[]>([]);
   const [rows, setRows] = useState<Row[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -25,7 +26,7 @@ export function DealPartners({ deal, onChange }: { deal: Deal; onChange: (messag
     api<DealPartner[]>("/partners")
       .then(setPartners)
       .catch(() => {});
-    api<DealPartnerShare[]>(`/deals/${deal.id}/partners`)
+    api<DealPartnerShare[]>(`/parent-deals/${deal.id}/partners`)
       .then((s) => setRows(s.map((x) => ({ partner_id: x.partner_id, share_pct: String(Number(x.share_pct)) }))))
       .catch((err: Error) => setError(err.message));
   }, [deal.id]);
@@ -41,7 +42,7 @@ export function DealPartners({ deal, onChange }: { deal: Deal; onChange: (messag
     setSaving(true);
     setError(null);
     try {
-      await api(`/deals/${deal.id}/partners`, {
+      await api(`/parent-deals/${deal.id}/partners`, {
         method: "PUT",
         json: { partners: rows!.filter((r) => r.partner_id).map((r) => ({ partner_id: r.partner_id, share_pct: r.share_pct })) },
       });

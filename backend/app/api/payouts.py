@@ -22,6 +22,7 @@ from app.models import (
     IncentiveRate,
     IncentiveRun,
     MonthClose,
+    ParentDeal,
     User,
 )
 from app.schemas.channels import PersonRef
@@ -49,7 +50,7 @@ from app.schemas.payouts import (
 )
 from app.services.audit import record_audit
 from app.services.cms_fees import money
-from app.services.deal_economics import deal_economics
+from app.services.deal_economics import deal_economics, parent_economics
 from app.services.deals import company_today
 from app.services.incentives import calculate, rate_label
 from app.services.month_close import MonthClosedError, closed_months, ensure_open
@@ -98,6 +99,30 @@ def _deal(db: Session, ctx: AuthContext, deal_id: uuid.UUID) -> ContentDeal:
     if d is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Deal not found")
     return d
+
+
+def _parent_deal(db: Session, ctx: AuthContext, parent_id: uuid.UUID) -> ParentDeal:
+    p = db.scalar(
+        select(ParentDeal).where(
+            ParentDeal.id == parent_id, ParentDeal.organization_id == ctx.organization.id
+        )
+    )
+    if p is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Deal not found")
+    return p
+
+
+def _installment_out(i: DealInstallment, today) -> InstallmentOut:
+    return InstallmentOut(
+        id=i.id,
+        due_date=i.due_date,
+        amount=i.amount,
+        paid_on=i.paid_on,
+        paid_amount=i.paid_amount,
+        reference=i.reference,
+        notes=i.notes,
+        overdue=i.paid_on is None and i.due_date < today,
+    )
 
 
 def _open(db, ctx, day, what):
@@ -418,14 +443,9 @@ def reopen_incentives(body: MonthIn, ctx: Auth, request: Request, db: DbSession)
 
 @router.get("/deals/{deal_id}/economics")
 def get_economics(deal_id: uuid.UUID, ctx: Auth, db: DbSession) -> EconomicsOut:
+    """One show's economics. Installments are on its parent deal (/parent-deals/{id}/economics)."""
     deal = _deal(db, ctx, deal_id)
     econ = deal_economics(db, ctx.organization, deal)
-    today = company_today(ctx.organization)
-    installments = db.scalars(
-        select(DealInstallment)
-        .where(DealInstallment.deal_id == deal.id)
-        .order_by(DealInstallment.due_date)
-    ).all()
     expenses = db.scalars(
         select(DealExpense)
         .where(DealExpense.deal_id == deal.id)
@@ -435,19 +455,7 @@ def get_economics(deal_id: uuid.UUID, ctx: Auth, db: DbSession) -> EconomicsOut:
     data["by_month"] = [EconomicsMonth(**m) for m in data["by_month"]]
     return EconomicsOut(
         **data,
-        installments=[
-            InstallmentOut(
-                id=i.id,
-                due_date=i.due_date,
-                amount=i.amount,
-                paid_on=i.paid_on,
-                paid_amount=i.paid_amount,
-                reference=i.reference,
-                notes=i.notes,
-                overdue=i.paid_on is None and i.due_date < today,
-            )
-            for i in installments
-        ],
+        installments=[],
         expense_items=[
             ExpenseOut(id=x.id, spent_on=x.spent_on, amount=x.amount, description=x.description)
             for x in expenses
@@ -455,16 +463,43 @@ def get_economics(deal_id: uuid.UUID, ctx: Auth, db: DbSession) -> EconomicsOut:
     )
 
 
-@router.post("/deals/{deal_id}/installments", status_code=status.HTTP_201_CREATED)
-def add_installment(
-    deal_id: uuid.UUID, body: InstallmentIn, ctx: Auth, request: Request, db: DbSession
-) -> InstallmentOut:
-    deal = _deal(db, ctx, deal_id)
-    if deal.deal_type not in ("fixed_fee", "hybrid"):
+@router.get("/parent-deals/{parent_id}/economics")
+def get_parent_economics(parent_id: uuid.UUID, ctx: Auth, db: DbSession) -> EconomicsOut:
+    """The whole contract: all its shows added up, against the deal amount, plus installments."""
+    parent = _parent_deal(db, ctx, parent_id)
+    econ, _ = parent_economics(db, ctx.organization, parent)
+    today = company_today(ctx.organization)
+    installments = db.scalars(
+        select(DealInstallment)
+        .where(DealInstallment.parent_id == parent.id)
+        .order_by(DealInstallment.due_date)
+    ).all()
+    data = asdict(econ)
+    data["by_month"] = [EconomicsMonth(**m) for m in data["by_month"]]
+    return EconomicsOut(
+        **data,
+        installments=[_installment_out(i, today) for i in installments],
+        expense_items=[],
+    )
+
+
+def _fee_parent(db: Session, ctx: AuthContext, parent_id: uuid.UUID) -> ParentDeal:
+    parent = _parent_deal(db, ctx, parent_id)
+    if parent.deal_type not in ("fixed_fee", "hybrid"):
         raise HTTPException(
             status.HTTP_409_CONFLICT, "Installments are for fixed-fee and hybrid deals"
         )
-    i = DealInstallment(organization_id=ctx.organization.id, deal_id=deal.id, **body.model_dump())
+    return parent
+
+
+@router.post("/parent-deals/{parent_id}/installments", status_code=status.HTTP_201_CREATED)
+def add_installment(
+    parent_id: uuid.UUID, body: InstallmentIn, ctx: Auth, request: Request, db: DbSession
+) -> InstallmentOut:
+    parent = _fee_parent(db, ctx, parent_id)
+    i = DealInstallment(
+        organization_id=ctx.organization.id, parent_id=parent.id, **body.model_dump()
+    )
     db.add(i)
     db.flush()
     _audit(
@@ -472,9 +507,9 @@ def add_installment(
         ctx,
         request,
         "deal.installment_added",
-        "deal",
-        deal.id,
-        {"title": deal.title, "due": str(body.due_date), "amount": str(body.amount)},
+        "parent_deal",
+        parent.id,
+        {"title": parent.name, "due": str(body.due_date), "amount": str(body.amount)},
     )
     db.commit()
     return InstallmentOut(
@@ -489,21 +524,17 @@ def add_installment(
     )
 
 
-@router.post("/deals/{deal_id}/installments/bulk", status_code=status.HTTP_201_CREATED)
+@router.post("/parent-deals/{parent_id}/installments/bulk", status_code=status.HTTP_201_CREATED)
 def add_installments(
-    deal_id: uuid.UUID, body: InstallmentBulkIn, ctx: Auth, request: Request, db: DbSession
+    parent_id: uuid.UUID, body: InstallmentBulkIn, ctx: Auth, request: Request, db: DbSession
 ) -> list[InstallmentOut]:
     """Add several installments in one go (e.g. 6 monthly payments). All or none are saved."""
-    deal = _deal(db, ctx, deal_id)
-    if deal.deal_type not in ("fixed_fee", "hybrid"):
-        raise HTTPException(
-            status.HTTP_409_CONFLICT, "Installments are for fixed-fee and hybrid deals"
-        )
+    parent = _fee_parent(db, ctx, parent_id)
     today = company_today(ctx.organization)
     added = []
     for item in body.installments:
         i = DealInstallment(
-            organization_id=ctx.organization.id, deal_id=deal.id, **item.model_dump()
+            organization_id=ctx.organization.id, parent_id=parent.id, **item.model_dump()
         )
         db.add(i)
         added.append(i)
@@ -512,9 +543,9 @@ def add_installments(
             ctx,
             request,
             "deal.installment_added",
-            "deal",
-            deal.id,
-            {"title": deal.title, "due": str(item.due_date), "amount": str(item.amount)},
+            "parent_deal",
+            parent.id,
+            {"title": parent.name, "due": str(item.due_date), "amount": str(item.amount)},
         )
     db.commit()
     for i in added:
@@ -560,15 +591,15 @@ def edit_installment(
     for field, value in new.items():
         setattr(i, field, value)
     if changes:
-        deal = db.get(ContentDeal, i.deal_id)
+        parent = db.get(ParentDeal, i.parent_id)
         _audit(
             db,
             ctx,
             request,
             "deal.installment_edited",
-            "deal",
-            i.deal_id,
-            {"title": deal.title if deal else None, "changes": changes},
+            "parent_deal",
+            i.parent_id,
+            {"title": parent.name if parent else None, "changes": changes},
         )
     db.commit()
     db.refresh(i)
@@ -607,16 +638,16 @@ def mark_installment(
     i.paid_amount = (body.paid_amount or i.amount) if body.paid_on else None
     if body.reference is not None:
         i.reference = body.reference or None
-    deal = db.get(ContentDeal, i.deal_id)
+    parent = db.get(ParentDeal, i.parent_id)
     _audit(
         db,
         ctx,
         request,
         "deal.installment_paid" if body.paid_on else "deal.installment_unpaid",
-        "deal",
-        i.deal_id,
+        "parent_deal",
+        i.parent_id,
         {
-            "title": deal.title if deal else None,
+            "title": parent.name if parent else None,
             "due": str(i.due_date),
             "amount": str(i.amount),
             "paid": str(i.paid_amount) if i.paid_amount else None,
@@ -658,8 +689,8 @@ def delete_installment(
         ctx,
         request,
         "deal.installment_deleted",
-        "deal",
-        i.deal_id,
+        "parent_deal",
+        i.parent_id,
         {"due": str(i.due_date), "amount": str(i.amount)},
     )
     db.delete(i)

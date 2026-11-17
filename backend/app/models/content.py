@@ -43,8 +43,39 @@ class ContentOwner(UUIDPrimaryKeyMixin, OrgScopedMixin, TimestampMixin, Base):
     is_active: Mapped[bool] = mapped_column(default=True, server_default="true")
 
 
+class ParentDeal(UUIDPrimaryKeyMixin, OrgScopedMixin, TimestampMixin, Base):
+    """One contract with a content owner that covers several shows (e.g. Sony, ₹1 Cr, 10 shows).
+
+    The shows are ContentDeal rows under it. Their own amounts may add up to at most the
+    parent's amount. Installments to the owner and deal partners belong to the parent.
+    """
+
+    __tablename__ = "parent_deals"
+    __table_args__ = (CheckConstraint("term_end > term_start", name="term_order"),)
+
+    owner_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("content_owners.id", ondelete="RESTRICT"), index=True
+    )
+    name: Mapped[str] = mapped_column(String(200))
+    deal_type: Mapped[str] = mapped_column(String(20))
+    # The whole contract's licence fee (or minimum guarantee); empty for no-fee deal types.
+    amount: Mapped[Decimal | None] = mapped_column(Numeric(18, 2))
+    currency: Mapped[str | None] = mapped_column(String(3))
+    term_start: Mapped[date] = mapped_column(Date)
+    term_end: Mapped[date] = mapped_column(Date)
+    notes: Mapped[str | None] = mapped_column(Text)
+
+    owner: Mapped[ContentOwner] = relationship(lazy="joined")
+    shows: Mapped[list["ContentDeal"]] = relationship(
+        back_populates="parent", order_by="ContentDeal.title"
+    )
+
+
 class ContentDeal(UUIDPrimaryKeyMixin, OrgScopedMixin, TimestampMixin, Base):
-    """A licence for one show: what may be published, where, until when, on how many slots."""
+    """A licence for one show: what may be published, where, until when, on how many slots.
+
+    Every show sits under a ParentDeal; its owner and deal type are the parent's.
+    """
 
     __tablename__ = "content_deals"
     __table_args__ = (
@@ -52,6 +83,9 @@ class ContentDeal(UUIDPrimaryKeyMixin, OrgScopedMixin, TimestampMixin, Base):
         CheckConstraint("yt_slot_limit >= 0 AND fb_slot_limit >= 0", name="slot_limits"),
     )
 
+    parent_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("parent_deals.id", ondelete="RESTRICT"), index=True
+    )
     owner_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("content_owners.id", ondelete="RESTRICT"), index=True
     )
@@ -80,6 +114,7 @@ class ContentDeal(UUIDPrimaryKeyMixin, OrgScopedMixin, TimestampMixin, Base):
     agreement_version: Mapped[str | None] = mapped_column(String(60))
 
     owner: Mapped[ContentOwner] = relationship(lazy="joined")
+    parent: Mapped[ParentDeal] = relationship(back_populates="shows", lazy="joined")
     episode_ranges: Mapped[list["DealEpisodeRange"]] = relationship(
         cascade="all, delete-orphan",
         order_by="(DealEpisodeRange.season, DealEpisodeRange.from_episode)",

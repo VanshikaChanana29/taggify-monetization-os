@@ -9,7 +9,7 @@ month (CMS fee from the CMS's sheet when uploaded, else from its slabs):
     due                = only once the CMS has paid Taggify for that month
     still to pay       = share − what Taggify has already paid them   (no TDS: founders)
 
-The partner also owes Taggify their % of each licence fee (e.g. ₹25L of Sony's ₹50L).
+The partner also owes Taggify their % of each parent deal's amount (e.g. ₹25L of Sony's ₹50L).
 """
 
 import uuid
@@ -28,6 +28,7 @@ from app.models import (
     DealPartner,
     DealPartnerShare,
     Organization,
+    ParentDeal,
     PartnerCommission,
     PartnerContribution,
     PartnerPayout,
@@ -119,25 +120,37 @@ def partner_channel_ids(db: Session, org: Organization) -> set[uuid.UUID]:
     )
 
 
-def partner_pct_by_deal(db: Session, org: Organization) -> dict[uuid.UUID, Decimal]:
-    """{deal: total % held by partners}."""
+def partner_pct_by_parent(db: Session, org: Organization) -> dict[uuid.UUID, Decimal]:
+    """{parent deal: total % held by partners}."""
     return {
         d: Decimal(p)
         for d, p in db.execute(
-            select(DealPartnerShare.deal_id, func.sum(DealPartnerShare.share_pct))
+            select(DealPartnerShare.parent_id, func.sum(DealPartnerShare.share_pct))
             .where(DealPartnerShare.organization_id == org.id)
-            .group_by(DealPartnerShare.deal_id)
+            .group_by(DealPartnerShare.parent_id)
         )
     }
 
 
-def _licence_base(db: Session, org: Organization, deal: ContentDeal) -> Decimal | None:
-    if deal.deal_type not in ("fixed_fee", "hybrid") or deal.fee_amount is None:
+def _in_base(
+    db: Session, org: Organization, deal_type: str, amount, currency, start: date
+) -> Decimal | None:
+    if deal_type not in ("fixed_fee", "hybrid") or amount is None:
         return None
-    if deal.currency == org.base_currency:
-        return deal.fee_amount
-    rate = fx_rate(db, org, deal.term_start.replace(day=1), deal.currency)
-    return money(deal.fee_amount * rate) if rate is not None else None
+    if currency == org.base_currency:
+        return amount
+    rate = fx_rate(db, org, start.replace(day=1), currency)
+    return money(amount * rate) if rate is not None else None
+
+
+def _licence_base(db: Session, org: Organization, deal: ContentDeal) -> Decimal | None:
+    """One show's own licence amount, base currency."""
+    return _in_base(db, org, deal.deal_type, deal.fee_amount, deal.currency, deal.term_start)
+
+
+def _parent_licence_base(db: Session, org: Organization, parent: ParentDeal) -> Decimal | None:
+    """A whole parent deal's amount, base currency."""
+    return _in_base(db, org, parent.deal_type, parent.amount, parent.currency, parent.term_start)
 
 
 def commissions(db: Session, partner_ids: list[uuid.UUID]) -> dict[uuid.UUID, list]:
@@ -269,24 +282,24 @@ def statement(db: Session, org: Organization, partner: DealPartner) -> PartnerSt
     out.outstanding = money(out.due - out.paid)
 
     contributed = defaultdict(lambda: ZERO)
-    for deal_id, amount in db.execute(
-        select(PartnerContribution.deal_id, func.sum(PartnerContribution.amount))
+    for parent_id, amount in db.execute(
+        select(PartnerContribution.parent_id, func.sum(PartnerContribution.amount))
         .where(PartnerContribution.partner_id == partner.id)
-        .group_by(PartnerContribution.deal_id)
+        .group_by(PartnerContribution.parent_id)
     ):
-        contributed[deal_id] = money(amount)
+        contributed[parent_id] = money(amount)
     for share, deal in db.execute(
-        select(DealPartnerShare, ContentDeal)
-        .join(ContentDeal, ContentDeal.id == DealPartnerShare.deal_id)
+        select(DealPartnerShare, ParentDeal)
+        .join(ParentDeal, ParentDeal.id == DealPartnerShare.parent_id)
         .where(DealPartnerShare.partner_id == partner.id)
-        .order_by(ContentDeal.title)
+        .order_by(ParentDeal.name)
     ):
-        licence = _licence_base(db, org, deal)
+        licence = _parent_licence_base(db, org, deal)
         part = money(licence * share.share_pct / 100) if licence is not None else None
         out.deals.append(
             PartnerDeal(
                 deal_id=deal.id,
-                title=deal.title,
+                title=deal.name,
                 owner=deal.owner.name,
                 share_pct=share.share_pct,
                 licence_share=part,
@@ -483,7 +496,7 @@ def deal_earnings(
     own = [r for r in out if r["partner_name"] is None]
     theirs = [r for r in out if r["partner_name"] is not None]
     licence = _licence_base(db, org, deal)
-    partner_pct = partner_pct_by_deal(db, org).get(deal.id, ZERO)
+    partner_pct = partner_pct_by_parent(db, org).get(deal.parent_id, ZERO)
     return {
         "base_currency": org.base_currency,
         "channels": out,

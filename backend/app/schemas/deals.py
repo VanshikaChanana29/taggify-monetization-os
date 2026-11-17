@@ -78,10 +78,70 @@ class EpisodeRange(BaseModel):
         return self
 
 
-class DealIn(BaseModel):
-    """Create/update payload. Mandatory fields depend on deal type and episode scope."""
+class ParentDealIn(BaseModel):
+    """A contract with a content owner that holds several shows: name, amount and dates."""
 
     owner_id: uuid.UUID
+    name: str = Field(min_length=1, max_length=200)
+    deal_type: DealType
+    amount: Decimal | None = Field(default=None, gt=0, max_digits=18, decimal_places=2)
+    currency: str | None = Field(default=None, min_length=3, max_length=3)
+    term_start: date
+    term_end: date
+    notes: str | None = Field(default=None, max_length=5000)
+
+    @field_validator("currency", "notes", mode="before")
+    @classmethod
+    def blank(cls, value: str | None) -> str | None:
+        return _blank_to_none(value)
+
+    @model_validator(mode="after")
+    def rules(self) -> Self:
+        self.name = self.name.strip()
+        if not self.name:
+            raise ValueError("Deal name is required")
+        if self.term_end <= self.term_start:
+            raise ValueError("Term end must be after term start")
+        if self.deal_type in ("fixed_fee", "hybrid"):
+            if self.amount is None or not self.currency:
+                raise ValueError("This deal type needs the deal amount and currency")
+            self.currency = self.currency.upper()
+        else:
+            self.amount = self.currency = None
+        return self
+
+
+class ParentDealListItem(BaseModel):
+    id: uuid.UUID
+    name: str
+    owner_id: uuid.UUID
+    owner_name: str
+    deal_type: DealType
+    status: EffectiveStatus
+    amount: Decimal | None
+    currency: str | None
+    term_start: date
+    term_end: date
+    notes: str | None
+    show_count: int
+    # What the shows' own amounts add up to, and what is still free for new shows.
+    allotted: Decimal | None
+    unallotted: Decimal | None
+    profit: Decimal | None = None
+    recovery_pct: Decimal | None = None
+    rights_cost: Decimal | None = None
+
+
+class DealIn(BaseModel):
+    """Create/update payload for one show. Mandatory fields depend on deal type and scope.
+
+    parent_id: the parent deal the show belongs to. Without one, a parent deal is made for
+    the show alone (same name, amount and dates). owner_id is then required; with a parent
+    the owner is always the parent's.
+    """
+
+    parent_id: uuid.UUID | None = None
+    owner_id: uuid.UUID | None = None
     title: str = Field(min_length=1, max_length=200)
     deal_type: DealType
     status: StoredStatus = "active"
@@ -213,6 +273,8 @@ class SlotBulkStatus(BaseModel):
 
 class DealListItem(BaseModel):
     id: uuid.UUID
+    parent_id: uuid.UUID
+    parent_name: str
     title: str
     owner_id: uuid.UUID
     owner_name: str
@@ -287,3 +349,9 @@ class RightsCheckOut(BaseModel):
     checked_on: date
     # From the deal's episode list, when that episode has details.
     episode_title: str | None = None
+
+
+class ParentDealOut(ParentDealListItem):
+    shows: list[DealListItem]
+    created_at: datetime
+    updated_at: datetime

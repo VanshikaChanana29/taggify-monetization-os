@@ -1,5 +1,8 @@
-"""Deal partners (e.g. Vanshika on the Sony deal): who they are, their % of each deal, the
-licence money they paid in, their channels' earnings and what Taggify has paid them."""
+"""Deal partners (e.g. Vanshika on the Sony deal): who they are, their % of each parent deal,
+the licence money they paid in, their channels' earnings and what Taggify has paid them.
+
+Partners hold a share of a parent deal (the contract), not of one show under it; the deal_id
+in contributions and partner deal lists is the parent deal's id."""
 
 import uuid
 from datetime import date
@@ -16,6 +19,7 @@ from app.models import (
     ContentDeal,
     DealPartner,
     DealPartnerShare,
+    ParentDeal,
     PartnerCommission,
     PartnerContribution,
     PartnerPayout,
@@ -78,10 +82,10 @@ def _partner(db: Session, ctx: AuthContext, partner_id: uuid.UUID) -> DealPartne
     return p
 
 
-def _deal(db: Session, ctx: AuthContext, deal_id: uuid.UUID) -> ContentDeal:
+def _deal(db: Session, ctx: AuthContext, parent_id: uuid.UUID) -> ParentDeal:
     d = db.scalar(
-        select(ContentDeal).where(
-            ContentDeal.id == deal_id, ContentDeal.organization_id == ctx.organization.id
+        select(ParentDeal).where(
+            ParentDeal.id == parent_id, ParentDeal.organization_id == ctx.organization.id
         )
     )
     if d is None:
@@ -91,12 +95,12 @@ def _deal(db: Session, ctx: AuthContext, deal_id: uuid.UUID) -> ContentDeal:
 
 def _out(db: Session, ctx: AuthContext, p: DealPartner, with_money: bool = True) -> PartnerOut:
     deals = [
-        PartnerDealRef(deal_id=d.id, title=d.title, share_pct=s.share_pct)
+        PartnerDealRef(deal_id=d.id, title=d.name, share_pct=s.share_pct)
         for s, d in db.execute(
-            select(DealPartnerShare, ContentDeal)
-            .join(ContentDeal, ContentDeal.id == DealPartnerShare.deal_id)
+            select(DealPartnerShare, ParentDeal)
+            .join(ParentDeal, ParentDeal.id == DealPartnerShare.parent_id)
             .where(DealPartnerShare.partner_id == p.id)
-            .order_by(ContentDeal.title)
+            .order_by(ParentDeal.name)
         )
     ]
     channels = db.scalar(select(func.count()).where(Channel.partner_id == p.id)) or 0
@@ -250,7 +254,13 @@ def deal_earnings_view(
 ) -> dict:
     """What a deal's channels earned Taggify: its own channels, and its commission on
     partners' channels, channel by channel."""
-    deal = _deal(db, ctx, deal_id)
+    deal = db.scalar(
+        select(ContentDeal).where(
+            ContentDeal.id == deal_id, ContentDeal.organization_id == ctx.organization.id
+        )
+    )
+    if deal is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Deal not found")
     return deal_earnings(db, ctx.organization, deal, _month(start), _month(end))
 
 
@@ -345,8 +355,8 @@ def partner_detail(partner_id: uuid.UUID, ctx: Auth, db: DbSession) -> PartnerDe
         select(Channel).where(Channel.partner_id == p.id).order_by(Channel.name)
     ).all()
     contributions = db.execute(
-        select(PartnerContribution, ContentDeal.title)
-        .join(ContentDeal, ContentDeal.id == PartnerContribution.deal_id)
+        select(PartnerContribution, ParentDeal.name)
+        .join(ParentDeal, ParentDeal.id == PartnerContribution.parent_id)
         .where(PartnerContribution.partner_id == p.id)
         .order_by(PartnerContribution.received_on.desc())
     ).all()
@@ -396,7 +406,7 @@ def partner_detail(partner_id: uuid.UUID, ctx: Auth, db: DbSession) -> PartnerDe
         contributions=[
             ContributionOut(
                 id=c.id,
-                deal_id=c.deal_id,
+                deal_id=c.parent_id,
                 deal_title=title,
                 amount=c.amount,
                 received_on=c.received_on,
@@ -419,23 +429,23 @@ def partner_detail(partner_id: uuid.UUID, ctx: Auth, db: DbSession) -> PartnerDe
     )
 
 
-# ---- A deal's partners ---------------------------------------------------------------------
+# ---- A parent deal's partners --------------------------------------------------------------
 
 
-@router.get("/deals/{deal_id}/partners")
-def deal_partners(deal_id: uuid.UUID, ctx: Auth, db: DbSession) -> list[DealPartnerOut]:
-    deal = _deal(db, ctx, deal_id)
+@router.get("/parent-deals/{parent_id}/partners")
+def deal_partners(parent_id: uuid.UUID, ctx: Auth, db: DbSession) -> list[DealPartnerOut]:
+    deal = _deal(db, ctx, parent_id)
     return [
         DealPartnerOut(partner_id=s.partner_id, name=s.partner.name, share_pct=s.share_pct)
-        for s in db.scalars(select(DealPartnerShare).where(DealPartnerShare.deal_id == deal.id))
+        for s in db.scalars(select(DealPartnerShare).where(DealPartnerShare.parent_id == deal.id))
     ]
 
 
-@router.put("/deals/{deal_id}/partners")
+@router.put("/parent-deals/{parent_id}/partners")
 def set_deal_partners(
-    deal_id: uuid.UUID, body: DealPartnersIn, ctx: Auth, request: Request, db: DbSession
+    parent_id: uuid.UUID, body: DealPartnersIn, ctx: Auth, request: Request, db: DbSession
 ) -> list[DealPartnerOut]:
-    deal = _deal(db, ctx, deal_id)
+    deal = _deal(db, ctx, parent_id)
     ids = [s.partner_id for s in body.partners]
     if len(set(ids)) != len(ids):
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "A partner is listed twice")
@@ -447,7 +457,7 @@ def set_deal_partners(
         _partner(db, ctx, s.partner_id)
     existing = {
         s.partner_id: s
-        for s in db.scalars(select(DealPartnerShare).where(DealPartnerShare.deal_id == deal.id))
+        for s in db.scalars(select(DealPartnerShare).where(DealPartnerShare.parent_id == deal.id))
     }
     for pid, s in existing.items():
         if pid not in ids:
@@ -459,7 +469,7 @@ def set_deal_partners(
             db.add(
                 DealPartnerShare(
                     organization_id=ctx.organization.id,
-                    deal_id=deal.id,
+                    parent_id=deal.id,
                     partner_id=item.partner_id,
                     share_pct=item.share_pct,
                 )
@@ -469,16 +479,16 @@ def set_deal_partners(
         "deal.partners_changed",
         organization_id=ctx.organization.id,
         user_id=ctx.user.id,
-        entity_type="deal",
+        entity_type="parent_deal",
         entity_id=deal.id,
         details={
-            "title": deal.title,
+            "title": deal.name,
             "partners": {str(s.partner_id): str(s.share_pct) for s in body.partners},
         },
         ip=client_ip(request),
     )
     db.commit()
-    return deal_partners(deal_id, ctx, db)
+    return deal_partners(parent_id, ctx, db)
 
 
 # ---- Money in (licence share) and money out (payouts) ----------------------------------------
@@ -492,14 +502,17 @@ def add_contribution(
     deal = _deal(db, ctx, body.deal_id)
     if not db.scalar(
         select(DealPartnerShare.id).where(
-            DealPartnerShare.deal_id == deal.id, DealPartnerShare.partner_id == p.id
+            DealPartnerShare.parent_id == deal.id, DealPartnerShare.partner_id == p.id
         )
     ):
         raise HTTPException(
-            status.HTTP_422_UNPROCESSABLE_ENTITY, f"{p.name} is not a partner on {deal.title}"
+            status.HTTP_422_UNPROCESSABLE_ENTITY, f"{p.name} is not a partner on {deal.name}"
         )
     c = PartnerContribution(
-        organization_id=ctx.organization.id, partner_id=p.id, **body.model_dump()
+        organization_id=ctx.organization.id,
+        partner_id=p.id,
+        parent_id=deal.id,
+        **body.model_dump(exclude={"deal_id"}),
     )
     db.add(c)
     db.flush()
@@ -509,13 +522,13 @@ def add_contribution(
         request,
         "partner.contribution_added",
         p.id,
-        {"deal": deal.title, "amount": str(c.amount)},
+        {"deal": deal.name, "amount": str(c.amount)},
     )
     db.commit()
     return ContributionOut(
         id=c.id,
         deal_id=deal.id,
-        deal_title=deal.title,
+        deal_title=deal.name,
         amount=c.amount,
         received_on=c.received_on,
         reference=c.reference,

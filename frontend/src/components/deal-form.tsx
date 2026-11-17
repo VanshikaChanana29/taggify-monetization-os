@@ -13,14 +13,26 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { InfoTip } from "@/components/ui/info-tip";
 import { HELP } from "@/lib/help";
 import { api } from "@/lib/api";
-import { COUNTRIES, DEAL_TYPE_LABELS, SCOPE_LABELS } from "@/lib/deals";
-import type { ContentOwner, Deal, DealPartner, DealType, EpisodeScope, Exclusivity, StoredDealStatus } from "@/lib/types";
+import { COUNTRIES, DEAL_TYPE_LABELS, SCOPE_LABELS, formatMoney } from "@/lib/deals";
+import type {
+  ContentOwner,
+  Deal,
+  DealPartner,
+  DealType,
+  EpisodeScope,
+  Exclusivity,
+  Page,
+  ParentDeal,
+  ParentDealListItem,
+  StoredDealStatus,
+} from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 type RangeRow = { season: string; from: string; to: string };
 type PartnerRow = { partner_id: string; share_pct: string };
 
 type Form = {
+  parent_id: string;
   owner_id: string;
   title: string;
   deal_type: DealType;
@@ -57,18 +69,20 @@ const STATUS_CHOICES: Record<StoredDealStatus, string> = {
 
 const EMPTY_RANGE: RangeRow = { season: "", from: "", to: "" };
 
-function fromDeal(deal: Deal | null): Form {
+function fromDeal(deal: Deal | null, parent: ParentDeal | null): Form {
   if (!deal) {
+    // A new show under a deal starts with the deal's owner, type, currency and dates.
     return {
-      owner_id: "",
+      parent_id: parent?.id ?? "",
+      owner_id: parent?.owner_id ?? "",
       title: "",
-      deal_type: "fixed_fee",
+      deal_type: parent?.deal_type ?? "fixed_fee",
       status: "active",
       fee_amount: "",
-      currency: "INR",
+      currency: parent?.currency ?? "INR",
       revenue_share_pct: "",
-      term_start: "",
-      term_end: "",
+      term_start: parent?.term_start ?? "",
+      term_end: parent?.term_end ?? "",
       episode_scope: "ranges",
       ranges: [EMPTY_RANGE],
       is_worldwide: true,
@@ -86,6 +100,7 @@ function fromDeal(deal: Deal | null): Form {
     };
   }
   return {
+    parent_id: deal.parent_id,
     owner_id: deal.owner_id,
     title: deal.title,
     deal_type: deal.deal_type,
@@ -120,7 +135,8 @@ function fromDeal(deal: Deal | null): Form {
 
 function toPayload(f: Form) {
   return {
-    owner_id: f.owner_id,
+    parent_id: f.parent_id || null,
+    owner_id: f.owner_id || null,
     title: f.title,
     deal_type: f.deal_type,
     status: f.status,
@@ -214,6 +230,9 @@ const SERVER_FIELDS: [string, FieldKey][] = [
   ["territor", "territories"],
   ["slot", "slots"],
   ["contract link", "contract_url"],
+  ["is left in", "fee_amount"],
+  ["show's amount", "fee_amount"],
+  ["deal's term", "term_end"],
   ["title", "title"],
   ["owner", "owner_id"],
 ];
@@ -305,9 +324,14 @@ function Choice<T extends string>({ value, options, onChange }: { value: T; opti
   );
 }
 
-export function DealForm({ deal }: { deal: Deal | null }) {
+/** One show. With a parent deal (new show from the deal page, or any edit) the owner, type and
+ * currency are the deal's, the dates stay inside the deal's, and the amount is capped by
+ * what the deal has left. */
+export function DealForm({ deal, parent: initialParent = null }: { deal: Deal | null; parent?: ParentDeal | null }) {
   const router = useRouter();
-  const [form, setForm] = useState<Form>(() => fromDeal(deal));
+  const [form, setForm] = useState<Form>(() => fromDeal(deal, initialParent));
+  const [parent, setParent] = useState<ParentDeal | null>(initialParent);
+  const [parents, setParents] = useState<ParentDealListItem[]>([]);
   const [owners, setOwners] = useState<ContentOwner[]>([]);
   const [errors, setErrors] = useState<Errors>(NO_ERRORS);
   const [submitted, setSubmitted] = useState(false);
@@ -317,16 +341,32 @@ export function DealForm({ deal }: { deal: Deal | null }) {
   const [partners, setPartners] = useState<DealPartner[]>([]);
   const [partnerRows, setPartnerRows] = useState<PartnerRow[]>([{ partner_id: "", share_pct: "50" }]);
 
+  // The deal this show sits under (it can be changed on edit to move the show).
+  useEffect(() => {
+    if (!form.parent_id) return;
+    if (parent?.id === form.parent_id) return;
+    api<ParentDeal>(`/parent-deals/${form.parent_id}`)
+      .then(setParent)
+      .catch(() => {});
+  }, [form.parent_id, parent?.id]);
+
+  useEffect(() => {
+    if (!deal) return;
+    api<Page<ParentDealListItem>>(`/parent-deals?page_size=100&sort=name&deal_type=${deal.deal_type}`)
+      .then((p) => setParents(p.items))
+      .catch(() => {});
+  }, [deal]);
+
   useEffect(() => {
     api<ContentOwner[]>("/content-owners")
       .then(setOwners)
       .catch(() => {});
-    if (!deal) {
+    if (!deal && !initialParent) {
       api<DealPartner[]>("/partners")
         .then((list) => setPartners(list.filter((p) => p.is_active)))
         .catch(() => {});
     }
-  }, [deal]);
+  }, [deal, initialParent]);
 
   // After the first submit, re-check as the founder edits so fixed fields clear right away.
   useEffect(() => {
@@ -348,6 +388,12 @@ export function DealForm({ deal }: { deal: Deal | null }) {
     event.preventDefault();
     setSubmitted(true);
     const problems = clientErrors(form);
+    if (overLimit && parent) {
+      problems.fields.fee_amount = `Only ${formatMoney(leftForShow, parent.currency)} is left in ${parent.name}.`;
+    }
+    if (parent && (form.term_start < parent.term_start || form.term_end > parent.term_end)) {
+      problems.fields.term_end = `The show's term must be within the deal's term (${parent.term_start} → ${parent.term_end}).`;
+    }
     if (partnersTotal >= 100) problems.fields.partners = "Partners together must hold less than 100%.";
     if (hasErrors(problems)) return showErrors(problems);
     setErrors(NO_ERRORS);
@@ -358,22 +404,28 @@ export function DealForm({ deal }: { deal: Deal | null }) {
         json: toPayload(form),
       });
       const picked = partnerRows.filter((r) => r.partner_id && Number(r.share_pct) > 0);
-      if (!deal && picked.length) {
+      if (!deal && !parent && picked.length) {
         try {
-          await api(`/deals/${saved.id}/partners`, { method: "PUT", json: { partners: picked } });
+          await api(`/parent-deals/${saved.parent_id}/partners`, { method: "PUT", json: { partners: picked } });
         } catch {
           // The deal is saved; open it so the partners can be fixed there.
           router.push(`/deals/${saved.id}`);
           return;
         }
       }
-      // A new deal goes back to the list (like every other "New …"); an edit returns to the deal.
-      router.push(deal ? `/deals/${saved.id}` : `/deals?added=${encodeURIComponent(saved.title)}`);
+      // A new show goes back to its deal; an edit returns to the show.
+      router.push(
+        deal ? `/deals/${saved.id}` : parent ? `/parent-deals/${saved.parent_id}` : `/deals?added=${encodeURIComponent(saved.title)}`,
+      );
     } catch (err) {
       showErrors(serverErrors(err instanceof Error ? err.message : "Could not save the deal"));
       setSaving(false);
     }
   }
+
+  const ownFee = deal && parent && deal.parent_id === parent.id ? Number(deal.fee_amount ?? 0) : 0;
+  const leftForShow = parent?.unallotted != null ? Number(parent.unallotted) + ownFee : null;
+  const overLimit = leftForShow !== null && Number(form.fee_amount || 0) > leftForShow;
 
   const partnersTotal = partnerRows.reduce((t, r) => t + (r.partner_id ? Number(r.share_pct) || 0 : 0), 0);
 
@@ -437,6 +489,30 @@ export function DealForm({ deal }: { deal: Deal | null }) {
           title="Deal"
           hint="Who it is with, what kind of deal, and what it costs. Fields marked * are required."
         >
+          {parent ? (
+            <div className="space-y-2">
+              <Label htmlFor="parent">Deal</Label>
+              {deal ? (
+                <NativeSelect
+                  id="parent"
+                  value={form.parent_id}
+                  onChange={(e) => set({ parent_id: e.target.value })}
+                >
+                  {!parents.some((p) => p.id === form.parent_id) && <option value={form.parent_id}>{parent.name}</option>}
+                  {parents.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name} — {p.owner_name}
+                    </option>
+                  ))}
+                </NativeSelect>
+              ) : (
+                <p className="rounded-xl border bg-muted/40 px-3 py-2 text-sm font-medium">{parent.name}</p>
+              )}
+              <p className="text-xs text-muted-foreground">
+                Owner: {parent.owner_name}. {deal ? "Choose another deal to move this show there." : ""}
+              </p>
+            </div>
+          ) : (
           <div className="space-y-2">
             <Label htmlFor="owner">
               Content owner * <InfoTip text={HELP.owner} />
@@ -466,6 +542,7 @@ export function DealForm({ deal }: { deal: Deal | null }) {
             )}
             <FieldError message={err.owner_id} />
           </div>
+          )}
           <div className="space-y-2">
             <Label htmlFor="title">Show / title *</Label>
             <Input
@@ -485,6 +562,7 @@ export function DealForm({ deal }: { deal: Deal | null }) {
             <NativeSelect
               id="deal-type"
               className="md:max-w-[calc(50%-0.5rem)]"
+              disabled={Boolean(parent)}
               value={form.deal_type}
               onChange={(e) => {
                 const deal_type = e.target.value as DealType;
@@ -517,7 +595,7 @@ export function DealForm({ deal }: { deal: Deal | null }) {
             <>
               <div className="space-y-2">
                 <Label htmlFor="fee">
-                  {form.deal_type === "hybrid" ? "Minimum guarantee *" : "Licence fee *"}{" "}
+                  {parent ? "Show amount *" : form.deal_type === "hybrid" ? "Minimum guarantee *" : "Licence fee *"}{" "}
                   <InfoTip text={form.deal_type === "hybrid" ? HELP.minimumGuarantee : HELP.licenceFee} />
                 </Label>
                 <Input
@@ -526,15 +604,20 @@ export function DealForm({ deal }: { deal: Deal | null }) {
                   min="0.01"
                   step="0.01"
                   required
-                  className={err.fee_amount ? INVALID : undefined}
+                  className={err.fee_amount || overLimit ? INVALID : undefined}
                   value={form.fee_amount}
                   onChange={(e) => set({ fee_amount: e.target.value })}
                 />
+                {parent && leftForShow !== null && (
+                  <p className={cn("text-xs", overLimit ? "font-medium text-red-600 dark:text-red-400" : "text-muted-foreground")}>
+                    Left in {parent.name}: {formatMoney(leftForShow, parent.currency)} of {formatMoney(parent.amount, parent.currency)}
+                  </p>
+                )}
                 <FieldError message={err.fee_amount} />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="currency">Currency *</Label>
-                <NativeSelect id="currency" value={form.currency} onChange={(e) => set({ currency: e.target.value })}>
+                <NativeSelect id="currency" disabled={Boolean(parent)} value={form.currency} onChange={(e) => set({ currency: e.target.value })}>
                   <option value="INR">INR — Indian Rupee</option>
                   <option value="USD">USD — US Dollar</option>
                   <option value="AED">AED — UAE Dirham</option>
@@ -568,7 +651,7 @@ export function DealForm({ deal }: { deal: Deal | null }) {
             </Label>
             <Choice value={form.status} options={STATUS_CHOICES} onChange={(status) => set({ status })} />
           </div>
-          {!deal && (
+          {!deal && !parent && (
             <div className="space-y-2 md:col-span-2">
               <Label htmlFor="partner-0">
                 Deal partner <span className="ml-1 text-xs font-normal text-muted-foreground">(optional)</span>
@@ -660,7 +743,15 @@ export function DealForm({ deal }: { deal: Deal | null }) {
             <Label htmlFor="start">
               Term start * <InfoTip text={HELP.term} />
             </Label>
-            <Input id="start" type="date" required value={form.term_start} onChange={(e) => set({ term_start: e.target.value })} />
+            <Input
+              id="start"
+              type="date"
+              required
+              min={parent?.term_start}
+              max={parent?.term_end}
+              value={form.term_start}
+              onChange={(e) => set({ term_start: e.target.value })}
+            />
           </div>
           <div className="space-y-2">
             <Label htmlFor="end">Term end *</Label>
@@ -668,6 +759,8 @@ export function DealForm({ deal }: { deal: Deal | null }) {
               id="end"
               type="date"
               required
+              min={parent?.term_start}
+              max={parent?.term_end}
               className={err.term_end ? INVALID : undefined}
               value={form.term_end}
               onChange={(e) => set({ term_end: e.target.value })}

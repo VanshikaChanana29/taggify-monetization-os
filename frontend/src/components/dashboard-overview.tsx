@@ -404,7 +404,7 @@ function Deals({ data, fmt }: { data: Dashboard; fmt: (v: string) => string }) {
             const profit = Number(d.net_contribution) - Number(d.rights_cost);
             return (
               <li key={d.id}>
-                <Link href={`/deals/${d.id}`} className="group block">
+                <Link href={`/parent-deals/${d.id}`} className="group block">
                   <span className="flex items-center justify-between gap-2 text-sm">
                     <span className="truncate font-medium group-hover:text-primary">{d.title}</span>
                     <Pill tone={DEAL_STATUS_TONES[d.status]}>{DEAL_STATUS_LABELS[d.status]}</Pill>

@@ -19,6 +19,7 @@ from app.models import (
     DealEpisode,
     DealEpisodeRange,
     DealSlot,
+    ParentDeal,
     SlotAssignment,
 )
 from app.schemas.channels import AssignIn, BulkAssignIn, SlotHistoryItem, UnassignIn
@@ -58,6 +59,14 @@ from app.services.deals import (
     sync_slots,
 )
 from app.services.month_close import MonthClosedError, ensure_open
+from app.services.parent_deals import (
+    ParentDealError,
+    check_show,
+    follow_show,
+    mirrors,
+    parent_for_show,
+    parent_status,
+)
 
 router = APIRouter(prefix="/deals", tags=["deals"])
 
@@ -71,6 +80,7 @@ def _open(db, ctx, day, what):
 
 # Fields whose before/after values go into the audit log on edit.
 TRACKED = (
+    "parent_id",
     "owner_id",
     "title",
     "deal_type",
@@ -121,6 +131,8 @@ def _used(deal: ContentDeal, platform: str) -> int:
 def _list_item(deal: ContentDeal, today: date) -> dict[str, Any]:
     return {
         "id": deal.id,
+        "parent_id": deal.parent_id,
+        "parent_name": deal.parent.name,
         "title": deal.title,
         "owner_id": deal.owner_id,
         "owner_name": deal.owner.name,
@@ -211,6 +223,47 @@ def _get_deal(db: Session, ctx: AuthContext, deal_id: uuid.UUID) -> ContentDeal:
     return deal
 
 
+def _parent(db: Session, ctx: AuthContext, parent_id: uuid.UUID) -> ParentDeal:
+    parent = db.scalar(
+        select(ParentDeal).where(
+            ParentDeal.id == parent_id, ParentDeal.organization_id == ctx.organization.id
+        )
+    )
+    if parent is None:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Parent deal not found")
+    return parent
+
+
+def _place(
+    db: Session, ctx: AuthContext, body: DealIn, show: ContentDeal | None = None
+) -> ParentDeal | None:
+    """Check the show against the parent it goes under; the owner is always the parent's.
+
+    Returns the parent, or None when a new show comes without one (a parent is made for it).
+    """
+    if body.parent_id is None and show is not None:
+        body.parent_id = show.parent_id
+    if body.parent_id is None:
+        if body.owner_id is None:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Choose a content owner")
+        _check_owner(db, ctx, body)
+        return None
+    parent = _parent(db, ctx, body.parent_id)
+    if show is not None and parent.id == show.parent_id and mirrors(parent, show):
+        # A deal on its own (e.g. from before parent deals): its parent follows it.
+        if body.owner_id is not None:
+            _check_owner(db, ctx, body, current=show.owner_id)
+            parent.owner_id = body.owner_id
+        follow_show(parent, body)
+        return parent
+    body.owner_id = parent.owner_id
+    try:
+        check_show(db, parent, body, show.id if show else None)
+    except ParentDealError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+    return parent
+
+
 def _check_owner(db: Session, ctx: AuthContext, body: DealIn, current: uuid.UUID | None = None):
     owner = db.scalar(
         select(ContentOwner).where(
@@ -274,6 +327,7 @@ def list_deals(
     owner_id: uuid.UUID | None = None,
     status_: Annotated[StatusFilter | None, Query(alias="status")] = None,
     deal_type: DealType | None = None,
+    parent_id: uuid.UUID | None = None,
     sort: SortKey = "term_end",
     direction: Literal["asc", "desc"] = "asc",
 ) -> Page[DealListItem]:
@@ -293,6 +347,8 @@ def list_deals(
         stmt = _status_filter(stmt, status_, today)
     if deal_type:
         stmt = stmt.where(ContentDeal.deal_type == deal_type)
+    if parent_id:
+        stmt = stmt.where(ContentDeal.parent_id == parent_id)
     column = SORT_COLUMNS[sort]
     order = column.asc().nulls_last() if direction == "asc" else column.desc().nulls_last()
     stmt = stmt.order_by(order, ContentDeal.id)
@@ -321,6 +377,7 @@ def list_deals(
 
 @router.get("/summary")
 def deals_summary(ctx: Auth, db: DbSession) -> DealsSummary:
+    """Counts and licence value are per parent deal (contract); slots are per show."""
     today = company_today(ctx.organization)
     live = [
         d
@@ -331,14 +388,21 @@ def deals_summary(ctx: Auth, db: DbSession) -> DealsSummary:
         )
         if effective_status(d, today) == "active"
     ]
+    parents = [
+        p
+        for p in db.scalars(
+            select(ParentDeal).where(ParentDeal.organization_id == ctx.organization.id)
+        )
+        if parent_status(p, today) == "active" and any(s.status == "active" for s in p.shows)
+    ]
     value: dict[str, Decimal] = defaultdict(Decimal)
-    for d in live:
-        if d.fee_amount is not None and d.currency:
-            value[d.currency] += d.fee_amount
+    for p in parents:
+        if p.amount is not None and p.currency:
+            value[p.currency] += p.amount
     soon = today + timedelta(days=EXPIRING_SOON_DAYS)
     return DealsSummary(
-        active_deals=len(live),
-        expiring_soon=sum(1 for d in live if d.term_end <= soon),
+        active_deals=len(parents),
+        expiring_soon=sum(1 for p in parents if p.term_end <= soon),
         slots_used=sum(1 for d in live for s in d.slots if s.status != "unassigned"),
         slots_total=sum(len(d.slots) for d in live),
         licence_value=[CurrencyAmount(currency=c, amount=a) for c, a in sorted(value.items())],
@@ -347,7 +411,13 @@ def deals_summary(ctx: Auth, db: DbSession) -> DealsSummary:
 
 @router.post("", status_code=status.HTTP_201_CREATED)
 def create_deal(body: DealIn, ctx: Auth, request: Request, db: DbSession) -> DealOut:
-    _check_owner(db, ctx, body)
+    """Add a show under a parent deal (or, without parent_id, a show with its own parent)."""
+    parent = _place(db, ctx, body)
+    if parent is None:
+        parent = parent_for_show(ctx.organization.id, body)
+        db.add(parent)
+        db.flush()
+        body.parent_id = parent.id
     deal = ContentDeal(organization_id=ctx.organization.id)
     _apply(deal, body)
     db.add(deal)
@@ -361,6 +431,7 @@ def create_deal(body: DealIn, ctx: Auth, request: Request, db: DbSession) -> Dea
         entity_id=deal.id,
         details={
             "title": deal.title,
+            "parent": parent.name,
             "deal_type": deal.deal_type,
             "fee": f"{deal.currency} {deal.fee_amount}" if deal.fee_amount else None,
             "term": f"{deal.term_start} → {deal.term_end}",
@@ -383,7 +454,7 @@ def update_deal(
     deal_id: uuid.UUID, body: DealIn, ctx: Auth, request: Request, db: DbSession
 ) -> DealOut:
     deal = _get_deal(db, ctx, deal_id)
-    _check_owner(db, ctx, body, current=deal.owner_id)
+    _place(db, ctx, body, show=deal)
     before = {f: _jsonable(getattr(deal, f)) for f in TRACKED}
     before_ranges = [r.model_dump() for r in _ranges(deal)]
 

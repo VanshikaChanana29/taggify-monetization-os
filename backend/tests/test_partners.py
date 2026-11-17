@@ -38,7 +38,7 @@ def setup(founder):
         "/api/partners", json={"name": "Vanshika", "tds_pct": "10", "email": "v@example.com"}
     ).json()["id"]
     r = founder.put(
-        f"/api/deals/{deal['id']}/partners",
+        f"/api/parent-deals/{deal['parent_id']}/partners",
         json={"partners": [{"partner_id": vanshika, "share_pct": "50"}]},
     )
     assert r.status_code == 200, r.text
@@ -108,7 +108,11 @@ def test_licence_share_and_what_she_paid_in(founder, setup):
     pid = setup["vanshika"]
     r = founder.post(
         f"/api/partners/{pid}/contributions",
-        json={"deal_id": setup["deal"]["id"], "amount": "2000000", "received_on": str(TODAY)},
+        json={
+            "deal_id": setup["deal"]["parent_id"],
+            "amount": "2000000",
+            "received_on": str(TODAY),
+        },
     )
     assert r.status_code == 201, r.text
     deal = detail(founder, pid)["deals"][0]
@@ -148,10 +152,10 @@ def test_taggify_recovery_and_incentives_leave_the_partner_out(founder, setup):
 
 
 def test_partner_rules(founder, setup):
-    deal = setup["deal"]["id"]
+    deal = setup["deal"]["parent_id"]
     other = founder.post("/api/partners", json={"name": "Rohan"}).json()["id"]
     too_much = founder.put(
-        f"/api/deals/{deal}/partners",
+        f"/api/parent-deals/{deal}/partners",
         json={
             "partners": [
                 {"partner_id": setup["vanshika"], "share_pct": "60"},
@@ -161,7 +165,7 @@ def test_partner_rules(founder, setup):
     )
     assert too_much.status_code == 422
     ok = founder.put(
-        f"/api/deals/{deal}/partners",
+        f"/api/parent-deals/{deal}/partners",
         json={
             "partners": [
                 {"partner_id": setup["vanshika"], "share_pct": "40"},
@@ -180,7 +184,11 @@ def test_partner_rules(founder, setup):
     lone = new_deal(founder, owner_name="Zee", title="Other deal")
     r = founder.post(
         f"/api/partners/{other}/contributions",
-        json={"deal_id": lone["id"], "amount": "1", "received_on": str(TODAY - timedelta(days=1))},
+        json={
+            "deal_id": lone["parent_id"],
+            "amount": "1",
+            "received_on": str(TODAY - timedelta(days=1)),
+        },
     )
     assert r.status_code == 422
 
@@ -233,9 +241,9 @@ def test_partner_with_money_is_never_deleted(founder, setup):
     pid = setup["vanshika"]
     founder.post(
         f"/api/partners/{pid}/contributions",
-        json={"deal_id": setup["deal"]["id"], "amount": "1000", "received_on": str(TODAY)},
+        json={"deal_id": setup["deal"]["parent_id"], "amount": "1000", "received_on": str(TODAY)},
     )
-    founder.put(f"/api/deals/{setup['deal']['id']}/partners", json={"partners": []})
+    founder.put(f"/api/parent-deals/{setup['deal']['parent_id']}/partners", json={"partners": []})
     founder.put(f"/api/channels/{setup['hers']}", json={"partner_id": None})
 
     r = founder.delete(f"/api/partners/{pid}")

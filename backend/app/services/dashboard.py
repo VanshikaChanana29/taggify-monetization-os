@@ -26,11 +26,12 @@ from app.models import (
     IncentiveRun,
     MonthClose,
     Organization,
+    ParentDeal,
     RevenueFact,
     SlotAssignment,
 )
 from app.services.cms_fees import money
-from app.services.deal_economics import deal_economics
+from app.services.deal_economics import parent_economics
 from app.services.deals import (
     EXPIRING_SOON_DAYS,
     company_today,
@@ -38,6 +39,7 @@ from app.services.deals import (
     notice_deadline,
 )
 from app.services.incentives import calculate
+from app.services.parent_deals import parent_status
 from app.services.settlement import CmsMonth, fx_rate, month_end, month_settlements
 
 TREND_MONTHS = 6
@@ -199,22 +201,29 @@ def build(db: Session, org: Organization, month: date) -> Dashboard:
         .options(selectinload(ContentDeal.slots))
         .where(ContentDeal.organization_id == org.id, ContentDeal.status != "draft")
     ).all()
+    # Per parent deal (the contract): its full amount against what all its shows earned.
+    parents = db.scalars(
+        select(ParentDeal).where(
+            ParentDeal.organization_id == org.id,
+            ParentDeal.deal_type.in_(("fixed_fee", "hybrid")),
+        )
+    ).all()
     deal_rows: list[DealRow] = []
     rights_total = net_total = ZERO
-    for deal in deals:
-        if deal.deal_type not in ("fixed_fee", "hybrid"):
+    for parent in parents:
+        if not any(s.status != "draft" for s in parent.shows):
             continue
-        e = deal_economics(db, org, deal)
+        e, _ = parent_economics(db, org, parent)
         if not e.rights_cost:
             continue
         rights_total += e.rights_cost
         net_total += e.net_contribution
         deal_rows.append(
             DealRow(
-                deal.id,
-                deal.title,
-                deal.owner.name,
-                effective_status(deal, today),
+                parent.id,
+                parent.name,
+                parent.owner.name,
+                parent_status(parent, today),
                 e.rights_cost,
                 e.net_contribution,
                 e.recovery_pct,
@@ -368,8 +377,8 @@ def _money_items(db, org, month, today, rows, run) -> list[Item]:
     # Installments to content owners: overdue, or due within the next 30 days.
     horizon = today + timedelta(days=INSTALLMENT_HORIZON_DAYS)
     for inst, title in db.execute(
-        select(DealInstallment, ContentDeal.title)
-        .join(ContentDeal, ContentDeal.id == DealInstallment.deal_id)
+        select(DealInstallment, ParentDeal.name)
+        .join(ParentDeal, ParentDeal.id == DealInstallment.parent_id)
         .where(
             DealInstallment.organization_id == org.id,
             DealInstallment.paid_on.is_(None),
@@ -383,7 +392,7 @@ def _money_items(db, org, month, today, rows, run) -> list[Item]:
                 f"installment-{inst.id}",
                 f"{title} installment {'overdue' if overdue else 'due'}",
                 f"{'Was due' if overdue else 'Due'} {inst.due_date:%d %b %Y}",
-                f"/deals/{inst.deal_id}?tab=payments",
+                f"/parent-deals/{inst.parent_id}?tab=payments",
                 "danger" if overdue else "info",
                 inst.amount,
             )

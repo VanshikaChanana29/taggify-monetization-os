@@ -95,8 +95,48 @@ export type ContentOwner = {
 
 export type EpisodeRange = { season: number | null; from_episode: number; to_episode: number };
 
+/** One contract with a content owner holding several shows (e.g. Sony, ₹1 Cr, 10 shows). */
+export type ParentDealListItem = {
+  id: string;
+  name: string;
+  owner_id: string;
+  owner_name: string;
+  deal_type: DealType;
+  status: "upcoming" | "active" | "expired";
+  amount: string | null;
+  currency: string | null;
+  term_start: string;
+  term_end: string;
+  notes: string | null;
+  show_count: number;
+  /** What the shows' own amounts add up to, and what is still free for new shows. */
+  allotted: string | null;
+  unallotted: string | null;
+  profit: string | null;
+  recovery_pct: string | null;
+  rights_cost: string | null;
+};
+
+export type ParentDeal = ParentDealListItem & {
+  shows: DealListItem[];
+  created_at: string;
+  updated_at: string;
+};
+
+/** What the payments and partners panels need of a parent deal (amount as fee_amount). */
+export type ContractRef = {
+  id: string;
+  deal_type: DealType;
+  fee_amount: string | null;
+  currency: string | null;
+  owner_name: string;
+};
+
+/** One show (the deal page): it always sits under a parent deal. */
 export type DealListItem = {
   id: string;
+  parent_id: string;
+  parent_name: string;
   title: string;
   owner_id: string;
   owner_name: string;

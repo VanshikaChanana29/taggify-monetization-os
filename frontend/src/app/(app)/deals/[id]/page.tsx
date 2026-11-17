@@ -8,8 +8,6 @@ import { Suspense, useCallback, useEffect, useState } from "react";
 import { DealActivity } from "@/components/deal/activity";
 import { type DealTab, DealOverview } from "@/components/deal/overview";
 import { DealEarnings } from "@/components/deal/earnings";
-import { DealPartners } from "@/components/deal/partners";
-import { DealPayments } from "@/components/deal/payments";
 import { DealProfitability } from "@/components/deal/profitability";
 import { DealSlots } from "@/components/deal/slots";
 import { DealDocuments } from "@/components/deal-documents";
@@ -25,7 +23,8 @@ import { DEAL_STATUS_LABELS, DEAL_STATUS_TONES, DEAL_TYPE_LABELS, dealValue, epi
 import type { Deal, DealEconomics } from "@/lib/types";
 import { InlineLoader, PageLoader } from "@/components/loader";
 
-const TABS: DealTab[] = ["overview", "slots", "partners", "earnings", "payments", "profitability", "episodes", "documents", "history"];
+// Partners and payments are on the parent deal (one contract for all its shows).
+const TABS: DealTab[] = ["overview", "slots", "earnings", "profitability", "episodes", "documents", "history"];
 
 function Fact({ label, value, sub, info }: { label: string; value: React.ReactNode; sub?: string; info?: string }) {
   return (
@@ -76,15 +75,20 @@ function DealDetail() {
   if (error && !deal) return <Notice kind="error">{error}</Notice>;
   if (!deal) return <PageLoader />;
 
-  const overdue = economics?.installments.some((i) => i.overdue) ?? false;
   const pending = deal.slots.some((s) => s.status === "pending_whitelist");
 
   return (
     <div className="space-y-6">
-      <Link href="/deals" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-primary">
-        <ArrowLeft className="h-4 w-4" />
-        All deals
-      </Link>
+      <nav className="flex items-center gap-1 text-sm text-muted-foreground">
+        <Link href="/deals" className="inline-flex items-center gap-1 hover:text-primary">
+          <ArrowLeft className="h-4 w-4" />
+          All deals
+        </Link>
+        <span>/</span>
+        <Link href={`/parent-deals/${deal.parent_id}`} className="hover:text-primary">
+          {deal.parent_name}
+        </Link>
+      </nav>
 
       <div className="rounded-2xl border bg-card p-6 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-4">
@@ -104,7 +108,7 @@ function DealDetail() {
           </Button>
         </div>
         <div className="mt-6 grid gap-5 border-t pt-5 sm:grid-cols-2 lg:grid-cols-5">
-          <Fact label={deal.deal_type === "hybrid" ? "Guarantee + share" : deal.deal_type === "partnership" ? "Revenue split" : "Licence value"} value={dealValue(deal)} info={HELP.dealType} />
+          <Fact label={deal.deal_type === "hybrid" ? "Guarantee + share" : deal.deal_type === "partnership" ? "Revenue split" : "Show amount"} value={dealValue(deal)} info={HELP.dealType} />
           <Fact label="Episodes" value={episodeSummary(deal.episode_scope, deal.episode_ranges)} info={HELP.episodeScope} />
           <Fact label="Term" value={`${deal.term_start.slice(0, 4)}–${deal.term_end.slice(0, 4)}`} sub={`${formatDate(deal.term_start)} → ${formatDate(deal.term_end)}`} />
           <Fact info={HELP.slots} label="YouTube slots" value={deal.yt_slot_limit ? `${deal.yt_slots_used} / ${deal.yt_slot_limit}` : "None"} sub={deal.yt_slot_limit ? "in use" : undefined} />
@@ -118,9 +122,7 @@ function DealDetail() {
         tabs={[
           { key: "overview", label: "Overview" },
           { key: "slots", label: "Slots", count: deal.yt_slot_limit + deal.fb_slot_limit, alert: pending },
-          { key: "partners", label: "Partners" },
           { key: "earnings", label: "Earnings" },
-          { key: "payments", label: "Payments", count: economics?.installments.length, alert: overdue },
           { key: "profitability", label: "Profitability" },
           { key: "episodes", label: "Episodes", count: deal.episode_count },
           { key: "documents", label: "Documents", count: deal.document_count },
@@ -133,9 +135,7 @@ function DealDetail() {
 
       {tab === "overview" && <DealOverview deal={deal} e={economics} go={go} />}
       {tab === "slots" && <DealSlots deal={deal} refreshKey={refreshKey} onChange={refresh} />}
-      {tab === "partners" && <DealPartners deal={deal} onChange={(m) => refresh(m)} />}
       {tab === "earnings" && <DealEarnings deal={deal} />}
-      {tab === "payments" && (economics ? <DealPayments deal={deal} e={economics} onChange={() => refresh()} /> : <InlineLoader />)}
       {tab === "profitability" &&
         (economics ? <DealProfitability deal={deal} e={economics} onChange={() => refresh()} /> : <InlineLoader />)}
       {tab === "episodes" && <DealEpisodes dealId={deal.id} scope={deal.episode_scope} onChange={() => refresh()} />}

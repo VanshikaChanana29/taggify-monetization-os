@@ -69,7 +69,8 @@ def test_hybrid_minimum_guarantee_is_recouped(founder, setup):  # noqa: F811
     )
     assert e["net_contribution"] == "42800.00"  # 80,000 − 16,000 CMS − 1,200 incentives − 20,000
     inst = founder.post(
-        f"/api/deals/{d['id']}/installments", json={"due_date": str(TODAY), "amount": "20000"}
+        f"/api/parent-deals/{d['parent_id']}/installments",
+        json={"due_date": str(TODAY), "amount": "20000"},
     )
     assert inst.status_code == 201
 

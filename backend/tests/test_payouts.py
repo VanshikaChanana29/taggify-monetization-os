@@ -274,17 +274,18 @@ def test_deal_economics(founder, setup):
 def test_installments_reduce_payable_not_rights_cost(founder, setup):
     d = make_deal(founder, setup["channel"])
     first = founder.post(
-        f"/api/deals/{d['id']}/installments", json={"due_date": str(LAST), "amount": "2000000"}
+        f"/api/parent-deals/{d['parent_id']}/installments",
+        json={"due_date": str(LAST), "amount": "2000000"},
     ).json()
     founder.post(
-        f"/api/deals/{d['id']}/installments",
+        f"/api/parent-deals/{d['parent_id']}/installments",
         json={"due_date": str(TODAY + timedelta(days=60)), "amount": "3000000"},
     )
     founder.patch(
         f"/api/installments/{first['id']}", json={"paid_on": str(TODAY), "reference": "NEFT-1"}
     )
 
-    e = founder.get(f"/api/deals/{d['id']}/economics").json()
+    e = founder.get(f"/api/parent-deals/{d['parent_id']}/economics").json()
     assert (e["installments_total"], e["paid"], e["payable"]) == (
         "5000000.00",
         "2000000.00",
@@ -298,7 +299,8 @@ def test_installments_reduce_payable_not_rights_cost(founder, setup):
 def test_edit_unpaid_installment_only(founder, setup):
     d = make_deal(founder, setup["channel"])
     i = founder.post(
-        f"/api/deals/{d['id']}/installments", json={"due_date": str(LAST), "amount": "2000000"}
+        f"/api/parent-deals/{d['parent_id']}/installments",
+        json={"due_date": str(LAST), "amount": "2000000"},
     ).json()
     url = f"/api/installments/{i['id']}"
     new_due = str(TODAY + timedelta(days=30))
@@ -310,7 +312,7 @@ def test_edit_unpaid_installment_only(founder, setup):
         "5000000.00",
         "INV-9",
     )
-    e = founder.get(f"/api/deals/{d['id']}/economics").json()
+    e = founder.get(f"/api/parent-deals/{d['parent_id']}/economics").json()
     assert e["installments_total"] == "5000000.00"
 
     founder.patch(url, json={"paid_on": str(TODAY)})
@@ -320,7 +322,7 @@ def test_edit_unpaid_installment_only(founder, setup):
 
 def test_bulk_add_installments_all_or_none(founder, setup):
     d = make_deal(founder, setup["channel"])
-    url = f"/api/deals/{d['id']}/installments/bulk"
+    url = f"/api/parent-deals/{d['parent_id']}/installments/bulk"
     plan = [
         {"due_date": str(TODAY + timedelta(days=30 * n)), "amount": "1000000"} for n in range(5)
     ]
@@ -328,12 +330,15 @@ def test_bulk_add_installments_all_or_none(founder, setup):
     r = founder.post(url, json={"installments": plan})
     assert r.status_code == 201, r.text
     assert [x["amount"] for x in r.json()] == ["1000000.00"] * 5
-    e = founder.get(f"/api/deals/{d['id']}/economics").json()
+    e = founder.get(f"/api/parent-deals/{d['parent_id']}/economics").json()
     assert (e["installments_total"], len(e["installments"])) == ("5000000.00", 5)
 
     bad = [{"due_date": str(TODAY), "amount": "100"}, {"due_date": str(TODAY), "amount": "0"}]
     assert founder.post(url, json={"installments": bad}).status_code == 422
-    assert len(founder.get(f"/api/deals/{d['id']}/economics").json()["installments"]) == 5
+    assert (
+        len(founder.get(f"/api/parent-deals/{d['parent_id']}/economics").json()["installments"])
+        == 5
+    )
 
 
 def test_revenue_share_owner_cut(founder, setup):
@@ -343,7 +348,8 @@ def test_revenue_share_owner_cut(founder, setup):
     assert (e["rights_cost"], e["owner_share"]) == (None, "32000.00")
     assert e["net_contribution"] == "30800.00"  # 80000 − 16000 − 1200 − 32000
     r = founder.post(
-        f"/api/deals/{d['id']}/installments", json={"due_date": str(LAST), "amount": "1"}
+        f"/api/parent-deals/{d['parent_id']}/installments",
+        json={"due_date": str(LAST), "amount": "1"},
     )
     assert r.status_code == 409
 
@@ -357,7 +363,8 @@ def test_partnership_splits_after_cms_fee(founder, setup):
     assert (e["rights_cost"], e["recovery_pct"], e["owner_share"]) == (None, None, "32000.00")
     assert e["net_contribution"] == "30800.00"  # 80000 − 16000 − 1200 − 32000
     r = founder.post(
-        f"/api/deals/{d['id']}/installments", json={"due_date": str(LAST), "amount": "1"}
+        f"/api/parent-deals/{d['parent_id']}/installments",
+        json={"due_date": str(LAST), "amount": "1"},
     )
     assert r.status_code == 409
 

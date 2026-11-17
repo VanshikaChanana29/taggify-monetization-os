@@ -14,6 +14,7 @@ from app.api import (
     employees,
     finance,
     health,
+    parent_deals,
     partners,
     payouts,
     roles,
@@ -34,6 +35,7 @@ api.include_router(audit_logs.router)
 api.include_router(admin.router)
 api.include_router(content_owners.router)
 api.include_router(deals.router)
+api.include_router(parent_deals.router)
 api.include_router(cms_partners.router)
 api.include_router(channels.router)
 api.include_router(employees.router)

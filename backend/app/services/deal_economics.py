@@ -19,6 +19,10 @@ the partner's channels only Taggify's own commission on them counts here.
     recovery %       = net contribution ÷ rights cost
 
 Installments only change what is still payable in cash — never the rights cost.
+
+Shows sit under a parent deal (one contract, e.g. Sony ₹1 Cr for 10 shows). Each show's rights
+cost is its own amount; the parent's is the whole contract amount (allotted to shows or not),
+and its contribution is the sum of its shows'. Partners and installments are the parent's.
 """
 
 import uuid
@@ -41,6 +45,7 @@ from app.models import (
     DealPartnerShare,
     DealSlot,
     Organization,
+    ParentDeal,
     RevenueFact,
     SlotAssignment,
 )
@@ -93,30 +98,42 @@ class Economics:
     warnings: list[str] = field(default_factory=list)
 
 
+def our_part(db: Session, parent_id: uuid.UUID) -> Decimal:
+    """Taggify's part of a parent deal's licence (1 − what its partners hold), e.g. 0.5."""
+    partner_pct = db.scalar(
+        select(func.coalesce(func.sum(DealPartnerShare.share_pct), 0)).where(
+            DealPartnerShare.parent_id == parent_id
+        )
+    )
+    return (Decimal(100) - Decimal(partner_pct)) / 100
+
+
+def licence_in_base(
+    db: Session, org: Organization, amount: Decimal, currency: str | None, start: date
+) -> Decimal | None:
+    """A licence amount in the base currency, at the rate of its first month."""
+    if currency == org.base_currency:
+        return amount
+    rate = fx_rate(db, org, start.replace(day=1), currency)
+    return None if rate is None else amount * rate
+
+
 def deal_economics(db: Session, org: Organization, deal: ContentDeal) -> Economics:
     base = org.base_currency
     warnings: list[str] = []
 
     rights_cost = None
-    # The rights cost is the licence fee, or for a hybrid deal the minimum guarantee.
-    partner_pct = db.scalar(
-        select(func.coalesce(func.sum(DealPartnerShare.share_pct), 0)).where(
-            DealPartnerShare.deal_id == deal.id
-        )
-    )
-    ours = (Decimal(100) - Decimal(partner_pct)) / 100
+    # The rights cost is the show's licence fee, or for a hybrid deal its minimum guarantee.
+    ours = our_part(db, deal.parent_id)
     if deal.deal_type in ("fixed_fee", "hybrid") and deal.fee_amount is not None:
-        if deal.currency == base:
-            rights_cost = money(deal.fee_amount * ours)
+        value = licence_in_base(db, org, deal.fee_amount, deal.currency, deal.term_start)
+        if value is None:
+            warnings.append(
+                f"No {deal.currency}→{base} rate for {deal.term_start:%b %Y} "
+                "to value the licence fee."
+            )
         else:
-            rate = fx_rate(db, org, deal.term_start.replace(day=1), deal.currency)
-            if rate is None:
-                warnings.append(
-                    f"No {deal.currency}→{base} rate for {deal.term_start:%b %Y} "
-                    "to value the licence fee."
-                )
-            else:
-                rights_cost = money(deal.fee_amount * rate * ours)
+            rights_cost = money(value * ours)
 
     # Every slot holding of this deal's slots, and of any other deal by the same channels.
     slot_ids = [s.id for s in deal.slots]
@@ -296,9 +313,18 @@ def deal_economics(db: Session, org: Organization, deal: ContentDeal) -> Economi
         0, (deal.term_end.year - today.year) * 12 + deal.term_end.month - today.month + 1
     )
 
+    if fx_missing:
+        warnings.append(f"Revenue left out for missing FX rates: {', '.join(sorted(fx_missing))}.")
+    if fee_missing:
+        warnings.append(f"CMS fee unknown (no fee tiers) for: {', '.join(sorted(fee_missing))}.")
+    result.warnings = warnings
+    return result
+
+
+def _add_installments(db: Session, org: Organization, parent: ParentDeal, result: Economics):
     installments = db.scalars(
         select(DealInstallment)
-        .where(DealInstallment.deal_id == deal.id)
+        .where(DealInstallment.parent_id == parent.id)
         .order_by(DealInstallment.due_date)
     ).all()
     result.installments_total = money(sum((i.amount for i in installments), Decimal(0)))
@@ -308,19 +334,80 @@ def deal_economics(db: Session, org: Organization, deal: ContentDeal) -> Economi
     if upcoming:
         result.next_due_date, result.next_due_amount = upcoming.due_date, upcoming.amount
     if (
-        rights_cost is not None
-        and deal.currency == base
+        parent.amount is not None
+        and parent.currency == org.base_currency
         and installments
-        and result.installments_total != deal.fee_amount
+        and result.installments_total != parent.amount
     ):
-        warnings.append(
+        result.warnings.append(
             f"Installments add up to {result.installments_total:,.2f} "
-            f"but the licence fee is {deal.fee_amount:,.2f}."
+            f"but the deal amount is {parent.amount:,.2f}."
         )
 
-    if fx_missing:
-        warnings.append(f"Revenue left out for missing FX rates: {', '.join(sorted(fx_missing))}.")
-    if fee_missing:
-        warnings.append(f"CMS fee unknown (no fee tiers) for: {', '.join(sorted(fee_missing))}.")
-    result.warnings = warnings
-    return result
+
+def parent_economics(
+    db: Session, org: Organization, parent: ParentDeal
+) -> tuple[Economics, list[tuple[ContentDeal, Economics]]]:
+    """The whole contract: its shows' results added up, against the full contract amount.
+
+    Returns the parent's economics and each show's own.
+    """
+    base = org.base_currency
+    result = Economics(base_currency=base, deal_type=parent.deal_type, rights_cost=None)
+    shows: list[tuple[ContentDeal, Economics]] = []
+    if parent.deal_type in ("fixed_fee", "hybrid") and parent.amount is not None:
+        value = licence_in_base(db, org, parent.amount, parent.currency, parent.term_start)
+        if value is None:
+            result.warnings.append(
+                f"No {parent.currency}→{base} rate for {parent.term_start:%b %Y} "
+                "to value the deal amount."
+            )
+        else:
+            result.rights_cost = money(value * our_part(db, parent.id))
+
+    months: dict[str, MonthRow] = {}
+    for show in parent.shows:
+        e = deal_economics(db, org, show)
+        shows.append((show, e))
+        for name in (
+            "gross",
+            "tax",
+            "cms_fee",
+            "incentives",
+            "expenses",
+            "owner_share",
+            "partner_commission",
+            "royalty",
+            "net_contribution",
+        ):
+            setattr(result, name, getattr(result, name) + getattr(e, name))
+        for m in e.by_month:
+            row = months.setdefault(m.month, MonthRow(m.month))
+            for name in (
+                "gross",
+                "tax",
+                "cms_fee",
+                "incentives",
+                "commission",
+                "expenses",
+                "owner_share",
+                "net",
+            ):
+                setattr(row, name, getattr(row, name) + getattr(m, name))
+        for w in e.warnings:
+            if w not in result.warnings:
+                result.warnings.append(w)
+    result.by_month = sorted(months.values(), key=lambda r: r.month)
+
+    rights_cost = result.rights_cost
+    if rights_cost:
+        result.recovery_pct = (result.net_contribution * 100 / rights_cost).quantize(Decimal("0.1"))
+        result.remaining = max(Decimal("0.00"), rights_cost - result.net_contribution)
+    result.profit = result.net_contribution - (rights_cost or Decimal(0))
+    result.term_start, result.term_end = parent.term_start, parent.term_end
+    today = company_today(org)
+    result.months_left = max(
+        0, (parent.term_end.year - today.year) * 12 + parent.term_end.month - today.month + 1
+    )
+    _add_installments(db, org, parent, result)
+    return result, shows

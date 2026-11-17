@@ -177,7 +177,7 @@ class DealPartnerOut(BaseModel):
 
 
 class ContributionIn(BaseModel):
-    deal_id: uuid.UUID
+    deal_id: uuid.UUID  # the parent deal the partner holds a share of
     amount: Decimal = Field(gt=0, decimal_places=2)
     received_on: date
     reference: str | None = Field(default=None, max_length=120)

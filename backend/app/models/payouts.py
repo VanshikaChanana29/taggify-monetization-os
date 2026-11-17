@@ -83,8 +83,9 @@ class DealInstallment(UUIDPrimaryKeyMixin, OrgScopedMixin, TimestampMixin, Base)
 
     __tablename__ = "deal_installments"
 
-    deal_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("content_deals.id", ondelete="CASCADE"), index=True
+    # Paid per contract, so it belongs to the parent deal, not to one show.
+    parent_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("parent_deals.id", ondelete="CASCADE"), index=True
     )
     due_date: Mapped[date]
     amount: Mapped[Decimal] = mapped_column(Numeric(18, 2))

@@ -2,6 +2,8 @@
 
 import { AlertOctagon, AlertTriangle, ArrowRight, CheckCircle2, ExternalLink, Info } from "lucide-react";
 
+import { useRouter } from "next/navigation";
+
 import { RightsChecker } from "@/components/deal/rights-check";
 import { daysBetween } from "@/components/deal/form-bits";
 import { InfoTip } from "@/components/ui/info-tip";
@@ -11,7 +13,7 @@ import { money } from "@/lib/finance";
 import type { Deal, DealEconomics, Platform } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-export type DealTab = "overview" | "slots" | "partners" | "earnings" | "payments" | "profitability" | "episodes" | "documents" | "history";
+export type DealTab = "overview" | "slots" | "earnings" | "profitability" | "episodes" | "documents" | "history";
 
 type Todo = { tone: "danger" | "warning" | "info"; text: string; tab: DealTab };
 
@@ -31,17 +33,9 @@ function slotsOf(deal: Deal, platform: Platform) {
   };
 }
 
-function todos(deal: Deal, e: DealEconomics | null): Todo[] {
+function todos(deal: Deal): Todo[] {
   const out: Todo[] = [];
   const today = todayISO();
-  if (e) {
-    for (const i of e.installments.filter((x) => x.overdue)) {
-      out.push({ tone: "danger", text: `Installment of ${money(i.amount, e.base_currency)} was due ${formatDate(i.due_date)} — not paid`, tab: "payments" });
-    }
-    if ((deal.deal_type === "fixed_fee" || deal.deal_type === "hybrid") && e.installments.length === 0) {
-      out.push({ tone: "info", text: "No payment plan yet — add the installments from the contract", tab: "payments" });
-    }
-  }
   if (deal.notice_deadline && deal.notice_deadline >= today) {
     const days = daysBetween(today, deal.notice_deadline);
     if (days <= 60) out.push({ tone: days <= 7 ? "danger" : "warning", text: `Renewal notice due to ${deal.owner_name} by ${formatDate(deal.notice_deadline)} (${days} days)`, tab: "overview" });
@@ -107,28 +101,21 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 export function DealOverview({ deal, e, go }: { deal: Deal; e: DealEconomics | null; go: (tab: DealTab) => void }) {
   const yt = slotsOf(deal, "youtube");
   const fb = slotsOf(deal, "facebook");
-  const overdue = e?.installments.filter((i) => i.overdue).length ?? 0;
   const pays = deal.deal_type === "fixed_fee" || deal.deal_type === "hybrid";
   const pct = e?.recovery_pct ? Number(e.recovery_pct) : null;
-  const list = todos(deal, e);
+  const list = todos(deal);
+  const router = useRouter();
 
   return (
     <div className="space-y-6">
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        {pays && e ? (
-          <SummaryCard
-            title="Payments to owner"
-            value={Number(e.payable) > 0 ? `${money(e.payable, e.base_currency)} due` : "All paid"}
-            sub={`Paid ${money(e.paid, e.base_currency)} of ${money(deal.fee_amount, deal.currency)}`}
-            alert={overdue > 0}
-            info={HELP.installments}
-            onClick={() => go("payments")}
-          >
-            {overdue > 0 && <span className="mt-2 text-sm font-semibold text-red-600 dark:text-red-400">{overdue} overdue</span>}
-          </SummaryCard>
-        ) : (
-          <SummaryCard title="Payments to owner" value="No licence fee" sub="Revenue share / owned content" onClick={() => go("profitability")} />
-        )}
+        <SummaryCard
+          title="Part of deal"
+          value={deal.parent_name}
+          sub={pays ? `This show: ${money(deal.fee_amount, deal.currency)} · payments & partners are on the deal` : "Partners are on the deal"}
+          info="Installments to the owner and deal partners belong to the whole deal, not one show."
+          onClick={() => router.push(`/parent-deals/${deal.parent_id}`)}
+        />
         <SummaryCard
           title="Profit / loss"
           info={HELP.recovery}

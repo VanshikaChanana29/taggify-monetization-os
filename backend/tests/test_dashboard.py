@@ -93,7 +93,8 @@ def test_money_needing_attention(founder, setup):  # noqa: F811
     revenue(founder, [(day(2), 1000)])
     for due, amount in ((LAST, "500000"), (TODAY + timedelta(days=10), "800000")):
         founder.post(
-            f"/api/deals/{d['id']}/installments", json={"due_date": str(due), "amount": amount}
+            f"/api/parent-deals/{d['parent_id']}/installments",
+            json={"due_date": str(due), "amount": amount},
         )
     founder.put(
         "/api/finance/statements",

@@ -17,7 +17,7 @@ import { HELP } from "@/lib/help";
 import { api } from "@/lib/api";
 import { DEAL_STATUS_TONES, formatDate, todayISO } from "@/lib/deals";
 import { money } from "@/lib/finance";
-import type { Deal, DealEconomics, Installment } from "@/lib/types";
+import type { ContractRef, DealEconomics, Installment } from "@/lib/types";
 
 type NewForm = { due_date: string; amount: string; reference: string; notes: string };
 type PaidForm = { paid_on: string; paid_amount: string; reference: string };
@@ -44,8 +44,9 @@ function addMonths(iso: string, k: number): string {
 
 const MAX_REPEAT = 120;
 
-/** What Taggify owes the content owner and when (PDF slide 11: cash payable, not the rights cost). */
-export function DealPayments({ deal, e, onChange }: { deal: Deal; e: DealEconomics; onChange: () => void }) {
+/** What Taggify owes the content owner and when (PDF slide 11: cash payable, not the rights cost).
+ * Paid per parent deal (the contract), not per show. */
+export function DealPayments({ deal, e, onChange }: { deal: ContractRef; e: DealEconomics; onChange: () => void }) {
   const cur = e.base_currency;
   const today = todayISO();
   const [adding, setAdding] = useState(false);
@@ -89,11 +90,11 @@ export function DealPayments({ deal, e, onChange }: { deal: Deal; e: DealEconomi
       const json = { due_date: form.due_date, amount: form.amount, reference: form.reference || null, notes: form.notes || null };
       if (editingId) await api(`/installments/${editingId}`, { method: "PUT", json });
       else if (repeating)
-        await api(`/deals/${deal.id}/installments/bulk`, {
+        await api(`/parent-deals/${deal.id}/installments/bulk`, {
           method: "POST",
           json: { installments: plan.map((p) => ({ ...json, due_date: p.due_date })) },
         });
-      else await api(`/deals/${deal.id}/installments`, { method: "POST", json });
+      else await api(`/parent-deals/${deal.id}/installments`, { method: "POST", json });
       closeForm();
       onChange();
     } catch (err) {

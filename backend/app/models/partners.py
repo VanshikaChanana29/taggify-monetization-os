@@ -31,13 +31,13 @@ class DealPartner(UUIDPrimaryKeyMixin, OrgScopedMixin, TimestampMixin, Base):
 
 
 class DealPartnerShare(UUIDPrimaryKeyMixin, OrgScopedMixin, TimestampMixin, Base):
-    """A partner's % of one deal: the same % of the licence fee is theirs to pay."""
+    """A partner's % of one parent deal: the same % of its licence fee is theirs to pay."""
 
     __tablename__ = "deal_partner_shares"
-    __table_args__ = (UniqueConstraint("deal_id", "partner_id"),)
+    __table_args__ = (UniqueConstraint("parent_id", "partner_id"),)
 
-    deal_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("content_deals.id", ondelete="CASCADE"), index=True
+    parent_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("parent_deals.id", ondelete="CASCADE"), index=True
     )
     partner_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("deal_partners.id", ondelete="RESTRICT"), index=True
@@ -77,8 +77,8 @@ class PartnerContribution(UUIDPrimaryKeyMixin, OrgScopedMixin, TimestampMixin, B
     partner_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("deal_partners.id", ondelete="CASCADE"), index=True
     )
-    deal_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("content_deals.id", ondelete="CASCADE"), index=True
+    parent_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("parent_deals.id", ondelete="CASCADE"), index=True
     )
     amount: Mapped[Decimal] = mapped_column(Numeric(18, 2))  # base currency
     received_on: Mapped[date] = mapped_column(Date)

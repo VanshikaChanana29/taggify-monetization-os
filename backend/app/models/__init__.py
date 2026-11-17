@@ -9,6 +9,7 @@ from app.models.content import (
     DealEpisode,
     DealEpisodeRange,
     DealSlot,
+    ParentDeal,
 )
 from app.models.finance import (
     BankReceipt,
@@ -84,6 +85,7 @@ __all__ = [
     "DealEpisode",
     "DealEpisodeRange",
     "DealSlot",
+    "ParentDeal",
     "Employee",
     "EmployeeRole",
     "Membership",
