@@ -4,6 +4,7 @@ from sqlalchemy import engine_from_config, pool
 
 from alembic import context
 from app.core.config import get_settings
+from app.core.ipv4 import prefer_ipv4
 from app.models import Base
 
 config = context.config
@@ -27,13 +28,15 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
-    connectable = engine_from_config(
-        config.get_section(config.config_ini_section, {}),
-        prefix="sqlalchemy.",
-        poolclass=pool.NullPool,
-        # Fail fast instead of hanging a deploy: give up connecting after 30s, and if a
-        # table is locked (e.g. by the running app) wait at most 60s, then error out.
-        connect_args={"connect_timeout": 30, "options": "-c lock_timeout=60s"},
+    connectable = prefer_ipv4(
+        engine_from_config(
+            config.get_section(config.config_ini_section, {}),
+            prefix="sqlalchemy.",
+            poolclass=pool.NullPool,
+            # Fail fast instead of hanging a deploy: give up connecting after 30s, and if a
+            # table is locked (e.g. by the running app) wait at most 60s, then error out.
+            connect_args={"connect_timeout": 30, "options": "-c lock_timeout=60s"},
+        )
     )
     with connectable.connect() as connection:
         context.configure(connection=connection, target_metadata=target_metadata, compare_type=True)
