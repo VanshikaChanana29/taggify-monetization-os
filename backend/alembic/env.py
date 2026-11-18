@@ -33,14 +33,16 @@ def run_migrations_online() -> None:
             config.get_section(config.config_ini_section, {}),
             prefix="sqlalchemy.",
             poolclass=pool.NullPool,
-            # Fail fast instead of hanging a deploy: give up connecting after 30s, and if a
-            # table is locked (e.g. by the running app) wait at most 60s, then error out.
-            connect_args={"connect_timeout": 30, "options": "-c lock_timeout=60s"},
+            # Fail fast instead of hanging a deploy: give up connecting after 30s.
+            connect_args={"connect_timeout": 30},
         )
     )
     with connectable.connect() as connection:
         context.configure(connection=connection, target_metadata=target_metadata, compare_type=True)
         with context.begin_transaction():
+            # If a table stays locked (e.g. by the running app), give up after 60s. Set here,
+            # not as a startup option: Neon's pooled connections refuse those.
+            connection.exec_driver_sql("SET LOCAL lock_timeout = '60s'")
             context.run_migrations()
 
 
