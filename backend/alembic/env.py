@@ -31,6 +31,9 @@ def run_migrations_online() -> None:
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
+        # Fail fast instead of hanging a deploy: give up connecting after 30s, and if a
+        # table is locked (e.g. by the running app) wait at most 60s, then error out.
+        connect_args={"connect_timeout": 30, "options": "-c lock_timeout=60s"},
     )
     with connectable.connect() as connection:
         context.configure(connection=connection, target_metadata=target_metadata, compare_type=True)
